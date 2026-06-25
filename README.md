@@ -1,1 +1,28 @@
-IyBHb1RvZ2V0aGVyCgrQodC10LzQtdC50L3QuCDQv9GK0YLRg9Cy0LDQvdC40Y8g0LHQtdC3INCz0LvQsNCy0L7QsdC+0LvQuNC1LgoKIyMg0KHRgtC10LoKCi0gUmVhY3QgTmF0aXZlICsgRXhwbyBTREsgNTQKLSBTdXBhYmFzZSAoUG9zdGdyZVNRTCArIEF1dGggKyBTdG9yYWdlKQotIENsYXVkZSBBUEkgKEFudGhyb3BpYykKCiMjINCR0LDQt9CwINC00LDQvdC90LgKCjYg0YLQsNCx0LvQuNGG0Lgg0YEgUkxTOiBwcm9maWxlcywgdHJpcHMsIHRyaXBfbWVtYmVycywgZXhwZW5zZXMsIGV4cGVuc2Vfc3BsaXRzLCBkb2N1bWVudHMKCiMjINCU0L3QtdCy0L3QuNC6CgojIyMg0JTQtdC9IDEg4oCUIDI1INGO0L3QuCAyMDI2Ci0gTVZQINC4IFByb2JsZW0gU3RhdGVtZW50INC00LXRhNC40L3QuNGA0LDQvdC4Ci0g0J/QvtGC0YDQtdCx0LjRgtC10LvRgdC60Lgg0L/QvtGC0L7RhtC4INC60LDRgNGC0L7Qs9GA0LDRhNC40YDQsNC90LgKLSBTdXBhYmFzZSDQv9GA0L7QtdC60YIgR29Ub2dldGhlciAoZXUtY2VudHJhbC0yKQotIFNRTCDRgdGF0LXQvNCwINGBIDYg0YLQsNCx0LvQuNGG0LggKyBSTFMgKyDRgtGA0LjQs9C10YAg0LfQsCDQv9GA0L7RhNC40LvQuAotIE5vZGUuanMgdjI0ICsgRXhwbyBTREsgNTQg0LjQvdGB0YLQsNC70LjRgNCw0L3QuAotIEhvbWUg0LXQutGA0LDQvSDRgNCw0LHQvtGC0Lgg0L3QsCBpUGhvbmUg0YfRgNC10LcgRXhwbyBHbwotINCU0LLQsCDQsdGD0YLQvtC90LA6INCf0LvQsNC90LjRgNCw0Lkg0YEgQUkgLyDQn9GA0LjRgdGK0LXQtNC40L3QuCDRgdC1INGBINC60L7QtAoKIyMg0JDQstGC0L7RgAoKVGVtZWxrbyBIYWxhY2hldiDigJQgaHR0cHM6Ly9naXRodWIuY29tL1RlbXMtZ2l0Cg==
+# GoTogether
+
+Семейни пътувания без главоболие.
+
+## Стек
+
+- React Native + Expo SDK 54
+- Supabase (PostgreSQL + Auth + Storage)
+- Claude API (Anthropic)
+
+## База данни — 6 таблици с RLS
+
+profiles, trips, trip_members, expenses, expense_splits, documents
+
+## Дневник
+
+### Ден 1 — 25 юни 2026
+- MVP и Problem Statement дефинирани
+- Потребителски потоци картографирани (организатор + гост без регистрация)
+- Supabase проект GoTogether създаден (eu-central-2)
+- SQL схема: 6 таблици + RLS + тригер за профили
+- Node.js v24 + Expo SDK 54 инсталирани
+- Home екран работи на iPhone чрез Expo Go
+- Два бутона: Планирай с AI / Присъедини се с код
+
+## Автор
+
+Temelko Halachev — https://github.com/Tems-git
