@@ -12,6 +12,28 @@
 
 profiles, trips, trip_members, expenses, expense_splits, documents
 
+## Структура на проекта
+
+```
+GoTogether/
+  ├── App.js              — навигация и сесийно управление
+  ├── app.json            — Expo конфигурация + Deep Link схема
+  ├── lib/
+  │   └── supabase.js     — връзка с Supabase + signInWithEmail
+  └── screens/
+      ├── SignInScreen.js  — Magic Link вход
+      └── DashboardScreen.js — главен екран след вход
+```
+
+## Стартиране
+
+```bash
+git clone https://github.com/Tems-git/GoTogether.git
+cd GoTogether
+npm install
+npx expo start
+```
+
 ## Дневник
 
 ### Ден 1 — 25 юни 2026
@@ -22,6 +44,17 @@ profiles, trips, trip_members, expenses, expense_splits, documents
 - Node.js v24 + Expo SDK 54 инсталирани
 - Home екран работи на iPhone чрез Expo Go
 - Два бутона: Планирай с AI / Присъедини се с код
+- lib/supabase.js — връзка с базата данни
+- screens/SignInScreen.js — Magic Link автентикация
+- screens/DashboardScreen.js — 4 карти (AI / Документи / Разходи / Покани)
+- Сесийно управление — auto login при запазена сесия
+- Deep Link конфигуриран (gotogether://)
+- Първи реален потребител регистриран в Supabase
+
+### Следващо
+- Deep Link тестване след reset на rate limit
+- AI Trip Planner екран (Claude API)
+- Expo публикуване за споделяне с Спас
 
 ## Автор
 
