@@ -6,20 +6,21 @@ import {
 import { supabase } from "../lib/supabase";
 
 export default function TripSetupScreen({ user, onTripReady }) {
-  const [mode, setMode] = useState(null); // "create" | "join"
+  const [mode, setMode] = useState(null);
   const [name, setName] = useState("");
   const [destination, setDestination] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function ensureProfile() {
+    // maybeSingle() не хвърля грешка при липса на резултат
     const { data } = await supabase
       .from("profiles")
       .select("id")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
     if (!data) {
-      await supabase.from("profiles").insert({
+      await supabase.from("profiles").upsert({
         id: user.id,
         display_name: user.email.split("@")[0],
       });
@@ -33,16 +34,23 @@ export default function TripSetupScreen({ user, onTripReady }) {
       await ensureProfile();
       const { data: trip, error } = await supabase
         .from("trips")
-        .insert({ owner_id: user.id, name: name.trim(), destination: destination.trim() || null })
+        .insert({
+          owner_id: user.id,
+          name: name.trim(),
+          destination: destination.trim() || null,
+        })
         .select()
         .single();
       if (error) throw error;
-      await supabase.from("trip_members").insert({
+
+      const { error: memberError } = await supabase.from("trip_members").insert({
         trip_id: trip.id,
         user_id: user.id,
         display_name: user.email.split("@")[0],
         role: "owner",
       });
+      if (memberError) throw memberError;
+
       onTripReady(trip);
     } catch (e) {
       Alert.alert("Грешка", e.message);
@@ -60,8 +68,9 @@ export default function TripSetupScreen({ user, onTripReady }) {
         .from("trips")
         .select()
         .eq("invite_code", inviteCode.trim().toUpperCase())
-        .single();
+        .maybeSingle();
       if (error || !trip) throw new Error("Невалиден код за покана");
+
       const { error: joinError } = await supabase.from("trip_members").upsert({
         trip_id: trip.id,
         user_id: user.id,
@@ -113,7 +122,7 @@ export default function TripSetupScreen({ user, onTripReady }) {
             placeholderTextColor="#bbb"
           />
           <TouchableOpacity style={styles.btnPrimary} onPress={handleCreate} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnPrimaryText}>Създай пътуване</Text>}
+            {loading ? <ActivityIndicator color="#1D9E75" /> : <Text style={styles.btnPrimaryText}>Създай пътуване</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.back} onPress={() => setMode(null)}>
             <Text style={styles.backText}>← Назад</Text>
@@ -134,7 +143,7 @@ export default function TripSetupScreen({ user, onTripReady }) {
             placeholderTextColor="#bbb"
           />
           <TouchableOpacity style={styles.btnPrimary} onPress={handleJoin} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnPrimaryText}>Присъедини се</Text>}
+            {loading ? <ActivityIndicator color="#1D9E75" /> : <Text style={styles.btnPrimaryText}>Присъедини се</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.back} onPress={() => setMode(null)}>
             <Text style={styles.backText}>← Назад</Text>
