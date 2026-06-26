@@ -8,10 +8,29 @@
     "platforms": ["ios", "android"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.temsit.gotogether"
+      "bundleIdentifier": "com.temsit.gotogether",
+      "infoPlist": {
+        "NSCameraUsageDescription": "GoTogether използва камерата за снимане на документи.",
+        "NSPhotoLibraryUsageDescription": "GoTogether използва галерията за качване на документи и снимки.",
+        "NSPhotoLibraryAddUsageDescription": "GoTogether запазва снимки в галерията."
+      }
     },
     "android": {
-      "package": "com.temsit.gotogether"
-    }
+      "package": "com.temsit.gotogether",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GoTogether използва галерията за качване на документи и снимки.",
+          "cameraPermission": "GoTogether използва камерата за снимане на документи."
+        }
+      ]
+    ]
   }
 }
