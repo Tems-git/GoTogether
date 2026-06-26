@@ -9,31 +9,16 @@ import DocumentsScreen from "./screens/DocumentsScreen";
 import ExpensesScreen from "./screens/ExpensesScreen";
 import TripSetupScreen from "./screens/TripSetupScreen";
 
-// DEV MODE: прескача логин — само за тестване, изтрий преди production!
-const DEV_MODE = true;
-const DEV_TRIP = {
-  id: "00000000-0000-0000-0000-000000000001",
-  name: "Тест пътуване",
-  destination: "София",
-  invite_code: "DEVTST",
-  start_date: null,
-  end_date: null,
-};
-const DEV_USER = {
-  id: "00000000-0000-0000-0000-000000000002",
-  email: "dev@test.com",
-};
+const DEV_MODE = false;
 
 export default function App() {
-  const [user, setUser] = useState(DEV_MODE ? DEV_USER : null);
-  const [loading, setLoading] = useState(!DEV_MODE);
-  const [screen, setScreen] = useState(DEV_MODE ? "dashboard" : "home");
-  const [activeTrip, setActiveTrip] = useState(DEV_MODE ? DEV_TRIP : null);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [screen, setScreen] = useState("home");
+  const [activeTrip, setActiveTrip] = useState(null);
   const [tripLoading, setTripLoading] = useState(false);
 
   useEffect(() => {
-    if (DEV_MODE) return;
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setLoading(false);
@@ -47,7 +32,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (DEV_MODE || !user) { if (!DEV_MODE) setActiveTrip(null); return; }
+    if (!user) { setActiveTrip(null); return; }
     async function loadTrip() {
       setTripLoading(true);
       const { data } = await supabase
@@ -80,7 +65,7 @@ export default function App() {
         onBack={() => setScreen("dashboard")}
         tripId={activeTrip?.id}
         userId={user?.id}
-        devMode={DEV_MODE}
+        devMode={false}
       />
     );
   }
@@ -91,14 +76,14 @@ export default function App() {
         onBack={() => setScreen("dashboard")}
         tripId={activeTrip?.id}
         userId={user?.id}
-        devMode={DEV_MODE}
+        devMode={false}
       />
     );
   }
 
   if (screen === "signin") return <SignInScreen />;
 
-  if (screen === "dashboard" || user) {
+  if (user) {
     if (!activeTrip) {
       return (
         <TripSetupScreen
