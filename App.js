@@ -7,11 +7,14 @@ import DashboardScreen from "./screens/DashboardScreen";
 import AIPlannerScreen from "./screens/AIPlannerScreen";
 import DocumentsScreen from "./screens/DocumentsScreen";
 import ExpensesScreen from "./screens/ExpensesScreen";
+import TripSetupScreen from "./screens/TripSetupScreen";
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState("home");
+  const [activeTrip, setActiveTrip] = useState(null);
+  const [tripLoading, setTripLoading] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -26,7 +29,27 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (loading) {
+  // Зареждаме активното пътуване при логин
+  useEffect(() => {
+    if (!user) { setActiveTrip(null); return; }
+    async function loadTrip() {
+      setTripLoading(true);
+      const { data } = await supabase
+        .from("trip_members")
+        .select("trip_id, trips(*)")
+        .eq("user_id", user.id)
+        .order("joined_at", { ascending: false })
+        .limit(1)
+        .single();
+      if (data?.trips) {
+        setActiveTrip(data.trips);
+      }
+      setTripLoading(false);
+    }
+    loadTrip();
+  }, [user]);
+
+  if (loading || tripLoading) {
     return (
       <View style={styles.loading}>
         <Text style={styles.loadingEmoji}>🧳</Text>
@@ -36,15 +59,45 @@ export default function App() {
   }
 
   if (screen === "ai") return <AIPlannerScreen onBack={() => setScreen(user ? "dashboard" : "home")} />;
-  if (screen === "documents") return <DocumentsScreen onBack={() => setScreen("dashboard")} />;
-  if (screen === "expenses") return <ExpensesScreen onBack={() => setScreen("dashboard")} />;
+
+  if (screen === "documents") {
+    return (
+      <DocumentsScreen
+        onBack={() => setScreen("dashboard")}
+        tripId={activeTrip?.id}
+        userId={user?.id}
+      />
+    );
+  }
+
+  if (screen === "expenses") {
+    return (
+      <ExpensesScreen
+        onBack={() => setScreen("dashboard")}
+        tripId={activeTrip?.id}
+        userId={user?.id}
+      />
+    );
+  }
+
   if (screen === "signin") return <SignInScreen />;
 
   if (user) {
+    // Потребителят е влязъл, но няма активно пътуване
+    if (!activeTrip) {
+      return (
+        <TripSetupScreen
+          user={user}
+          onTripReady={(trip) => setActiveTrip(trip)}
+        />
+      );
+    }
+
     return (
       <DashboardScreen
         user={user}
-        onSignOut={() => { supabase.auth.signOut(); setScreen("home"); }}
+        trip={activeTrip}
+        onSignOut={() => { supabase.auth.signOut(); setScreen("home"); setActiveTrip(null); }}
         onAI={() => setScreen("ai")}
         onDocuments={() => setScreen("documents")}
         onExpenses={() => setScreen("expenses")}
