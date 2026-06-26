@@ -6,7 +6,7 @@
 
 - React Native + Expo SDK 54
 - Supabase (PostgreSQL + Auth + Storage)
-- Claude API (Anthropic)
+- Claude API (Anthropic) — AI Trip Planner
 
 ## База данни — 6 таблици с RLS
 
@@ -16,13 +16,14 @@ profiles, trips, trip_members, expenses, expense_splits, documents
 
 ```
 GoTogether/
-  ├── App.js              — навигация и сесийно управление
-  ├── app.json            — Expo конфигурация + Deep Link схема
+  ├── App.js                  — навигация и сесийно управление
+  ├── app.json                — Expo конфигурация + Deep Link схема
   ├── lib/
-  │   └── supabase.js     — връзка с Supabase + signInWithEmail
+  │   └── supabase.js         — връзка с Supabase + signInWithEmail
   └── screens/
-      ├── SignInScreen.js  — Magic Link вход
-      └── DashboardScreen.js — главен екран след вход
+      ├── SignInScreen.js     — Magic Link вход
+      ├── DashboardScreen.js  — главен екран след вход
+      └── AIPlannerScreen.js  — AI планиране на пътуване
 ```
 
 ## Стартиране
@@ -51,10 +52,18 @@ npx expo start
 - Deep Link конфигуриран (gotogether://)
 - Първи реален потребител регистриран в Supabase
 
+### Ден 2 — 26 юни 2026
+- screens/AIPlannerScreen.js — AI Trip Planner с Claude API
+- Форма: дестинация, период, брой семейства, деца, бюджет, транспорт
+- Claude генерира пълен план: маршрут, настаняване, програма по дни, бюджет, съвети
+- Успешно тестван с реален план за Халкидики — 3 семейства, 5 деца, 6000 лв.
+- Навигация Home → AI Planner → план → нов план
+
 ### Следващо
-- Deep Link тестване след reset на rate limit
-- AI Trip Planner екран (Claude API)
+- Markdown форматиране на AI плана
+- Deep Link тестване
 - Expo публикуване за споделяне с Спас
+- Dashboard карти — свързване с реални екрани
 
 ## Автор
 
