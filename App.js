@@ -1,1 +1,86 @@
-aW1wb3J0IHsgU3RhdHVzQmFyIH0gZnJvbSAiZXhwby1zdGF0dXMtYmFyIjsKaW1wb3J0IHsgU3R5bGVTaGVldCwgVGV4dCwgVmlldywgVG91Y2hhYmxlT3BhY2l0eSB9IGZyb20gInJlYWN0LW5hdGl2ZSI7CgpleHBvcnQgZGVmYXVsdCBmdW5jdGlvbiBBcHAoKSB7CiAgcmV0dXJuICgKICAgIDxWaWV3IHN0eWxlPXtzdHlsZXMuY29udGFpbmVyfT4KICAgICAgPFRleHQgc3R5bGU9e3N0eWxlcy5lbW9qaX0+8J+nszwvVGV4dD4KICAgICAgPFRleHQgc3R5bGU9e3N0eWxlcy50aXRsZX0+R29Ub2dldGhlcjwvVGV4dD4KICAgICAgPFRleHQgc3R5bGU9e3N0eWxlcy5zdWJ0aXRsZX0+0KHQtdC80LXQudC90Lgg0L/RitGC0YPQstCw0L3QuNGPINCx0LXQtyDQs9C70LDQstC+0LHQvtC70LjQtTwvVGV4dD4KCiAgICAgIDxWaWV3IHN0eWxlPXtzdHlsZXMuYnV0dG9uc30+CiAgICAgICAgPFRvdWNoYWJsZU9wYWNpdHkgc3R5bGU9e3N0eWxlcy5idG5QcmltYXJ5fT4KICAgICAgICAgIDxUZXh0IHN0eWxlPXtzdHlsZXMuYnRuUHJpbWFyeVRleHR9PtCf0LvQsNC90LjRgNCw0Lkg0L/RitGC0YPQstCw0L3QtSDRgSBBSTwvVGV4dD4KICAgICAgICA8L1RvdWNoYWJsZU9wYWNpdHk+CiAgICAgICAgPFRvdWNoYWJsZU9wYWNpdHkgc3R5bGU9e3N0eWxlcy5idG5TZWNvbmRhcnl9PgogICAgICAgICAgPFRleHQgc3R5bGU9e3N0eWxlcy5idG5TZWNvbmRhcnlUZXh0fT7Qn9GA0LjRgdGK0LXQtNC40L3QuCDRgdC1INGBINC60L7QtDwvVGV4dD4KICAgICAgICA8L1RvdWNoYWJsZU9wYWNpdHk+CiAgICAgIDwvVmlldz4KCiAgICAgIDxTdGF0dXNCYXIgc3R5bGU9ImxpZ2h0IiAvPgogICAgPC9WaWV3PgogICk7Cn0KCmNvbnN0IHN0eWxlcyA9IFN0eWxlU2hlZXQuY3JlYXRlKHsKICBjb250YWluZXI6IHsKICAgIGZsZXg6IDEsCiAgICBiYWNrZ3JvdW5kQ29sb3I6ICIjMUQ5RTc1IiwKICAgIGFsaWduSXRlbXM6ICJjZW50ZXIiLAogICAganVzdGlmeUNvbnRlbnQ6ICJjZW50ZXIiLAogICAgcGFkZGluZzogMjQsCiAgfSwKICBlbW9qaTogeyBmb250U2l6ZTogNzIsIG1hcmdpbkJvdHRvbTogMTYgfSwKICB0aXRsZTogewogICAgZm9udFNpemU6IDM2LAogICAgZm9udFdlaWdodDogImJvbGQiLAogICAgY29sb3I6ICIjZmZmIiwKICAgIG1hcmdpbkJvdHRvbTogOCwKICB9LAogIHN1YnRpdGxlOiB7CiAgICBmb250U2l6ZTogMTYsCiAgICBjb2xvcjogIiNFMUY1RUUiLAogICAgdGV4dEFsaWduOiAiY2VudGVyIiwKICAgIG1hcmdpbkJvdHRvbTogNDgsCiAgfSwKICBidXR0b25zOiB7IHdpZHRoOiAiMTAwJSIsIGdhcDogMTIgfSwKICBidG5QcmltYXJ5OiB7CiAgICBiYWNrZ3JvdW5kQ29sb3I6ICIjZmZmIiwKICAgIHBhZGRpbmc6IDE2LAogICAgYm9yZGVyUmFkaXVzOiAxNCwKICAgIGFsaWduSXRlbXM6ICJjZW50ZXIiLAogIH0sCiAgYnRuUHJpbWFyeVRleHQ6IHsKICAgIGNvbG9yOiAiIzFEOUU3NSIsCiAgICBmb250U2l6ZTogMTYsCiAgICBmb250V2VpZ2h0OiAiYm9sZCIsCiAgfSwKICBidG5TZWNvbmRhcnk6IHsKICAgIGJhY2tncm91bmRDb2xvcjogInRyYW5zcGFyZW50IiwKICAgIHBhZGRpbmc6IDE2LAogICAgYm9yZGVyUmFkaXVzOiAxNCwKICAgIGFsaWduSXRlbXM6ICJjZW50ZXIiLAogICAgYm9yZGVyV2lkdGg6IDEuNSwKICAgIGJvcmRlckNvbG9yOiAiI2ZmZiIsCiAgfSwKICBidG5TZWNvbmRhcnlUZXh0OiB7CiAgICBjb2xvcjogIiNmZmYiLAogICAgZm9udFNpemU6IDE2LAogICAgZm9udFdlaWdodDogIjUwMCIsCiAgfSwKfSk7Cg==
+import { StatusBar } from "expo-status-bar";
+import { StyleSheet, Text, View, TouchableOpacity } from "react-native";
+import { useState, useEffect } from "react";
+import { supabase } from "./lib/supabase";
+import SignInScreen from "./screens/SignInScreen";
+import DashboardScreen from "./screens/DashboardScreen";
+import AIPlannerScreen from "./screens/AIPlannerScreen";
+import DocumentsScreen from "./screens/DocumentsScreen";
+import ExpensesScreen from "./screens/ExpensesScreen";
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [screen, setScreen] = useState("home");
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.loadingEmoji}>🧳</Text>
+        <Text style={styles.loadingText}>GoTogether</Text>
+      </View>
+    );
+  }
+
+  if (screen === "ai") return <AIPlannerScreen onBack={() => setScreen(user ? "dashboard" : "home")} />;
+  if (screen === "documents") return <DocumentsScreen onBack={() => setScreen("dashboard")} />;
+  if (screen === "expenses") return <ExpensesScreen onBack={() => setScreen("dashboard")} />;
+  if (screen === "signin") return <SignInScreen />;
+
+  if (user) {
+    return (
+      <DashboardScreen
+        user={user}
+        onSignOut={() => { supabase.auth.signOut(); setScreen("home"); }}
+        onAI={() => setScreen("ai")}
+        onDocuments={() => setScreen("documents")}
+        onExpenses={() => setScreen("expenses")}
+      />
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.emoji}>🧳</Text>
+      <Text style={styles.title}>GoTogether</Text>
+      <Text style={styles.subtitle}>Семейни пътувания без главоболие</Text>
+      <View style={styles.buttons}>
+        <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen("ai")}>
+          <Text style={styles.btnPrimaryText}>Планирай пътуване с AI</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.btnSecondary} onPress={() => setScreen("signin")}>
+          <Text style={styles.btnSecondaryText}>Присъедини се с код</Text>
+        </TouchableOpacity>
+      </View>
+      <StatusBar style="light" />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  loading: { flex: 1, backgroundColor: "#1D9E75", alignItems: "center", justifyContent: "center" },
+  loadingEmoji: { fontSize: 64 },
+  loadingText: { fontSize: 24, fontWeight: "bold", color: "#fff", marginTop: 12 },
+  container: { flex: 1, backgroundColor: "#1D9E75", alignItems: "center", justifyContent: "center", padding: 24 },
+  emoji: { fontSize: 72, marginBottom: 16 },
+  title: { fontSize: 36, fontWeight: "bold", color: "#fff", marginBottom: 8 },
+  subtitle: { fontSize: 16, color: "#E1F5EE", textAlign: "center", marginBottom: 48 },
+  buttons: { width: "100%", gap: 12 },
+  btnPrimary: { backgroundColor: "#fff", padding: 16, borderRadius: 14, alignItems: "center" },
+  btnPrimaryText: { color: "#1D9E75", fontSize: 16, fontWeight: "bold" },
+  btnSecondary: { backgroundColor: "transparent", padding: 16, borderRadius: 14, alignItems: "center", borderWidth: 1.5, borderColor: "#fff" },
+  btnSecondaryText: { color: "#fff", fontSize: 16, fontWeight: "500" },
+});
