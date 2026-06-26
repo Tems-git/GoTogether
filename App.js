@@ -9,8 +9,6 @@ import DocumentsScreen from "./screens/DocumentsScreen";
 import ExpensesScreen from "./screens/ExpensesScreen";
 import TripSetupScreen from "./screens/TripSetupScreen";
 
-const DEV_MODE = false;
-
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -20,33 +18,32 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+      if (session?.user) handleUser(session.user);
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      if (session?.user) handleUser(session.user);
+      else { setUser(null); setActiveTrip(null); }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!user) { setActiveTrip(null); return; }
-    async function loadTrip() {
-      setTripLoading(true);
-      const { data } = await supabase
-        .from("trip_members")
-        .select("trip_id, trips(*)")
-        .eq("user_id", user.id)
-        .order("joined_at", { ascending: false })
-        .limit(1)
-        .single();
-      if (data?.trips) setActiveTrip(data.trips);
-      setTripLoading(false);
-    }
-    loadTrip();
-  }, [user]);
+  async function handleUser(u) {
+    setUser(u);
+    setTripLoading(true);
+    const { data } = await supabase
+      .from("trip_members")
+      .select("trip_id, trips(*)")
+      .eq("user_id", u.id)
+      .order("joined_at", { ascending: false })
+      .limit(1)
+      .single();
+    if (data?.trips) setActiveTrip(data.trips);
+    setTripLoading(false);
+    setScreen("dashboard");
+  }
 
   if (loading || tripLoading) {
     return (
@@ -81,14 +78,16 @@ export default function App() {
     );
   }
 
-  if (screen === "signin") return <SignInScreen />;
+  if (screen === "signin") {
+    return <SignInScreen onSignIn={(u) => handleUser(u)} />;
+  }
 
   if (user) {
     if (!activeTrip) {
       return (
         <TripSetupScreen
           user={user}
-          onTripReady={(trip) => setActiveTrip(trip)}
+          onTripReady={(trip) => { setActiveTrip(trip); setScreen("dashboard"); }}
         />
       );
     }
@@ -96,7 +95,7 @@ export default function App() {
       <DashboardScreen
         user={user}
         trip={activeTrip}
-        onSignOut={() => { supabase.auth.signOut(); setScreen("home"); setActiveTrip(null); }}
+        onSignOut={() => { supabase.auth.signOut(); setUser(null); setActiveTrip(null); setScreen("home"); }}
         onAI={() => setScreen("ai")}
         onDocuments={() => setScreen("documents")}
         onExpenses={() => setScreen("expenses")}
