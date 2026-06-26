@@ -5,7 +5,7 @@ import {
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
 
-const OTP_LENGTH = 8; // Supabase праща 8-цифрен код по подразбиране
+const OTP_LENGTH = 6;
 
 export default function SignInScreen() {
   const [email, setEmail] = useState("");
