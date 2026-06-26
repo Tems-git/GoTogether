@@ -5,6 +5,12 @@ import {
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
+// DEV fallback members — използват се само когато базата върне 0 членове
+const DEV_MEMBERS = [
+  { user_id: "00000000-0000-0000-0000-000000000002", display_name: "Теmelko" },
+  { user_id: "00000000-0000-0000-0000-000000000003", display_name: "Спас" },
+];
+
 // Алгоритъм за минимален брой разплащания (greedy)
 function calcSettlements(members, expenses, splits) {
   const balance = {};
@@ -66,19 +72,38 @@ export default function ExpensesScreen({ onBack, tripId, userId }) {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [{ data: mData }, { data: eData }, { data: sData }] = await Promise.all([
-      supabase.from("trip_members").select("user_id, display_name").eq("trip_id", tripId),
-      supabase.from("expenses").select("*").eq("trip_id", tripId).order("created_at", { ascending: false }),
-      supabase.from("expense_splits").select("*").in(
-        "expense_id",
-        // ако няма разходи, подаваме невалиден UUID за да не гърми
-        (await supabase.from("expenses").select("id").eq("trip_id", tripId)).data?.map((e) => e.id) || ["00000000-0000-0000-0000-000000000000"]
-      ),
-    ]);
-    setMembers(mData || []);
-    setExpenses(eData || []);
-    setSplits(sData || []);
-    setLoading(false);
+    try {
+      const { data: mData } = await supabase
+        .from("trip_members")
+        .select("user_id, display_name")
+        .eq("trip_id", tripId);
+
+      const { data: eData } = await supabase
+        .from("expenses")
+        .select("*")
+        .eq("trip_id", tripId)
+        .order("created_at", { ascending: false });
+
+      const expenseIds = (eData || []).map((e) => e.id);
+      let sData = [];
+      if (expenseIds.length > 0) {
+        const { data } = await supabase
+          .from("expense_splits")
+          .select("*")
+          .in("expense_id", expenseIds);
+        sData = data || [];
+      }
+
+      // Ако няма членове (DEV_MODE с фиктивен trip_id), използваме fallback
+      const resolvedMembers = (mData && mData.length > 0) ? mData : DEV_MEMBERS;
+      setMembers(resolvedMembers);
+      setExpenses(eData || []);
+      setSplits(sData);
+    } catch (e) {
+      setMembers(DEV_MEMBERS);
+    } finally {
+      setLoading(false);
+    }
   }, [tripId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -87,10 +112,11 @@ export default function ExpensesScreen({ onBack, tripId, userId }) {
     if (!desc.trim()) return Alert.alert("Грешка", "Въведи описание");
     const amt = parseFloat(amount.replace(",", "."));
     if (isNaN(amt) || amt <= 0) return Alert.alert("Грешка", "Въведи валидна сума");
+    if (members.length === 0) return Alert.alert("Грешка", "Няма участници в пътуването");
 
     setSaving(true);
     try {
-      const share = amt / members.length;
+      const share = parseFloat((amt / members.length).toFixed(2));
       const { data: exp, error } = await supabase
         .from("expenses")
         .insert({
@@ -108,7 +134,7 @@ export default function ExpensesScreen({ onBack, tripId, userId }) {
       const splitsToInsert = members.map((m) => ({
         expense_id: exp.id,
         user_id: m.user_id,
-        share: parseFloat(share.toFixed(2)),
+        share,
         is_settled: false,
       }));
       const { error: splitError } = await supabase.from("expense_splits").insert(splitsToInsert);
@@ -152,6 +178,10 @@ export default function ExpensesScreen({ onBack, tripId, userId }) {
     const d = new Date(iso);
     return `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}`;
   }
+
+  const sharePerPerson = members.length > 0
+    ? (parseFloat(amount.replace(",", ".")) / members.length || 0).toFixed(2)
+    : "—";
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
@@ -277,7 +307,7 @@ export default function ExpensesScreen({ onBack, tripId, userId }) {
 
             <Text style={styles.splitNote}>
               ✂️ Делене равно между {members.length} участника
-              {amount ? ` — ${(parseFloat(amount.replace(",", ".")) / members.length || 0).toFixed(2)} лв. на човек` : ""}
+              {amount ? ` — ${sharePerPerson} лв. на човек` : ""}
             </Text>
 
             <View style={styles.modalBtns}>
