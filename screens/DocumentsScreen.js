@@ -98,14 +98,14 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== "granted") return Alert.alert("Грешка", "Няма достъп до камерата");
         result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: ["images"],
           quality: 0.8,
         });
       } else {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== "granted") return Alert.alert("Грешка", "Няма достъп до галерията");
         result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: ["images"],
           quality: 0.8,
           allowsMultipleSelection: false,
         });
@@ -193,7 +193,6 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
           : <Text style={styles.btnText}>+ Качи документ</Text>}
       </TouchableOpacity>
 
-      {/* Modal за избор на тип */}
       <Modal visible={pickModalVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.modal}>
