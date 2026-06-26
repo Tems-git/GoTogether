@@ -15,22 +15,15 @@ export default function DashboardScreen({ user, onSignOut, onAI, onDocuments, on
         <Text style={styles.title}>GoTogether</Text>
         <Text style={styles.email}>{user.email}</Text>
       </View>
-
       <View style={styles.cards}>
         {cards.map((card, i) => (
-          <TouchableOpacity
-            key={i}
-            style={[styles.card, { backgroundColor: card.color }]}
-            onPress={card.onPress}
-            disabled={!card.onPress}
-          >
+          <TouchableOpacity key={i} style={[styles.card, { backgroundColor: card.color }]} onPress={card.onPress} disabled={!card.onPress}>
             <Text style={styles.cardEmoji}>{card.emoji}</Text>
             <Text style={styles.cardTitle}>{card.title}</Text>
             <Text style={styles.cardSub}>{card.sub}</Text>
           </TouchableOpacity>
         ))}
       </View>
-
       <TouchableOpacity style={styles.signOut} onPress={onSignOut}>
         <Text style={styles.signOutText}>Изход</Text>
       </TouchableOpacity>

@@ -8,7 +8,6 @@ export default function ExpensesScreen({ onBack }) {
       </TouchableOpacity>
       <Text style={styles.title}>💸 Разходи</Text>
       <Text style={styles.subtitle}>Кой колко дължи</Text>
-
       <View style={styles.summary}>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryVal}>0 лв.</Text>
@@ -25,13 +24,11 @@ export default function ExpensesScreen({ onBack }) {
           <Text style={styles.summaryLbl}>Дължат ти</Text>
         </View>
       </View>
-
       <View style={styles.empty}>
         <Text style={styles.emptyEmoji}>💰</Text>
         <Text style={styles.emptyTitle}>Няма разходи все още</Text>
-        <Text style={styles.emptyText}>Добави първия разход — гориво, нощувка, ресторант — и системата ще пресметне кой колко дължи.</Text>
+        <Text style={styles.emptyText}>Добави първия разход и системата ще пресметне кой колко дължи.</Text>
       </View>
-
       <TouchableOpacity style={styles.btn}>
         <Text style={styles.btnText}>+ Добави разход</Text>
       </TouchableOpacity>

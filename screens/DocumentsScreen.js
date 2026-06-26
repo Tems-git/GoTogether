@@ -8,13 +8,11 @@ export default function DocumentsScreen({ onBack }) {
       </TouchableOpacity>
       <Text style={styles.title}>📁 Документи</Text>
       <Text style={styles.subtitle}>Резервации, билети и застраховки</Text>
-
       <View style={styles.empty}>
         <Text style={styles.emptyEmoji}>📄</Text>
         <Text style={styles.emptyTitle}>Няма документи все още</Text>
         <Text style={styles.emptyText}>Качи резервация, билет или застраховка — всички в групата ще я видят веднага.</Text>
       </View>
-
       <TouchableOpacity style={styles.btn}>
         <Text style={styles.btnText}>+ Качи документ</Text>
       </TouchableOpacity>
