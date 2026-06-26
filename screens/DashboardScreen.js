@@ -2,16 +2,16 @@ import { StyleSheet, Text, View, TouchableOpacity } from "react-native";
 
 export default function DashboardScreen({ user, onSignOut, onAI, onDocuments, onExpenses }) {
   const cards = [
-    { emoji: "\uD83E\uDD16", title: "Planniraj s AI", sub: "Novo patuvane", onPress: onAI, color: "#E1F5EE" },
-    { emoji: "\uD83D\uDCC1", title: "Dokumenti", sub: "Rezervacii i bileti", onPress: onDocuments, color: "#E6F1FB" },
-    { emoji: "\uD83D\uDCB8", title: "Razchodi", sub: "Koj kolko dalzhi", onPress: onExpenses, color: "#FAEEDA" },
-    { emoji: "\uD83D\uDD17", title: "Pokani", sub: "Dobavi chlenove", onPress: null, color: "#FCEBEB" },
+    { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE" },
+    { emoji: "📁", title: "Документи", sub: "Резервации и билети", onPress: onDocuments, color: "#E6F1FB" },
+    { emoji: "💸", title: "Разходи", sub: "Кой колко дължи", onPress: onExpenses, color: "#FAEEDA" },
+    { emoji: "🔗", title: "Покани", sub: "Добави членове", onPress: null, color: "#FCEBEB" },
   ];
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.emoji}>\uD83E\uDDF3</Text>
+        <Text style={styles.emoji}>🧳</Text>
         <Text style={styles.title}>GoTogether</Text>
         <Text style={styles.email}>{user.email}</Text>
       </View>
@@ -25,7 +25,7 @@ export default function DashboardScreen({ user, onSignOut, onAI, onDocuments, on
         ))}
       </View>
       <TouchableOpacity style={styles.signOut} onPress={onSignOut}>
-        <Text style={styles.signOutText}>Izhod</Text>
+        <Text style={styles.signOutText}>Изход</Text>
       </TouchableOpacity>
     </View>
   );
