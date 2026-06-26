@@ -80,6 +80,7 @@ export default function App() {
         onBack={() => setScreen("dashboard")}
         tripId={activeTrip?.id}
         userId={user?.id}
+        devMode={DEV_MODE}
       />
     );
   }
@@ -90,6 +91,7 @@ export default function App() {
         onBack={() => setScreen("dashboard")}
         tripId={activeTrip?.id}
         userId={user?.id}
+        devMode={DEV_MODE}
       />
     );
   }
