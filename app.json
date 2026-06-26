@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "GoTogether",
+    "slug": "gotogether",
+    "version": "1.0.0",
+    "scheme": "gotogether",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.temsit.gotogether"
+    },
+    "android": {
+      "package": "com.temsit.gotogether"
+    }
+  }
+}
