@@ -9,14 +9,31 @@ import DocumentsScreen from "./screens/DocumentsScreen";
 import ExpensesScreen from "./screens/ExpensesScreen";
 import TripSetupScreen from "./screens/TripSetupScreen";
 
+// DEV MODE: прескача логин — само за тестване, изтрий преди production!
+const DEV_MODE = true;
+const DEV_TRIP = {
+  id: "00000000-0000-0000-0000-000000000001",
+  name: "Тест пътуване",
+  destination: "София",
+  invite_code: "DEVTST",
+  start_date: null,
+  end_date: null,
+};
+const DEV_USER = {
+  id: "00000000-0000-0000-0000-000000000002",
+  email: "dev@test.com",
+};
+
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [screen, setScreen] = useState("home");
-  const [activeTrip, setActiveTrip] = useState(null);
+  const [user, setUser] = useState(DEV_MODE ? DEV_USER : null);
+  const [loading, setLoading] = useState(!DEV_MODE);
+  const [screen, setScreen] = useState(DEV_MODE ? "dashboard" : "home");
+  const [activeTrip, setActiveTrip] = useState(DEV_MODE ? DEV_TRIP : null);
   const [tripLoading, setTripLoading] = useState(false);
 
   useEffect(() => {
+    if (DEV_MODE) return;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setLoading(false);
@@ -29,9 +46,8 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Зареждаме активното пътуване при логин
   useEffect(() => {
-    if (!user) { setActiveTrip(null); return; }
+    if (DEV_MODE || !user) { if (!DEV_MODE) setActiveTrip(null); return; }
     async function loadTrip() {
       setTripLoading(true);
       const { data } = await supabase
@@ -41,9 +57,7 @@ export default function App() {
         .order("joined_at", { ascending: false })
         .limit(1)
         .single();
-      if (data?.trips) {
-        setActiveTrip(data.trips);
-      }
+      if (data?.trips) setActiveTrip(data.trips);
       setTripLoading(false);
     }
     loadTrip();
@@ -82,8 +96,7 @@ export default function App() {
 
   if (screen === "signin") return <SignInScreen />;
 
-  if (user) {
-    // Потребителят е влязъл, но няма активно пътуване
+  if (screen === "dashboard" || user) {
     if (!activeTrip) {
       return (
         <TripSetupScreen
@@ -92,7 +105,6 @@ export default function App() {
         />
       );
     }
-
     return (
       <DashboardScreen
         user={user}
