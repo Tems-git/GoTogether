@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, ActivityIndicator, Alert, Linking, Modal,
+  ScrollView, ActivityIndicator, Alert, Linking,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../lib/supabase";
 
 const DOC_TYPES = {
@@ -28,7 +27,6 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [pickModalVisible, setPickModalVisible] = useState(false);
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
@@ -43,17 +41,24 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
-  async function uploadFile({ uri, name, mimeType }) {
-    setUploading(true);
+  async function handleUpload() {
     try {
-      const response = await fetch(uri);
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      const file = result.assets[0];
+      setUploading(true);
+
+      const response = await fetch(file.uri);
       const arrayBuffer = await response.arrayBuffer();
       const uint8 = new Uint8Array(arrayBuffer);
-      const path = `${tripId}/${Date.now()}_${name}`;
+      const path = `${tripId}/${Date.now()}_${file.name}`;
 
       const { error: uploadError } = await supabase.storage
         .from("documents")
-        .upload(path, uint8, { contentType: mimeType || "application/octet-stream" });
+        .upload(path, uint8, { contentType: file.mimeType || "application/octet-stream" });
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage
@@ -62,9 +67,9 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
       const { error: dbError } = await supabase.from("documents").insert({
         trip_id: tripId,
         uploaded_by: userId,
-        name,
+        name: file.name,
         file_url: publicUrl,
-        doc_type: guessDocType(name),
+        doc_type: guessDocType(file.name),
       });
       if (dbError) throw dbError;
       await fetchDocs();
@@ -72,51 +77,6 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
       Alert.alert("Грешка при качване", e.message);
     } finally {
       setUploading(false);
-    }
-  }
-
-  async function handlePickDocument() {
-    setPickModalVisible(false);
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        copyToCacheDirectory: true,
-      });
-      if (result.canceled) return;
-      const file = result.assets[0];
-      await uploadFile({ uri: file.uri, name: file.name, mimeType: file.mimeType });
-    } catch (e) {
-      Alert.alert("Грешка", e.message);
-    }
-  }
-
-  async function handlePickImage(source) {
-    setPickModalVisible(false);
-    try {
-      let result;
-      if (source === "camera") {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== "granted") return Alert.alert("Грешка", "Няма достъп до камерата");
-        result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ["images"],
-          quality: 0.8,
-        });
-      } else {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== "granted") return Alert.alert("Грешка", "Няма достъп до галерията");
-        result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ["images"],
-          quality: 0.8,
-          allowsMultipleSelection: false,
-        });
-      }
-      if (result.canceled) return;
-      const asset = result.assets[0];
-      const ext = asset.uri.split(".").pop() || "jpg";
-      const name = `photo_${Date.now()}.${ext}`;
-      await uploadFile({ uri: asset.uri, name, mimeType: `image/${ext}` });
-    } catch (e) {
-      Alert.alert("Грешка", e.message);
     }
   }
 
@@ -155,7 +115,7 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
         <View style={styles.empty}>
           <Text style={styles.emptyEmoji}>📄</Text>
           <Text style={styles.emptyTitle}>Няма документи все още</Text>
-          <Text style={styles.emptyText}>Качи резервация, билет или снимка — всички в групата ще я видят веднага.</Text>
+          <Text style={styles.emptyText}>Качи резервация, билет или застраховка — всички в групата ще я видят веднага.</Text>
         </View>
       ) : (
         <View style={styles.list}>
@@ -187,43 +147,11 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
         </View>
       )}
 
-      <TouchableOpacity style={styles.btn} onPress={() => setPickModalVisible(true)} disabled={uploading}>
+      <TouchableOpacity style={styles.btn} onPress={handleUpload} disabled={uploading}>
         {uploading
           ? <ActivityIndicator color="#fff" />
           : <Text style={styles.btnText}>+ Качи документ</Text>}
       </TouchableOpacity>
-
-      <Modal visible={pickModalVisible} animationType="slide" transparent>
-        <View style={styles.overlay}>
-          <View style={styles.modal}>
-            <Text style={styles.modalTitle}>Избери файл</Text>
-            <TouchableOpacity style={styles.pickOption} onPress={handlePickDocument}>
-              <Text style={styles.pickEmoji}>📄</Text>
-              <View>
-                <Text style={styles.pickLabel}>Файл / PDF</Text>
-                <Text style={styles.pickSub}>Резервация, билет, застраховка</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.pickOption} onPress={() => handlePickImage("gallery")}>
-              <Text style={styles.pickEmoji}>🖼️</Text>
-              <View>
-                <Text style={styles.pickLabel}>От галерията</Text>
-                <Text style={styles.pickSub}>Снимка от телефона</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.pickOption} onPress={() => handlePickImage("camera")}>
-              <Text style={styles.pickEmoji}>📷</Text>
-              <View>
-                <Text style={styles.pickLabel}>Снимай сега</Text>
-                <Text style={styles.pickSub}>Направи снимка с камерата</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setPickModalVisible(false)}>
-              <Text style={styles.cancelText}>Отказ</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
@@ -254,22 +182,4 @@ const styles = StyleSheet.create({
   iconBtnText: { fontSize: 18 },
   btn: { backgroundColor: "#1D9E75", padding: 16, borderRadius: 14, alignItems: "center" },
   btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modal: {
-    backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, gap: 4,
-  },
-  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#1a1a1a", marginBottom: 16 },
-  pickOption: {
-    flexDirection: "row", alignItems: "center", gap: 16,
-    padding: 16, borderRadius: 14, backgroundColor: "#F5F5F5", marginBottom: 8,
-  },
-  pickEmoji: { fontSize: 32 },
-  pickLabel: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
-  pickSub: { fontSize: 12, color: "#888", marginTop: 2 },
-  cancelBtn: {
-    marginTop: 8, padding: 16, borderRadius: 14,
-    borderWidth: 1, borderColor: "#ddd", alignItems: "center",
-  },
-  cancelText: { color: "#888", fontSize: 15 },
 });
