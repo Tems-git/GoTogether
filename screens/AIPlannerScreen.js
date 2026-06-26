@@ -1,6 +1,5 @@
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, ActivityIndicator } from "react-native";
 import { useState } from "react";
-import Markdown from "react-native-markdown-display";
 
 const ANTHROPIC_KEY = "ANTHROPIC_KEY_HERE";
 
@@ -65,7 +64,7 @@ export default function AIPlannerScreen({ onBack }) {
         </TouchableOpacity>
         <Text style={styles.planTitle}>🗺 Твоят план</Text>
         <View style={styles.planBox}>
-          <Markdown style={markdownStyles}>{plan}</Markdown>
+          <Text style={styles.planText}>{plan}</Text>
         </View>
         <TouchableOpacity style={styles.btn} onPress={() => setPlan(null)}>
           <Text style={styles.btnText}>Нов план</Text>
@@ -138,13 +137,5 @@ const styles = StyleSheet.create({
   btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
   planTitle: { fontSize: 22, fontWeight: "bold", color: "#1a1a1a", marginBottom: 16 },
   planBox: { backgroundColor: "#fff", borderRadius: 16, padding: 20, marginBottom: 20 },
+  planText: { fontSize: 14, color: "#333", lineHeight: 22 },
 });
-
-const markdownStyles = {
-  heading1: { fontSize: 20, fontWeight: "bold", color: "#1D9E75", marginBottom: 8, marginTop: 16 },
-  heading2: { fontSize: 17, fontWeight: "bold", color: "#085041", marginBottom: 6, marginTop: 14 },
-  heading3: { fontSize: 15, fontWeight: "600", color: "#333", marginBottom: 4, marginTop: 10 },
-  body: { fontSize: 14, color: "#333", lineHeight: 22 },
-  strong: { fontWeight: "bold", color: "#1a1a1a" },
-  hr: { backgroundColor: "#eee", height: 1, marginVertical: 12 },
-};
