@@ -7,10 +7,10 @@ import { supabase } from "../lib/supabase";
 
 const OTP_LENGTH = 6;
 
-export default function SignInScreen() {
+export default function SignInScreen({ onSignIn }) {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
-  const [step, setStep] = useState("email"); // "email" | "otp"
+  const [step, setStep] = useState("email");
   const [loading, setLoading] = useState(false);
 
   async function handleSendOtp() {
@@ -31,7 +31,7 @@ export default function SignInScreen() {
   async function handleVerifyOtp() {
     if (otp.length !== OTP_LENGTH) return Alert.alert("Грешка", `Въведи ${OTP_LENGTH}-цифрения код`);
     setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({
+    const { data, error } = await supabase.auth.verifyOtp({
       email: email.trim().toLowerCase(),
       token: otp.trim(),
       type: "email",
@@ -39,6 +39,11 @@ export default function SignInScreen() {
     setLoading(false);
     if (error) {
       Alert.alert("Грешка", "Невалиден или изтекъл код. Опитай отново.");
+      return;
+    }
+    // Ако onAuthStateChange не хване — викаме onSignIn ръчно
+    if (data?.user && onSignIn) {
+      onSignIn(data.user);
     }
   }
 
