@@ -5,6 +5,8 @@ import {
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
 
+const OTP_LENGTH = 8; // Supabase праща 8-цифрен код по подразбиране
+
 export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -27,7 +29,7 @@ export default function SignInScreen() {
   }
 
   async function handleVerifyOtp() {
-    if (otp.length !== 6) return Alert.alert("Грешка", "Въведи 6-цифрения код");
+    if (otp.length !== OTP_LENGTH) return Alert.alert("Грешка", `Въведи ${OTP_LENGTH}-цифрения код`);
     setLoading(true);
     const { error } = await supabase.auth.verifyOtp({
       email: email.trim().toLowerCase(),
@@ -38,7 +40,6 @@ export default function SignInScreen() {
     if (error) {
       Alert.alert("Грешка", "Невалиден или изтекъл код. Опитай отново.");
     }
-    // При успех onAuthStateChange в App.js ще хване сесията автоматично
   }
 
   if (step === "otp") {
@@ -47,16 +48,16 @@ export default function SignInScreen() {
         <Text style={styles.emoji}>📬</Text>
         <Text style={styles.title}>Въведи кода</Text>
         <Text style={styles.subtitle}>
-          Пратихме 6-цифрен код на{"\n"}{email}
+          Пратихме {OTP_LENGTH}-цифрен код на{"\n"}{email}
         </Text>
         <TextInput
           style={[styles.input, styles.otpInput]}
-          placeholder="000000"
+          placeholder={"0".repeat(OTP_LENGTH)}
           placeholderTextColor="#aaa"
           value={otp}
           onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, ""))}
           keyboardType="number-pad"
-          maxLength={6}
+          maxLength={OTP_LENGTH}
           autoFocus
         />
         <TouchableOpacity style={styles.btn} onPress={handleVerifyOtp} disabled={loading}>
@@ -78,7 +79,7 @@ export default function SignInScreen() {
     <View style={styles.container}>
       <Text style={styles.emoji}>🧳</Text>
       <Text style={styles.title}>Влез в GoTogether</Text>
-      <Text style={styles.subtitle}>Въведи имейла си и ще получиш 6-цифрен код за вход</Text>
+      <Text style={styles.subtitle}>Въведи имейла си и ще получиш код за вход</Text>
       <TextInput
         style={styles.input}
         placeholder="твоя@имейл.com"
@@ -111,7 +112,7 @@ const styles = StyleSheet.create({
     borderRadius: 14, fontSize: 16, marginBottom: 12, color: "#1a1a1a",
   },
   otpInput: {
-    fontSize: 32, fontWeight: "bold", letterSpacing: 12,
+    fontSize: 28, fontWeight: "bold", letterSpacing: 8,
     textAlign: "center", paddingVertical: 20,
   },
   btn: {
