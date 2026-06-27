@@ -312,7 +312,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
       <Modal visible={settleVisible} animationType="fade" transparent>
         <View style={styles.overlay}>
-          <View style={styles.modal}>
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}>
             <Text style={styles.modalTitle}>⚖️ Как да се изравним</Text>
             <Text style={styles.settleSubtitle}>Натисни ✓ когато преводът е направен:</Text>
             {settlements.map((s, i) => (
@@ -337,7 +337,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             <TouchableOpacity style={[styles.btnSave, { marginTop: 8 }]} onPress={() => setSettleVisible(false)}>
               <Text style={styles.btnSaveText}>Затвори</Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </ScrollView>
@@ -380,6 +380,8 @@ const styles = StyleSheet.create({
   btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 8 },
+  modalScroll: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "80%" },
+  modalScrollContent: { padding: 24, gap: 8, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
   label: { fontSize: 13, fontWeight: "600", color: "#555", marginTop: 6 },
   input: { backgroundColor: "#F5F5F5", borderRadius: 10, padding: 12, fontSize: 16, color: "#1a1a1a" },
