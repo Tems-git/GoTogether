@@ -12,7 +12,6 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
   const [inviteCode, setInviteCode] = useState(pendingInviteCode || "");
   const [loading, setLoading] = useState(false);
 
-  // Ако идва с pending invite код — автоматично влизаме в join mode
   useEffect(() => {
     if (pendingInviteCode) {
       setMode("join");
@@ -27,7 +26,7 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
       .eq("id", user.id)
       .maybeSingle();
     if (!data) {
-      await supabase.from("profiles").upsert({
+      await supabase.from("profiles").insert({
         id: user.id,
         display_name: user.email.split("@")[0],
       });
@@ -71,6 +70,8 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
     setLoading(true);
     try {
       await ensureProfile();
+
+      // Намираме пътуването по invite код
       const { data: trip, error } = await supabase
         .from("trips")
         .select()
@@ -78,7 +79,22 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
         .maybeSingle();
       if (error || !trip) throw new Error("Невалиден код за покана");
 
-      const { error: joinError } = await supabase.from("trip_members").upsert({
+      // Проверяваме дали вече е член
+      const { data: existing } = await supabase
+        .from("trip_members")
+        .select("id")
+        .eq("trip_id", trip.id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (existing) {
+        // Вече е член — просто влизаме
+        onTripReady(trip);
+        return;
+      }
+
+      // Добавяме като нов член
+      const { error: joinError } = await supabase.from("trip_members").insert({
         trip_id: trip.id,
         user_id: user.id,
         display_name: user.email.split("@")[0],
