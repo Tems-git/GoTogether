@@ -11,7 +11,6 @@ const DEV_MEMBERS = [
 ];
 
 function calcSettlements(members, expenses, splits) {
-  // Само неизравнени splits
   const unsettled = splits.filter((s) => !s.is_settled);
   const balance = {};
   members.forEach((m) => (balance[m.user_id] = 0));
@@ -58,7 +57,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const [loading, setLoading] = useState(!devMode);
   const [modalVisible, setModalVisible] = useState(false);
   const [settleVisible, setSettleVisible] = useState(false);
-  const [settling, setSettling] = useState(null); // index на settlement в процес
+  const [settling, setSettling] = useState(null);
 
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
@@ -93,7 +92,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   async function handleMarkSettled(settlement, index) {
-    // Маркираме всички splits от "from" потребителя като изравнени
     Alert.alert(
       "Изравняване",
       `${memberName(settlement.from)} е платил ${settlement.amount.toFixed(2)} лв. на ${memberName(settlement.to)}?`,
@@ -103,9 +101,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
           text: "Да, изравнено!", onPress: async () => {
             setSettling(index);
             try {
-              // Намираме expense IDs за това пътуване
               const expenseIds = expenses.map((e) => e.id);
-              // Маркираме splits на from потребителя като settled
               const splitsToSettle = splits.filter(
                 (s) => s.user_id === settlement.from &&
                   expenseIds.includes(s.expense_id) &&
@@ -119,9 +115,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   .eq("user_id", settlement.from);
               }
               await fetchAll();
-              if (splits.filter((s) => !s.is_settled).length === 0) {
-                setSettleVisible(false);
-              }
             } catch (e) {
               Alert.alert("Грешка", e.message);
             } finally {
@@ -324,7 +317,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             <Text style={styles.settleSubtitle}>Натисни ✓ когато преводът е направен:</Text>
             {settlements.map((s, i) => (
               <View key={i} style={styles.settleRow}>
-                <View style={styles.settleInfo}>
+                <View style={styles.settleTop}>
                   <Text style={styles.settleFrom}>{memberName(s.from)}</Text>
                   <Text style={styles.settleArrow}>→</Text>
                   <Text style={styles.settleTo}>{memberName(s.to)}</Text>
@@ -336,12 +329,12 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   disabled={settling === i}
                 >
                   {settling === i
-                    ? <ActivityIndicator size="small" color="#1D9E75" />
-                    : <Text style={styles.settleBtnText}>✓</Text>}
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={styles.settleBtnText}>✓ Маркирай като платено</Text>}
                 </TouchableOpacity>
               </View>
             ))}
-            <TouchableOpacity style={styles.btnSave} onPress={() => setSettleVisible(false)}>
+            <TouchableOpacity style={[styles.btnSave, { marginTop: 8 }]} onPress={() => setSettleVisible(false)}>
               <Text style={styles.btnSaveText}>Затвори</Text>
             </TouchableOpacity>
           </View>
@@ -402,12 +395,12 @@ const styles = StyleSheet.create({
   btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#1D9E75", alignItems: "center" },
   btnSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
   settleSubtitle: { fontSize: 14, color: "#888", marginBottom: 12 },
-  settleRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#F5F5F5", borderRadius: 10, marginBottom: 8, overflow: "hidden" },
-  settleInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, padding: 12 },
-  settleFrom: { fontWeight: "600", color: "#e74c3c", flex: 1 },
+  settleRow: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 12, marginBottom: 10 },
+  settleTop: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
+  settleFrom: { fontWeight: "600", color: "#e74c3c", flex: 1, fontSize: 13 },
   settleArrow: { color: "#888" },
-  settleTo: { fontWeight: "600", color: "#1D9E75", flex: 1 },
-  settleAmt: { fontWeight: "bold", color: "#1a1a1a" },
-  settleBtn: { backgroundColor: "#1D9E75", paddingHorizontal: 16, paddingVertical: 12, justifyContent: "center", alignItems: "center" },
-  settleBtnText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  settleTo: { fontWeight: "600", color: "#1D9E75", flex: 1, fontSize: 13 },
+  settleAmt: { fontWeight: "bold", color: "#1a1a1a", fontSize: 13 },
+  settleBtn: { backgroundColor: "#1D9E75", padding: 12, borderRadius: 10, alignItems: "center" },
+  settleBtnText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
 });
