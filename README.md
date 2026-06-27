@@ -8,6 +8,7 @@
 - Supabase (PostgreSQL + Auth + Storage)
 - Claude API (Anthropic) — AI Trip Planner
 - Resend — SMTP за OTP имейли
+- EAS Update — публикуване без App Store
 
 ## База данни — 6 таблици
 
@@ -17,9 +18,9 @@ profiles, trips, trip_members, expenses, expense_splits, documents
 
 ```
 GoTogether/
-  ├── App.js                  — навигация, сесийно управление, trip зареждане
+  ├── App.js                  — навигация, сесийно управление, trip зареждане, invite flow
   ├── app.json                — Expo конфигурация + permissions
-  ├── eas.json                — EAS Build конфигурация
+  ├── eas.json                — EAS Build/Update конфигурация
   ├── lib/
   │   └── supabase.js         — връзка с Supabase
   └── screens/
@@ -44,6 +45,14 @@ npx expo start --tunnel
 ```powershell
 (Get-Content lib/supabase.js -Raw) -replace 'SUPABASE_KEY_HERE', 'твоят_ключ' | Set-Content lib/supabase.js -Encoding utf8
 ```
+
+## Споделяне за тестване
+
+Изпрати на тестерите:
+1. Инсталирай **Expo Go** от App Store / Play Store
+2. Отвори линка: `exp://mb67r-a-temelko-8081.exp.direct` (валиден докато tunnel върви)
+3. Влез с имейл → въведи OTP кода
+4. Присъедини се с invite код на пътуването
 
 ## Дневник
 
@@ -78,12 +87,23 @@ npx expo start --tunnel
 - Първо реално пътуване създадено и тествано в базата
 - Разходи добавени и изравняването тествано
 
+### Ден 3 — 27 юни 2026
+- RLS върнат правилно за всички таблици с SECURITY DEFINER функция
+- Home екран — нов бутон "Имам покана" с invite код flow преди логин
+- pendingInviteCode — запазва се и се подава автоматично след логин
+- TripSetupScreen — автоматично join mode при pendingInviteCode
+- trip_members SELECT политика — разширена за проверка преди присъединяване
+- trips SELECT политика — позволява търсене по invite_code без членство
+- Resend домейн wegotogether.xyz верифициран — OTP до всякакви имейли
+- EAS Update публикувано на branch main — споделяне без tunnel
+- EAS Secrets — SUPABASE_ANON_KEY и ANTHROPIC_API_KEY добавени
+- Първи реален multi-user тест — двама потребители в едно пътуване
+
 ### Следващо
-- RLS върнат правилно (сега е изключен за тестване)
-- Home екран — "Имам покана" директно без логин
-- Expo публикуване (eas update) за споделяне с колаборатора Спас
-- Верификация на домейн в Resend за изпращане до всякакви имейли
+- Display name при регистрация — потребителят въвежда истинско име
+- Смяна на активно пътуване — превключване между няколко пътувания
 - Apple Developer акаунт → iOS build → галерия и камера в Documents
+- Push notifications — известия при нов разход или документ
 
 ## Автор
 
