@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   StyleSheet, Text, View, TextInput,
   TouchableOpacity, ScrollView, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard,
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
@@ -10,7 +11,9 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
   const [name, setName] = useState("");
   const [destination, setDestination] = useState("");
   const [inviteCode, setInviteCode] = useState(pendingInviteCode || "");
+  const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pendingTrip, setPendingTrip] = useState(null); // trip чака потвърждение на името
 
   useEffect(() => {
     if (pendingInviteCode) {
@@ -19,25 +22,27 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
     }
   }, [pendingInviteCode]);
 
-  async function ensureProfile() {
-    const { data } = await supabase
+  async function getOrCreateProfile() {
+    const { data: profile } = await supabase
       .from("profiles")
-      .select("id")
+      .select("id, display_name")
       .eq("id", user.id)
       .maybeSingle();
-    if (!data) {
-      await supabase.from("profiles").insert({
-        id: user.id,
-        display_name: user.email.split("@")[0],
-      });
-    }
+    return profile;
   }
 
   async function handleCreate() {
     if (!name.trim()) return Alert.alert("Грешка", "Въведи име на пътуването");
     setLoading(true);
     try {
-      await ensureProfile();
+      const profile = await getOrCreateProfile();
+      if (!profile) {
+        await supabase.from("profiles").insert({
+          id: user.id,
+          display_name: user.email.split("@")[0],
+        });
+      }
+
       const { data: trip, error } = await supabase
         .from("trips")
         .insert({
@@ -49,10 +54,11 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
         .single();
       if (error) throw error;
 
+      const memberName = profile?.display_name || user.email.split("@")[0];
       const { error: memberError } = await supabase.from("trip_members").insert({
         trip_id: trip.id,
         user_id: user.id,
-        display_name: user.email.split("@")[0],
+        display_name: memberName,
         role: "owner",
       });
       if (memberError) throw memberError;
@@ -69,9 +75,6 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
     if (!inviteCode.trim()) return Alert.alert("Грешка", "Въведи код за покана");
     setLoading(true);
     try {
-      await ensureProfile();
-
-      // Намираме пътуването по invite код
       const { data: trip, error } = await supabase
         .from("trips")
         .select()
@@ -82,22 +85,33 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
       // Проверяваме дали вече е член
       const { data: existing } = await supabase
         .from("trip_members")
-        .select("id")
+        .select("user_id, display_name")
         .eq("trip_id", trip.id)
         .eq("user_id", user.id)
         .maybeSingle();
 
       if (existing) {
-        // Вече е член — просто влизаме
         onTripReady(trip);
         return;
       }
 
-      // Добавяме като нов член
+      // Проверяваме дали има профил с истинско име
+      const profile = await getOrCreateProfile();
+      const defaultName = user.email.split("@")[0];
+      const hasRealName = profile?.display_name && profile.display_name !== defaultName;
+
+      if (!hasRealName) {
+        // Питаме за истинско име преди да добавим
+        setPendingTrip(trip);
+        setLoading(false);
+        return;
+      }
+
+      // Директно присъединяване
       const { error: joinError } = await supabase.from("trip_members").insert({
         trip_id: trip.id,
         user_id: user.id,
-        display_name: user.email.split("@")[0],
+        display_name: profile.display_name,
         role: "member",
       });
       if (joinError) throw joinError;
@@ -107,6 +121,63 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleConfirmName() {
+    const trimmedName = displayName.trim();
+    if (!trimmedName) return Alert.alert("Грешка", "Въведи твоето име");
+    setLoading(true);
+    try {
+      // Запазваме профила
+      await supabase.from("profiles").upsert({
+        id: user.id,
+        display_name: trimmedName,
+      });
+
+      // Присъединяваме към пътуването
+      const { error: joinError } = await supabase.from("trip_members").insert({
+        trip_id: pendingTrip.id,
+        user_id: user.id,
+        display_name: trimmedName,
+        role: "member",
+      });
+      if (joinError) throw joinError;
+      onTripReady(pendingTrip);
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Стъпка за въвеждане на име преди присъединяване
+  if (pendingTrip) {
+    return (
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.container}>
+            <Text style={styles.emoji}>👋</Text>
+            <Text style={styles.title}>Как се казваш?</Text>
+            <Text style={styles.subtitle}>
+              Членовете на „{pendingTrip.name}" ще те виждат с това име
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Напр. Спас"
+              placeholderTextColor="#bbb"
+              value={displayName}
+              onChangeText={setDisplayName}
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleConfirmName}
+            />
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleConfirmName} disabled={loading}>
+              {loading ? <ActivityIndicator color="#1D9E75" /> : <Text style={styles.btnPrimaryText}>Присъедини се →</Text>}
+            </TouchableOpacity>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+    );
   }
 
   return (
@@ -180,22 +251,23 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: "#1D9E75" },
   container: { flex: 1, backgroundColor: "#1D9E75" },
   scroll: { padding: 24, paddingTop: 80, alignItems: "center", minHeight: "100%" },
-  emoji: { fontSize: 64, marginBottom: 16 },
-  title: { fontSize: 28, fontWeight: "bold", color: "#fff", marginBottom: 8 },
-  subtitle: { fontSize: 15, color: "#E1F5EE", textAlign: "center", marginBottom: 40, lineHeight: 22 },
+  emoji: { fontSize: 64, marginBottom: 16, textAlign: "center" },
+  title: { fontSize: 28, fontWeight: "bold", color: "#fff", marginBottom: 8, textAlign: "center" },
+  subtitle: { fontSize: 15, color: "#E1F5EE", textAlign: "center", marginBottom: 40, lineHeight: 22, paddingHorizontal: 24 },
   buttons: { width: "100%", gap: 12 },
   form: { width: "100%", gap: 8 },
   label: { fontSize: 13, color: "#E1F5EE", fontWeight: "600", marginTop: 8, marginBottom: 4 },
   input: {
     backgroundColor: "#fff", borderRadius: 12, padding: 14,
-    fontSize: 16, color: "#1a1a1a", marginBottom: 8,
+    fontSize: 16, color: "#1a1a1a", marginBottom: 8, width: "100%",
   },
   codeInput: { fontSize: 24, fontWeight: "bold", letterSpacing: 8, textAlign: "center" },
   btnPrimary: {
     backgroundColor: "#fff", padding: 16, borderRadius: 14,
-    alignItems: "center", marginTop: 8,
+    alignItems: "center", marginTop: 8, width: "100%",
   },
   btnPrimaryText: { color: "#1D9E75", fontSize: 16, fontWeight: "bold" },
   btnSecondary: {
