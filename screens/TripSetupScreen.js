@@ -1,19 +1,26 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   StyleSheet, Text, View, TextInput,
   TouchableOpacity, ScrollView, ActivityIndicator, Alert,
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
-export default function TripSetupScreen({ user, onTripReady }) {
+export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }) {
   const [mode, setMode] = useState(null);
   const [name, setName] = useState("");
   const [destination, setDestination] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
+  const [inviteCode, setInviteCode] = useState(pendingInviteCode || "");
   const [loading, setLoading] = useState(false);
 
+  // Ако идва с pending invite код — автоматично влизаме в join mode
+  useEffect(() => {
+    if (pendingInviteCode) {
+      setMode("join");
+      setInviteCode(pendingInviteCode);
+    }
+  }, [pendingInviteCode]);
+
   async function ensureProfile() {
-    // maybeSingle() не хвърля грешка при липса на резултат
     const { data } = await supabase
       .from("profiles")
       .select("id")
@@ -145,9 +152,11 @@ export default function TripSetupScreen({ user, onTripReady }) {
           <TouchableOpacity style={styles.btnPrimary} onPress={handleJoin} disabled={loading}>
             {loading ? <ActivityIndicator color="#1D9E75" /> : <Text style={styles.btnPrimaryText}>Присъедини се</Text>}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.back} onPress={() => setMode(null)}>
-            <Text style={styles.backText}>← Назад</Text>
-          </TouchableOpacity>
+          {!pendingInviteCode && (
+            <TouchableOpacity style={styles.back} onPress={() => setMode(null)}>
+              <Text style={styles.backText}>← Назад</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </ScrollView>
