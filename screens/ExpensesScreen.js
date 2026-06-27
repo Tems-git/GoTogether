@@ -11,10 +11,12 @@ const DEV_MEMBERS = [
 ];
 
 function calcSettlements(members, expenses, splits) {
+  // Само неизравнени splits
+  const unsettled = splits.filter((s) => !s.is_settled);
   const balance = {};
   members.forEach((m) => (balance[m.user_id] = 0));
   expenses.forEach((exp) => {
-    const expSplits = splits.filter((s) => s.expense_id === exp.id);
+    const expSplits = unsettled.filter((s) => s.expense_id === exp.id);
     expSplits.forEach((s) => {
       if (s.user_id === exp.paid_by) return;
       balance[exp.paid_by] = (balance[exp.paid_by] || 0) + Number(s.share);
@@ -56,6 +58,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const [loading, setLoading] = useState(!devMode);
   const [modalVisible, setModalVisible] = useState(false);
   const [settleVisible, setSettleVisible] = useState(false);
+  const [settling, setSettling] = useState(null); // index на settlement в процес
 
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
@@ -64,7 +67,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const [saving, setSaving] = useState(false);
 
   const fetchAll = useCallback(async () => {
-    if (devMode) return; // в DEV_MODE не викаме Supabase
+    if (devMode) return;
     setLoading(true);
     try {
       const { data: mData } = await supabase
@@ -89,30 +92,48 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // DEV_MODE: запазва локално в state без Supabase
-  function handleSaveDev() {
-    if (!desc.trim()) return Alert.alert("Грешка", "Въведи описание");
-    const amt = parseFloat(amount.replace(",", "."));
-    if (isNaN(amt) || amt <= 0) return Alert.alert("Грешка", "Въведи валидна сума");
-    const share = parseFloat((amt / members.length).toFixed(2));
-    const fakeId = `dev-${Date.now()}`;
-    const newExp = {
-      id: fakeId, trip_id: tripId, paid_by: paidBy,
-      amount: amt, description: desc.trim(), category,
-      split_type: "equal", created_at: new Date().toISOString(),
-    };
-    const newSplits = members.map((m) => ({
-      id: `split-${m.user_id}-${fakeId}`,
-      expense_id: fakeId, user_id: m.user_id, share, is_settled: false,
-    }));
-    setExpenses((prev) => [newExp, ...prev]);
-    setSplits((prev) => [...prev, ...newSplits]);
-    setModalVisible(false);
-    setDesc(""); setAmount(""); setPaidBy(userId); setCategory("other");
+  async function handleMarkSettled(settlement, index) {
+    // Маркираме всички splits от "from" потребителя като изравнени
+    Alert.alert(
+      "Изравняване",
+      `${memberName(settlement.from)} е платил ${settlement.amount.toFixed(2)} лв. на ${memberName(settlement.to)}?`,
+      [
+        { text: "Отказ", style: "cancel" },
+        {
+          text: "Да, изравнено!", onPress: async () => {
+            setSettling(index);
+            try {
+              // Намираме expense IDs за това пътуване
+              const expenseIds = expenses.map((e) => e.id);
+              // Маркираме splits на from потребителя като settled
+              const splitsToSettle = splits.filter(
+                (s) => s.user_id === settlement.from &&
+                  expenseIds.includes(s.expense_id) &&
+                  !s.is_settled
+              );
+              if (splitsToSettle.length > 0) {
+                await supabase
+                  .from("expense_splits")
+                  .update({ is_settled: true })
+                  .in("expense_id", splitsToSettle.map((s) => s.expense_id))
+                  .eq("user_id", settlement.from);
+              }
+              await fetchAll();
+              if (splits.filter((s) => !s.is_settled).length === 0) {
+                setSettleVisible(false);
+              }
+            } catch (e) {
+              Alert.alert("Грешка", e.message);
+            } finally {
+              setSettling(null);
+            }
+          }
+        },
+      ]
+    );
   }
 
   async function handleSave() {
-    if (devMode) return handleSaveDev();
     if (!desc.trim()) return Alert.alert("Грешка", "Въведи описание");
     const amt = parseFloat(amount.replace(",", "."));
     if (isNaN(amt) || amt <= 0) return Alert.alert("Грешка", "Въведи валидна сума");
@@ -139,21 +160,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     }
   }
 
-  function handleDeleteDev(expId) {
-    Alert.alert("Изтриване", "Сигурен ли си?", [
-      { text: "Отказ", style: "cancel" },
-      {
-        text: "Изтрий", style: "destructive",
-        onPress: () => {
-          setExpenses((prev) => prev.filter((e) => e.id !== expId));
-          setSplits((prev) => prev.filter((s) => s.expense_id !== expId));
-        },
-      },
-    ]);
-  }
-
   async function handleDelete(expId) {
-    if (devMode) return handleDeleteDev(expId);
     Alert.alert("Изтриване", "Сигурен ли си?", [
       { text: "Отказ", style: "cancel" },
       {
@@ -167,11 +174,14 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     ]);
   }
 
+  const unsettledSplits = splits.filter((s) => !s.is_settled);
   const total = expenses.reduce((s, e) => s + Number(e.amount), 0);
-  const myShare = splits.filter((s) => s.user_id === userId).reduce((s, x) => s + Number(x.share), 0);
+  const myUnsettledShare = unsettledSplits.filter((s) => s.user_id === userId).reduce((s, x) => s + Number(x.share), 0);
   const iPaid = expenses.filter((e) => e.paid_by === userId).reduce((s, e) => s + Number(e.amount), 0);
-  const iOwe = Math.max(0, myShare - iPaid);
-  const owedToMe = Math.max(0, iPaid - myShare);
+  const mySettledShare = splits.filter((s) => s.user_id === userId && s.is_settled).reduce((s, x) => s + Number(x.share), 0);
+  const iOwe = Math.max(0, myUnsettledShare - (iPaid - mySettledShare));
+  const owedToMe = Math.max(0, (iPaid - mySettledShare) - myUnsettledShare);
+
   const settlements = calcSettlements(members, expenses, splits);
   const memberName = (uid) => members.find((m) => m.user_id === uid)?.display_name || "Непознат";
   const catInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[4];
@@ -183,13 +193,15 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}`;
   }
 
+  const allSettled = settlements.length === 0 && expenses.length > 0;
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
       <TouchableOpacity onPress={onBack} style={styles.back}>
         <Text style={styles.backText}>← Назад</Text>
       </TouchableOpacity>
       <Text style={styles.title}>💸 Разходи</Text>
-      <Text style={styles.subtitle}>Кой колко дължи{devMode ? "  🛠 DEV" : ""}</Text>
+      <Text style={styles.subtitle}>Кой колко дължи</Text>
 
       <View style={styles.summary}>
         <View style={styles.summaryItem}>
@@ -207,6 +219,12 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
           <Text style={styles.summaryLbl}>Дължат ти</Text>
         </View>
       </View>
+
+      {allSettled && (
+        <View style={styles.settledBanner}>
+          <Text style={styles.settledBannerText}>✅ Всички сметки са изравнени!</Text>
+        </View>
+      )}
 
       {settlements.length > 0 && (
         <TouchableOpacity style={styles.settleCard} onPress={() => setSettleVisible(true)}>
@@ -227,16 +245,18 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         <View style={styles.list}>
           {expenses.map((exp) => {
             const cat = catInfo(exp.category);
+            const expSplits = splits.filter((s) => s.expense_id === exp.id);
+            const isFullySettled = expSplits.length > 0 && expSplits.every((s) => s.is_settled);
             return (
-              <View key={exp.id} style={styles.expRow}>
-                <Text style={styles.expEmoji}>{cat.emoji}</Text>
+              <View key={exp.id} style={[styles.expRow, isFullySettled && styles.expRowSettled]}>
+                <Text style={styles.expEmoji}>{isFullySettled ? "✅" : cat.emoji}</Text>
                 <View style={styles.expInfo}>
-                  <Text style={styles.expDesc}>{exp.description}</Text>
+                  <Text style={[styles.expDesc, isFullySettled && styles.expDescSettled]}>{exp.description}</Text>
                   <Text style={styles.expMeta}>{cat.label} · {formatDate(exp.created_at)} · платил {memberName(exp.paid_by)}</Text>
                 </View>
                 <View style={styles.expRight}>
-                  <Text style={styles.expAmount}>{Number(exp.amount).toFixed(2)} лв.</Text>
-                  {exp.paid_by === userId && (
+                  <Text style={[styles.expAmount, isFullySettled && { color: "#aaa" }]}>{Number(exp.amount).toFixed(2)} лв.</Text>
+                  {exp.paid_by === userId && !isFullySettled && (
                     <TouchableOpacity onPress={() => handleDelete(exp.id)}>
                       <Text style={styles.deleteBtn}>🗑</Text>
                     </TouchableOpacity>
@@ -301,13 +321,24 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         <View style={styles.overlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>⚖️ Как да се изравним</Text>
-            <Text style={styles.settleSubtitle}>Минимален брой преводи:</Text>
+            <Text style={styles.settleSubtitle}>Натисни ✓ когато преводът е направен:</Text>
             {settlements.map((s, i) => (
               <View key={i} style={styles.settleRow}>
-                <Text style={styles.settleFrom}>{memberName(s.from)}</Text>
-                <Text style={styles.settleArrow}>→</Text>
-                <Text style={styles.settleTo}>{memberName(s.to)}</Text>
-                <Text style={styles.settleAmt}>{s.amount.toFixed(2)} лв.</Text>
+                <View style={styles.settleInfo}>
+                  <Text style={styles.settleFrom}>{memberName(s.from)}</Text>
+                  <Text style={styles.settleArrow}>→</Text>
+                  <Text style={styles.settleTo}>{memberName(s.to)}</Text>
+                  <Text style={styles.settleAmt}>{s.amount.toFixed(2)} лв.</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.settleBtn}
+                  onPress={() => handleMarkSettled(s, i)}
+                  disabled={settling === i}
+                >
+                  {settling === i
+                    ? <ActivityIndicator size="small" color="#1D9E75" />
+                    : <Text style={styles.settleBtnText}>✓</Text>}
+                </TouchableOpacity>
               </View>
             ))}
             <TouchableOpacity style={styles.btnSave} onPress={() => setSettleVisible(false)}>
@@ -332,6 +363,8 @@ const styles = StyleSheet.create({
   summaryVal: { fontSize: 16, fontWeight: "bold", color: "#fff" },
   summaryLbl: { fontSize: 11, color: "#E1F5EE", marginTop: 4 },
   divider: { width: 0.5, backgroundColor: "rgba(255,255,255,0.3)" },
+  settledBanner: { backgroundColor: "#E8F8F0", borderRadius: 12, padding: 14, marginBottom: 16, alignItems: "center" },
+  settledBannerText: { color: "#1D9E75", fontWeight: "bold", fontSize: 15 },
   settleCard: { backgroundColor: "#fff", borderRadius: 14, padding: 16, marginBottom: 16, borderLeftWidth: 4, borderLeftColor: "#1D9E75" },
   settleTitle: { fontSize: 15, fontWeight: "bold", color: "#1a1a1a" },
   settleHint: { fontSize: 12, color: "#888", marginTop: 4 },
@@ -341,9 +374,11 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: "#888", textAlign: "center", lineHeight: 20 },
   list: { gap: 10, marginBottom: 20 },
   expRow: { backgroundColor: "#fff", borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  expRowSettled: { backgroundColor: "#F9F9F9", opacity: 0.7 },
   expEmoji: { fontSize: 26 },
   expInfo: { flex: 1 },
   expDesc: { fontSize: 14, fontWeight: "600", color: "#1a1a1a" },
+  expDescSettled: { textDecorationLine: "line-through", color: "#aaa" },
   expMeta: { fontSize: 11, color: "#888", marginTop: 2 },
   expRight: { alignItems: "flex-end", gap: 4 },
   expAmount: { fontSize: 15, fontWeight: "bold", color: "#1D9E75" },
@@ -367,9 +402,12 @@ const styles = StyleSheet.create({
   btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#1D9E75", alignItems: "center" },
   btnSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
   settleSubtitle: { fontSize: 14, color: "#888", marginBottom: 12 },
-  settleRow: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#F5F5F5", padding: 12, borderRadius: 10, marginBottom: 8 },
+  settleRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#F5F5F5", borderRadius: 10, marginBottom: 8, overflow: "hidden" },
+  settleInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, padding: 12 },
   settleFrom: { fontWeight: "600", color: "#e74c3c", flex: 1 },
   settleArrow: { color: "#888" },
   settleTo: { fontWeight: "600", color: "#1D9E75", flex: 1 },
   settleAmt: { fontWeight: "bold", color: "#1a1a1a" },
+  settleBtn: { backgroundColor: "#1D9E75", paddingHorizontal: 16, paddingVertical: 12, justifyContent: "center", alignItems: "center" },
+  settleBtnText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
 });
