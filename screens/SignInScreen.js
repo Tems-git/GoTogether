@@ -1,6 +1,7 @@
 import {
   StyleSheet, Text, View, TouchableOpacity,
   TextInput, Alert, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ScrollView, TouchableWithoutFeedback, Keyboard,
 } from "react-native";
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
@@ -11,21 +12,12 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [step, setStep] = useState("email"); // "email" | "otp" | "name"
+  const [step, setStep] = useState("email");
   const [loading, setLoading] = useState(false);
-  const [isNewUser, setIsNewUser] = useState(false);
 
   async function handleSendOtp() {
     if (!email.trim()) return Alert.alert("Грешка", "Въведи имейл адрес");
     setLoading(true);
-
-    // Проверяваме дали е нов потребител
-    const { data: existingUser } = await supabase
-      .from("profiles")
-      .select("id, display_name")
-      .eq("id", (await supabase.auth.getUser()).data?.user?.id || "")
-      .maybeSingle();
-
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim().toLowerCase(),
       options: { shouldCreateUser: true },
@@ -53,7 +45,6 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
     }
 
     if (data?.user) {
-      // Проверяваме дали вече има профил с истинско име
       const { data: profile } = await supabase
         .from("profiles")
         .select("display_name")
@@ -64,11 +55,8 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
       const hasRealName = profile?.display_name && profile.display_name !== defaultName;
 
       if (!hasRealName) {
-        // Нов потребител — питаме за име
-        setIsNewUser(!profile);
         setStep("name");
       } else {
-        // Вече има профил с истинско име
         onSignIn(data.user);
       }
     }
@@ -81,12 +69,7 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Няма активна сесия");
-
-      await supabase.from("profiles").upsert({
-        id: user.id,
-        display_name: name,
-      });
-
+      await supabase.from("profiles").upsert({ id: user.id, display_name: name });
       onSignIn(user);
     } catch (e) {
       Alert.alert("Грешка", e.message);
@@ -95,101 +78,116 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
     }
   }
 
-  if (step === "name") {
+  const renderContent = () => {
+    if (step === "name") {
+      return (
+        <>
+          <Text style={styles.emoji}>👋</Text>
+          <Text style={styles.title}>Как се казваш?</Text>
+          <Text style={styles.subtitle}>Членовете на пътуването ще те виждат с това име</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Напр. Темелко"
+            placeholderTextColor="#aaa"
+            value={displayName}
+            onChangeText={setDisplayName}
+            autoCorrect={false}
+            returnKeyType="done"
+            onSubmitEditing={handleSetName}
+          />
+          <TouchableOpacity style={styles.btn} onPress={handleSetName} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Продължи →</Text>}
+          </TouchableOpacity>
+        </>
+      );
+    }
+
+    if (step === "otp") {
+      return (
+        <>
+          <Text style={styles.emoji}>📬</Text>
+          <Text style={styles.title}>Въведи кода</Text>
+          <Text style={styles.subtitle}>
+            Пратихме {OTP_LENGTH}-цифрен код на{"\n"}{email}
+          </Text>
+          <TextInput
+            style={[styles.input, styles.otpInput]}
+            placeholder={"0".repeat(OTP_LENGTH)}
+            placeholderTextColor="#aaa"
+            value={otp}
+            onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, ""))}
+            keyboardType="number-pad"
+            maxLength={OTP_LENGTH}
+            returnKeyType="done"
+            onSubmitEditing={handleVerifyOtp}
+          />
+          <TouchableOpacity style={styles.btn} onPress={handleVerifyOtp} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Потвърди</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.back} onPress={() => { setStep("email"); setOtp(""); }}>
+            <Text style={styles.backText}>← Смени имейл</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.resend} onPress={handleSendOtp} disabled={loading}>
+            <Text style={styles.resendText}>Изпрати нов код</Text>
+          </TouchableOpacity>
+        </>
+      );
+    }
+
     return (
-      <View style={styles.container}>
-        <Text style={styles.emoji}>👋</Text>
-        <Text style={styles.title}>Как се казваш?</Text>
+      <>
+        <Text style={styles.emoji}>🧳</Text>
+        <Text style={styles.title}>Влез в GoTogether</Text>
         <Text style={styles.subtitle}>
-          Членовете на пътуването ще те виждат с това име
+          {pendingInviteCode
+            ? "Имаш покана! Влез за да се присъединиш."
+            : "Въведи имейла си и ще получиш код за вход"}
         </Text>
+        {pendingInviteCode && (
+          <View style={styles.inviteBadge}>
+            <Text style={styles.inviteBadgeText}>🎫 Код: {pendingInviteCode}</Text>
+          </View>
+        )}
         <TextInput
           style={styles.input}
-          placeholder="Напр. Темелко"
+          placeholder="твоя@имейл.com"
           placeholderTextColor="#aaa"
-          value={displayName}
-          onChangeText={setDisplayName}
-          autoFocus
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
           autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={handleSendOtp}
         />
-        <TouchableOpacity style={styles.btn} onPress={handleSetName} disabled={loading}>
-          {loading
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.btnText}>Продължи →</Text>}
+        <TouchableOpacity style={styles.btn} onPress={handleSendOtp} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Изпрати код</Text>}
         </TouchableOpacity>
-      </View>
+      </>
     );
-  }
-
-  if (step === "otp") {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.emoji}>📬</Text>
-        <Text style={styles.title}>Въведи кода</Text>
-        <Text style={styles.subtitle}>
-          Пратихме {OTP_LENGTH}-цифрен код на{"\n"}{email}
-        </Text>
-        <TextInput
-          style={[styles.input, styles.otpInput]}
-          placeholder={"0".repeat(OTP_LENGTH)}
-          placeholderTextColor="#aaa"
-          value={otp}
-          onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, ""))}
-          keyboardType="number-pad"
-          maxLength={OTP_LENGTH}
-          autoFocus
-        />
-        <TouchableOpacity style={styles.btn} onPress={handleVerifyOtp} disabled={loading}>
-          {loading
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.btnText}>Потвърди</Text>}
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.back} onPress={() => { setStep("email"); setOtp(""); }}>
-          <Text style={styles.backText}>← Смени имейл</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.resend} onPress={handleSendOtp} disabled={loading}>
-          <Text style={styles.resendText}>Изпрати нов код</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.emoji}>🧳</Text>
-      <Text style={styles.title}>Влез в GoTogether</Text>
-      <Text style={styles.subtitle}>
-        {pendingInviteCode
-          ? `Имаш покана! Влез за да се присъединиш.`
-          : "Въведи имейла си и ще получиш код за вход"}
-      </Text>
-      {pendingInviteCode && (
-        <View style={styles.inviteBadge}>
-          <Text style={styles.inviteBadgeText}>🎫 Код: {pendingInviteCode}</Text>
-        </View>
-      )}
-      <TextInput
-        style={styles.input}
-        placeholder="твоя@имейл.com"
-        placeholderTextColor="#aaa"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <TouchableOpacity style={styles.btn} onPress={handleSendOtp} disabled={loading}>
-        {loading
-          ? <ActivityIndicator color="#fff" />
-          : <Text style={styles.btnText}>Изпрати код</Text>}
-      </TouchableOpacity>
-    </View>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+        >
+          {renderContent()}
+        </ScrollView>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: "#1D9E75" },
   container: {
-    flex: 1, backgroundColor: "#1D9E75",
+    flexGrow: 1, backgroundColor: "#1D9E75",
     alignItems: "center", justifyContent: "center", padding: 24,
   },
   emoji: { fontSize: 64, marginBottom: 16 },
