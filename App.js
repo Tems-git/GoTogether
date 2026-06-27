@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Text, View, TouchableOpacity } from "react-native";
+import { StyleSheet, Text, View, TouchableOpacity, TextInput } from "react-native";
 import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
 import SignInScreen from "./screens/SignInScreen";
@@ -15,6 +15,9 @@ export default function App() {
   const [screen, setScreen] = useState("home");
   const [activeTrip, setActiveTrip] = useState(null);
   const [tripLoading, setTripLoading] = useState(false);
+  const [pendingInviteCode, setPendingInviteCode] = useState(null);
+  const [inviteInput, setInviteInput] = useState("");
+  const [showInviteInput, setShowInviteInput] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -39,10 +42,19 @@ export default function App() {
       .eq("user_id", u.id)
       .order("joined_at", { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
     if (data?.trips) setActiveTrip(data.trips);
     setTripLoading(false);
     setScreen("dashboard");
+  }
+
+  function handleInviteSubmit() {
+    const code = inviteInput.trim().toUpperCase();
+    if (!code || code.length < 4) return;
+    setPendingInviteCode(code);
+    setShowInviteInput(false);
+    setInviteInput("");
+    setScreen("signin");
   }
 
   if (loading || tripLoading) {
@@ -62,7 +74,6 @@ export default function App() {
         onBack={() => setScreen("dashboard")}
         tripId={activeTrip?.id}
         userId={user?.id}
-        devMode={false}
       />
     );
   }
@@ -79,7 +90,12 @@ export default function App() {
   }
 
   if (screen === "signin") {
-    return <SignInScreen onSignIn={(u) => handleUser(u)} />;
+    return (
+      <SignInScreen
+        onSignIn={(u) => handleUser(u)}
+        pendingInviteCode={pendingInviteCode}
+      />
+    );
   }
 
   if (user) {
@@ -87,7 +103,12 @@ export default function App() {
       return (
         <TripSetupScreen
           user={user}
-          onTripReady={(trip) => { setActiveTrip(trip); setScreen("dashboard"); }}
+          pendingInviteCode={pendingInviteCode}
+          onTripReady={(trip) => {
+            setActiveTrip(trip);
+            setPendingInviteCode(null);
+            setScreen("dashboard");
+          }}
         />
       );
     }
@@ -103,19 +124,46 @@ export default function App() {
     );
   }
 
+  // Home екран
   return (
     <View style={styles.container}>
       <Text style={styles.emoji}>🧳</Text>
       <Text style={styles.title}>GoTogether</Text>
       <Text style={styles.subtitle}>Семейни пътувания без главоболие</Text>
-      <View style={styles.buttons}>
-        <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen("ai")}>
-          <Text style={styles.btnPrimaryText}>Планирай пътуване с AI</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnSecondary} onPress={() => setScreen("signin")}>
-          <Text style={styles.btnSecondaryText}>Присъедини се с код</Text>
-        </TouchableOpacity>
-      </View>
+
+      {showInviteInput ? (
+        <View style={styles.inviteBox}>
+          <Text style={styles.inviteLabel}>Въведи кода за покана</Text>
+          <TextInput
+            style={styles.inviteInput}
+            placeholder="XXXXXX"
+            placeholderTextColor="#aaa"
+            value={inviteInput}
+            onChangeText={setInviteInput}
+            autoCapitalize="characters"
+            maxLength={6}
+            autoFocus
+          />
+          <TouchableOpacity style={styles.btnPrimary} onPress={handleInviteSubmit}>
+            <Text style={styles.btnPrimaryText}>Продължи →</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.back} onPress={() => { setShowInviteInput(false); setInviteInput(""); }}>
+            <Text style={styles.backText}>← Назад</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.buttons}>
+          <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen("ai")}>
+            <Text style={styles.btnPrimaryText}>Планирай пътуване с AI</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btnPrimary} onPress={() => setShowInviteInput(true)}>
+            <Text style={styles.btnPrimaryText}>🎫 Имам покана</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btnSecondary} onPress={() => setScreen("signin")}>
+            <Text style={styles.btnSecondaryText}>Вход / Регистрация</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <StatusBar style="light" />
     </View>
   );
@@ -134,4 +182,13 @@ const styles = StyleSheet.create({
   btnPrimaryText: { color: "#1D9E75", fontSize: 16, fontWeight: "bold" },
   btnSecondary: { backgroundColor: "transparent", padding: 16, borderRadius: 14, alignItems: "center", borderWidth: 1.5, borderColor: "#fff" },
   btnSecondaryText: { color: "#fff", fontSize: 16, fontWeight: "500" },
+  inviteBox: { width: "100%", gap: 10 },
+  inviteLabel: { color: "#E1F5EE", fontSize: 14, fontWeight: "600", textAlign: "center", marginBottom: 4 },
+  inviteInput: {
+    backgroundColor: "#fff", borderRadius: 14, padding: 16,
+    fontSize: 28, fontWeight: "bold", letterSpacing: 8,
+    textAlign: "center", color: "#1a1a1a",
+  },
+  back: { alignItems: "center", marginTop: 4 },
+  backText: { color: "#E1F5EE", fontSize: 15 },
 });
