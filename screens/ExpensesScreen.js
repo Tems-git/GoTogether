@@ -132,10 +132,12 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return m?.weight || 1;
   };
 
-  // Изчисляваме shares пропорционално по weight
-  function calcShares(amt, participantIds) {
-    const nonPayers = participantIds.filter((uid) => uid !== paidBy);
-    const totalWeight = nonPayers.reduce((s, uid) => s + getMemberWeight(uid), 0);
+  // Изчисляваме shares пропорционално по weight:
+  // Делим сумата между ВСИЧКИ участници (splitWith), след което
+  // не-платците дължат своята пропорционална дял.
+  function calcShares(amt, participantIds, payerId) {
+    const totalWeight = participantIds.reduce((s, uid) => s + getMemberWeight(uid), 0);
+    const nonPayers = participantIds.filter((uid) => uid !== payerId);
     return nonPayers.map((uid) => ({
       uid,
       share: parseFloat(((amt * getMemberWeight(uid)) / totalWeight).toFixed(2)),
@@ -193,7 +195,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       }).select().single();
       if (error) throw error;
 
-      const shares = calcShares(amt, splitWith);
+      const shares = calcShares(amt, splitWith, paidBy);
       const { error: splitError } = await supabase.from("expense_splits").insert(
         shares.map(({ uid, share }) => ({ expense_id: exp.id, user_id: uid, share, is_settled: false }))
       );
@@ -246,7 +248,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   const amtNum = parseFloat(amount.replace(",", ".")) || 0;
   const nonPayerIds = splitWith.filter((uid) => uid !== paidBy);
-  const previewShares = amtNum > 0 && nonPayerIds.length > 0 ? calcShares(amtNum, splitWith) : [];
+  const previewShares = amtNum > 0 && nonPayerIds.length > 0 ? calcShares(amtNum, splitWith, paidBy) : [];
   const allEqual = previewShares.length > 0 && previewShares.every((s) => s.share === previewShares[0].share);
 
   function formatDate(iso) {
@@ -327,7 +329,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         <View style={styles.list}>
           {expenses.map((exp) => {
             const cat = catInfo(exp.category);
-            const expSplits = splits.filter((s) => s.expense_id === exp.id);
             const settled = isExpenseSettled(exp);
             const payerColor = memberColor(exp.paid_by);
             return (
@@ -427,8 +428,8 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                       {weight > 1 ? ` ×${weight}` : ""}
                       {isPayer ? " (платил)" : ""}
                     </Text>
-                    {preview && !allEqual && (
-                      <Text style={[styles.checkShare, { color }]}>{preview.share.toFixed(2)} лв.</Text>
+                    {preview && (
+                      <Text style={[styles.checkShare, { color: isPayer ? "#aaa" : color }]}>{preview.share.toFixed(2)} лв.</Text>
                     )}
                   </View>
                 </TouchableOpacity>
@@ -440,7 +441,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                 <Text style={styles.splitNoteText}>
                   {allEqual
                     ? `✂️ ${nonPayerIds.length} участника · ${previewShares[0].share.toFixed(2)} лв. на човек`
-                    : `✂️ Пропорционално делене по брой хора`}
+                    : `✂️ Пропорционално по брой хора`}
                 </Text>
               </View>
             )}
