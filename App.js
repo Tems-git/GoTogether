@@ -100,6 +100,21 @@ export default function App() {
     );
   }
 
+  // Нов TripSetup от Dashboard
+  if (screen === "newtrip" && user) {
+    return (
+      <TripSetupScreen
+        user={user}
+        pendingInviteCode={null}
+        onTripReady={(trip) => {
+          setActiveTrip(trip);
+          setAllTrips((prev) => [trip, ...prev.filter((t) => t.id !== trip.id)]);
+          setScreen("dashboard");
+        }}
+      />
+    );
+  }
+
   if (user) {
     if (!activeTrip) {
       return (
@@ -125,11 +140,11 @@ export default function App() {
         onDocuments={() => setScreen("documents")}
         onExpenses={() => setScreen("expenses")}
         onSwitchTrip={(trip) => setActiveTrip(trip)}
+        onNewTrip={() => setScreen("newtrip")}
       />
     );
   }
 
-  // Home екран
   return (
     <View style={styles.container}>
       <Text style={styles.emoji}>🧳</Text>
