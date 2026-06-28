@@ -1,12 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
   ScrollView, Alert, Share, Clipboard, Modal,
 } from "react-native";
+import { supabase } from "../lib/supabase";
 
 export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onSwitchTrip, onNewTrip }) {
   const [copied, setCopied] = useState(false);
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
+  const [members, setMembers] = useState([]);
+
+  useEffect(() => {
+    if (!trip?.id) return;
+    supabase
+      .from("trip_members")
+      .select("user_id, display_name, role")
+      .eq("trip_id", trip.id)
+      .then(({ data }) => setMembers(data || []));
+  }, [trip?.id]);
 
   const cards = [
     { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE" },
@@ -39,6 +50,12 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     return `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}.${d.getFullYear()}`;
   }
 
+  function getInitials(name = "") {
+    return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+  }
+
+  const COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8"];
+
   const startDate = formatDate(trip?.start_date);
   const endDate = formatDate(trip?.end_date);
   const dateRange = startDate && endDate ? `${startDate} – ${endDate}` : startDate || null;
@@ -68,6 +85,24 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Участници */}
+          {members.length > 0 && (
+            <View style={styles.membersRow}>
+              {members.map((m, i) => (
+                <View
+                  key={m.user_id}
+                  style={[styles.avatar, { backgroundColor: COLORS[i % COLORS.length] }]}
+                >
+                  <Text style={styles.avatarText}>{getInitials(m.display_name)}</Text>
+                </View>
+              ))}
+              <Text style={styles.membersCount}>
+                {members.length} {members.length === 1 ? "участник" : "участника"}
+              </Text>
+            </View>
+          )}
+
           <TouchableOpacity style={styles.switchBtn} onPress={() => setTripPickerVisible(true)}>
             <Text style={styles.switchBtnText}>🔄 Смени / добави пътуване</Text>
           </TouchableOpacity>
@@ -158,6 +193,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
   },
   inviteCopy: { fontSize: 10, color: "#E1F5EE", textAlign: "center", marginTop: 4 },
+  membersRow: {
+    flexDirection: "row", alignItems: "center", marginTop: 14,
+    flexWrap: "wrap", gap: 6,
+  },
+  avatar: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 2, borderColor: "rgba(255,255,255,0.4)",
+  },
+  avatarText: { fontSize: 12, fontWeight: "bold", color: "#fff" },
+  membersCount: { fontSize: 12, color: "#E1F5EE", marginLeft: 4 },
   switchBtn: {
     marginTop: 14, backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 10, padding: 10, alignItems: "center",
