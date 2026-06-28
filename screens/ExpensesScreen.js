@@ -65,6 +65,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const [amount, setAmount] = useState("");
   const [paidBy, setPaidBy] = useState(userId);
   const [category, setCategory] = useState("other");
+  const [splitWith, setSplitWith] = useState([]); // subset от members
   const [saving, setSaving] = useState(false);
 
   const fetchAll = useCallback(async () => {
@@ -106,6 +107,22 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return () => supabase.removeChannel(channel);
   }, [fetchAll, tripId, devMode]);
 
+  // При отваряне на модала — всички са избрани по подразбиране
+  function openModal() {
+    setSplitWith(members.map((m) => m.user_id));
+    setPaidBy(userId);
+    setDesc("");
+    setAmount("");
+    setCategory("other");
+    setModalVisible(true);
+  }
+
+  function toggleSplitWith(uid) {
+    setSplitWith((prev) =>
+      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
+    );
+  }
+
   const memberColor = (uid) => {
     const idx = members.findIndex((m) => m.user_id === uid);
     return MEMBER_COLORS[idx % MEMBER_COLORS.length];
@@ -134,7 +151,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   .in("expense_id", splitsToSettle.map((s) => s.expense_id))
                   .eq("user_id", settlement.from);
               }
-              await fetchAll(); // локален refresh + realtime за другите
+              await fetchAll();
             } catch (e) {
               Alert.alert("Грешка", e.message);
             } finally {
@@ -150,21 +167,20 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     if (!desc.trim()) return Alert.alert("Грешка", "Въведи описание");
     const amt = parseFloat(amount.replace(",", "."));
     if (isNaN(amt) || amt <= 0) return Alert.alert("Грешка", "Въведи валидна сума");
-    if (members.length === 0) return Alert.alert("Грешка", "Няма участници в пътуването");
+    if (splitWith.length === 0) return Alert.alert("Грешка", "Избери поне един участник");
     setSaving(true);
     try {
-      const share = parseFloat((amt / members.length).toFixed(2));
+      const share = parseFloat((amt / splitWith.length).toFixed(2));
       const { data: exp, error } = await supabase.from("expenses").insert({
         trip_id: tripId, paid_by: paidBy, amount: amt,
         description: desc.trim(), category, split_type: "equal",
       }).select().single();
       if (error) throw error;
       const { error: splitError } = await supabase.from("expense_splits").insert(
-        members.map((m) => ({ expense_id: exp.id, user_id: m.user_id, share, is_settled: false }))
+        splitWith.map((uid) => ({ expense_id: exp.id, user_id: uid, share, is_settled: false }))
       );
       if (splitError) throw splitError;
       setModalVisible(false);
-      setDesc(""); setAmount(""); setPaidBy(userId); setCategory("other");
       await fetchAll();
     } catch (e) {
       Alert.alert("Грешка", e.message);
@@ -203,8 +219,10 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const settlements = calcSettlements(members, expenses, splits);
   const memberName = (uid) => members.find((m) => m.user_id === uid)?.display_name || "Непознат";
   const catInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[4];
-  const sharePerPerson = members.length > 0
-    ? (parseFloat(amount.replace(",", ".")) / members.length || 0).toFixed(2) : "—";
+
+  const amtNum = parseFloat(amount.replace(",", ".")) || 0;
+  const sharePerPerson = splitWith.length > 0 && amtNum > 0
+    ? (amtNum / splitWith.length).toFixed(2) : null;
 
   function formatDate(iso) {
     const d = new Date(iso);
@@ -281,6 +299,8 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             const expSplits = splits.filter((s) => s.expense_id === exp.id);
             const isFullySettled = expSplits.length > 0 && expSplits.every((s) => s.is_settled);
             const payerColor = memberColor(exp.paid_by);
+            const splitCount = expSplits.length;
+            const allMembersCount = members.length;
             return (
               <View key={exp.id} style={[styles.expRow, isFullySettled && styles.expRowSettled]}>
                 <Text style={styles.expEmoji}>{isFullySettled ? "✅" : cat.emoji}</Text>
@@ -291,6 +311,9 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                     <Text style={[styles.expMetaPayer, { color: isFullySettled ? "#aaa" : payerColor }]}>
                       {memberName(exp.paid_by)}
                     </Text>
+                    {splitCount < allMembersCount && (
+                      <Text style={styles.expMetaText}> · {splitCount}/{allMembersCount}</Text>
+                    )}
                   </View>
                 </View>
                 <View style={styles.expRight}>
@@ -307,20 +330,25 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         </View>
       )}
 
-      <TouchableOpacity style={styles.btn} onPress={() => setModalVisible(true)}>
+      <TouchableOpacity style={styles.btn} onPress={openModal}>
         <Text style={styles.btnText}>+ Добави разход</Text>
       </TouchableOpacity>
 
+      {/* Нов разход модал — scrollable */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
-          <View style={styles.modal}>
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}
+            keyboardShouldPersistTaps="handled">
             <Text style={styles.modalTitle}>Нов разход</Text>
+
             <Text style={styles.label}>Описание</Text>
             <TextInput style={styles.input} placeholder="Напр. Хотел Хилтън"
               value={desc} onChangeText={setDesc} placeholderTextColor="#bbb" />
+
             <Text style={styles.label}>Сума (лв.)</Text>
             <TextInput style={styles.input} placeholder="0.00" keyboardType="decimal-pad"
               value={amount} onChangeText={setAmount} placeholderTextColor="#bbb" />
+
             <Text style={styles.label}>Платил</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
               {members.map((m, i) => (
@@ -331,6 +359,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+
             <Text style={styles.label}>Категория</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
               {CATEGORIES.map((c) => (
@@ -341,9 +370,33 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            <Text style={styles.splitNote}>
-              ✂️ Делене равно между {members.length} участника{amount ? ` — ${sharePerPerson} лв. на човек` : ""}
-            </Text>
+
+            <Text style={styles.label}>Дели между</Text>
+            {members.map((m, i) => {
+              const checked = splitWith.includes(m.user_id);
+              const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
+              return (
+                <TouchableOpacity
+                  key={m.user_id}
+                  style={styles.checkRow}
+                  onPress={() => toggleSplitWith(m.user_id)}
+                >
+                  <View style={[styles.checkbox, checked && { backgroundColor: color, borderColor: color }]}>
+                    {checked && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={[styles.checkLabel, { color: checked ? color : "#555" }]}>{m.display_name}</Text>
+                </TouchableOpacity>
+              );
+            })}
+
+            {sharePerPerson && (
+              <View style={styles.splitNote}>
+                <Text style={styles.splitNoteText}>
+                  ✂️ {splitWith.length} участника · {sharePerPerson} лв. на човек
+                </Text>
+              </View>
+            )}
+
             <View style={styles.modalBtns}>
               <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}>
                 <Text style={styles.btnCancelText}>Отказ</Text>
@@ -352,7 +405,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnSaveText}>Запази</Text>}
               </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -436,9 +489,8 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: "#1D9E75", padding: 16, borderRadius: 14, alignItems: "center" },
   btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 8 },
-  modalScroll: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "80%" },
-  modalScrollContent: { padding: 24, gap: 8, paddingBottom: 40 },
+  modalScroll: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "90%" },
+  modalScrollContent: { padding: 24, paddingBottom: 40, gap: 8 },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
   label: { fontSize: 13, fontWeight: "600", color: "#555", marginTop: 6 },
   input: { backgroundColor: "#F5F5F5", borderRadius: 10, padding: 12, fontSize: 16, color: "#1a1a1a" },
@@ -447,7 +499,18 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: "#1D9E75" },
   chipText: { fontSize: 13, color: "#555" },
   chipTextActive: { color: "#fff", fontWeight: "600" },
-  splitNote: { fontSize: 12, color: "#888", backgroundColor: "#F5F5F5", padding: 10, borderRadius: 8, marginTop: 4 },
+  checkRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingVertical: 8, paddingHorizontal: 4,
+  },
+  checkbox: {
+    width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: "#ddd",
+    alignItems: "center", justifyContent: "center",
+  },
+  checkmark: { color: "#fff", fontSize: 14, fontWeight: "bold" },
+  checkLabel: { fontSize: 14, fontWeight: "500" },
+  splitNote: { backgroundColor: "#F0F9F5", borderRadius: 10, padding: 10, marginTop: 4 },
+  splitNoteText: { fontSize: 12, color: "#1D9E75", fontWeight: "600" },
   modalBtns: { flexDirection: "row", gap: 10, marginTop: 16 },
   btnCancel: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
   btnCancelText: { color: "#888", fontSize: 15 },
