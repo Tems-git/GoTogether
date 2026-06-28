@@ -10,6 +10,8 @@ const DEV_MEMBERS = [
   { user_id: "00000000-0000-0000-0000-000000000003", display_name: "Спас" },
 ];
 
+const MEMBER_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#DDA0DD", "#98D8C8", "#FFEAA7"];
+
 function calcSettlements(members, expenses, splits) {
   const unsettled = splits.filter((s) => !s.is_settled);
   const balance = {};
@@ -90,6 +92,12 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   }, [tripId, devMode]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Цвят по индекс на участника
+  const memberColor = (uid) => {
+    const idx = members.findIndex((m) => m.user_id === uid);
+    return MEMBER_COLORS[idx % MEMBER_COLORS.length];
+  };
 
   async function handleMarkSettled(settlement, index) {
     Alert.alert(
@@ -240,12 +248,18 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             const cat = catInfo(exp.category);
             const expSplits = splits.filter((s) => s.expense_id === exp.id);
             const isFullySettled = expSplits.length > 0 && expSplits.every((s) => s.is_settled);
+            const payerColor = memberColor(exp.paid_by);
             return (
               <View key={exp.id} style={[styles.expRow, isFullySettled && styles.expRowSettled]}>
                 <Text style={styles.expEmoji}>{isFullySettled ? "✅" : cat.emoji}</Text>
                 <View style={styles.expInfo}>
                   <Text style={[styles.expDesc, isFullySettled && styles.expDescSettled]}>{exp.description}</Text>
-                  <Text style={styles.expMeta}>{cat.label} · {formatDate(exp.created_at)} · платил {memberName(exp.paid_by)}</Text>
+                  <View style={styles.expMetaRow}>
+                    <Text style={styles.expMetaText}>{cat.label} · {formatDate(exp.created_at)} · </Text>
+                    <Text style={[styles.expMetaPayer, { color: isFullySettled ? "#aaa" : payerColor }]}>
+                      {memberName(exp.paid_by)}
+                    </Text>
+                  </View>
                 </View>
                 <View style={styles.expRight}>
                   <Text style={[styles.expAmount, isFullySettled && { color: "#aaa" }]}>{Number(exp.amount).toFixed(2)} лв.</Text>
@@ -277,9 +291,9 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
               value={amount} onChangeText={setAmount} placeholderTextColor="#bbb" />
             <Text style={styles.label}>Платил</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
-              {members.map((m) => (
+              {members.map((m, i) => (
                 <TouchableOpacity key={m.user_id}
-                  style={[styles.chip, paidBy === m.user_id && styles.chipActive]}
+                  style={[styles.chip, paidBy === m.user_id && { backgroundColor: MEMBER_COLORS[i % MEMBER_COLORS.length] }]}
                   onPress={() => setPaidBy(m.user_id)}>
                   <Text style={[styles.chipText, paidBy === m.user_id && styles.chipTextActive]}>{m.display_name}</Text>
                 </TouchableOpacity>
@@ -318,9 +332,9 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             {settlements.map((s, i) => (
               <View key={i} style={styles.settleRow}>
                 <View style={styles.settleTop}>
-                  <Text style={styles.settleFrom}>{memberName(s.from)}</Text>
+                  <Text style={[styles.settleFrom, { color: memberColor(s.from) }]}>{memberName(s.from)}</Text>
                   <Text style={styles.settleArrow}>→</Text>
-                  <Text style={styles.settleTo}>{memberName(s.to)}</Text>
+                  <Text style={[styles.settleTo, { color: memberColor(s.to) }]}>{memberName(s.to)}</Text>
                   <Text style={styles.settleAmt}>{s.amount.toFixed(2)} лв.</Text>
                 </View>
                 <TouchableOpacity
@@ -372,7 +386,9 @@ const styles = StyleSheet.create({
   expInfo: { flex: 1 },
   expDesc: { fontSize: 14, fontWeight: "600", color: "#1a1a1a" },
   expDescSettled: { textDecorationLine: "line-through", color: "#aaa" },
-  expMeta: { fontSize: 11, color: "#888", marginTop: 2 },
+  expMetaRow: { flexDirection: "row", alignItems: "center", marginTop: 2, flexWrap: "wrap" },
+  expMetaText: { fontSize: 11, color: "#888" },
+  expMetaPayer: { fontSize: 11, fontWeight: "700" },
   expRight: { alignItems: "flex-end", gap: 4 },
   expAmount: { fontSize: 15, fontWeight: "bold", color: "#1D9E75" },
   deleteBtn: { fontSize: 16 },
@@ -399,9 +415,9 @@ const styles = StyleSheet.create({
   settleSubtitle: { fontSize: 14, color: "#888", marginBottom: 12 },
   settleRow: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 12, marginBottom: 10 },
   settleTop: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
-  settleFrom: { fontWeight: "600", color: "#e74c3c", flex: 1, fontSize: 13 },
+  settleFrom: { fontWeight: "700", flex: 1, fontSize: 13 },
   settleArrow: { color: "#888" },
-  settleTo: { fontWeight: "600", color: "#1D9E75", flex: 1, fontSize: 13 },
+  settleTo: { fontWeight: "700", flex: 1, fontSize: 13 },
   settleAmt: { fontWeight: "bold", color: "#1a1a1a", fontSize: 13 },
   settleBtn: { backgroundColor: "#1D9E75", padding: 12, borderRadius: 10, alignItems: "center" },
   settleBtnText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
