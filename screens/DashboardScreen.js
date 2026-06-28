@@ -16,6 +16,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     if (!trip?.id) return;
@@ -38,6 +39,48 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         else setDisplayName(user.email.split("@")[0]);
       });
   }, [user?.id]);
+
+  // Брой непрочетени съобщения
+  useEffect(() => {
+    if (!trip?.id || !user?.id) return;
+
+    async function fetchUnread() {
+      const { data: member } = await supabase
+        .from("trip_members")
+        .select("chat_last_read")
+        .eq("trip_id", trip.id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      const lastRead = member?.chat_last_read || "1970-01-01";
+
+      const { count } = await supabase
+        .from("messages")
+        .select("*", { count: "exact", head: true })
+        .eq("trip_id", trip.id)
+        .neq("user_id", user.id)
+        .gt("created_at", lastRead);
+
+      setUnreadCount(count || 0);
+    }
+
+    fetchUnread();
+
+    // Realtime за нови съобщения
+    const channel = supabase
+      .channel(`dashboard-chat-${trip.id}`)
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `trip_id=eq.${trip.id}` },
+        (payload) => {
+          if (payload.new.user_id !== user.id) {
+            setUnreadCount((prev) => prev + 1);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [trip?.id, user?.id]);
 
   async function handleSaveName() {
     const name = newName.trim();
@@ -75,10 +118,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   }
 
   const cards = [
-    { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE" },
-    { emoji: "💬", title: "Чат", sub: "Групов чат", onPress: onChat, color: "#E8F4FD" },
-    { emoji: "📁", title: "Документи", sub: "Резервации и билети", onPress: onDocuments, color: "#E6F1FB" },
-    { emoji: "💸", title: "Разходи", sub: "Кой колко дължи", onPress: onExpenses, color: "#FAEEDA" },
+    { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE", badge: 0 },
+    { emoji: "💬", title: "Чат", sub: "Групов чат", onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
+    { emoji: "📁", title: "Документи", sub: "Резервации и билети", onPress: onDocuments, color: "#E6F1FB", badge: 0 },
+    { emoji: "💸", title: "Разходи", sub: "Кой колко дължи", onPress: onExpenses, color: "#FAEEDA", badge: 0 },
   ];
 
   async function handleShare() {
@@ -177,7 +220,14 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         <View style={styles.cards}>
           {cards.map((card, i) => (
             <TouchableOpacity key={i} style={[styles.card, { backgroundColor: card.color }]} onPress={card.onPress}>
-              <Text style={styles.cardEmoji}>{card.emoji}</Text>
+              <View style={styles.cardEmojiWrap}>
+                <Text style={styles.cardEmoji}>{card.emoji}</Text>
+                {card.badge > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{card.badge > 99 ? "99+" : card.badge}</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.cardTitle}>{card.title}</Text>
               <Text style={styles.cardSub}>{card.sub}</Text>
             </TouchableOpacity>
@@ -323,7 +373,15 @@ const styles = StyleSheet.create({
   switchBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 12 },
   card: { width: "47%", borderRadius: 16, padding: 20, alignItems: "center" },
-  cardEmoji: { fontSize: 32, marginBottom: 8 },
+  cardEmojiWrap: { position: "relative", marginBottom: 8 },
+  cardEmoji: { fontSize: 32 },
+  badge: {
+    position: "absolute", top: -4, right: -8,
+    backgroundColor: "#FF3B30", borderRadius: 10,
+    minWidth: 18, height: 18, alignItems: "center", justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  badgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
   cardTitle: { fontSize: 15, fontWeight: "bold", color: "#1a1a1a" },
   cardSub: { fontSize: 12, color: "#666", marginTop: 4, textAlign: "center", fontWeight: "600" },
   shareBtn: { backgroundColor: "#fff", padding: 14, borderRadius: 12, alignItems: "center", marginBottom: 10, borderWidth: 1, borderColor: "#e0e0e0" },

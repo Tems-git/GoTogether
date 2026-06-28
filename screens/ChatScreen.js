@@ -13,6 +13,13 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
   const [displayName, setDisplayName] = useState("");
   const flatRef = useRef(null);
 
+  const markAsRead = useCallback(async () => {
+    await supabase.from("trip_members")
+      .update({ chat_last_read: new Date().toISOString() })
+      .eq("trip_id", tripId)
+      .eq("user_id", userId);
+  }, [tripId, userId]);
+
   const fetchMessages = useCallback(async () => {
     const { data } = await supabase
       .from("messages")
@@ -21,10 +28,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
       .order("created_at", { ascending: true });
     setMessages(data || []);
     setLoading(false);
-  }, [tripId]);
+    await markAsRead();
+  }, [tripId, markAsRead]);
 
   useEffect(() => {
-    // Вземаме display name
     supabase.from("trip_members")
       .select("display_name")
       .eq("trip_id", tripId)
@@ -38,14 +45,15 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
       .channel(`chat-${tripId}`)
       .on("postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `trip_id=eq.${tripId}` },
-        (payload) => {
+        async (payload) => {
           setMessages((prev) => [...prev, payload.new]);
+          await markAsRead();
         }
       )
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [tripId, userId, fetchMessages]);
+  }, [tripId, userId, fetchMessages, markAsRead]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -66,7 +74,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
         text: trimmed,
       });
     } catch (e) {
-      setText(trimmed); // възстановяваме при грешка
+      setText(trimmed);
     } finally {
       setSending(false);
     }
@@ -87,7 +95,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
     return `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}`;
   }
 
-  // Групираме съобщенията по дата
   const grouped = [];
   let lastDate = null;
   messages.forEach((msg) => {
