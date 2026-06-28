@@ -69,7 +69,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   const fetchAll = useCallback(async () => {
     if (devMode) return;
-    setLoading(true);
     try {
       const { data: mData } = await supabase
         .from("trip_members").select("user_id, display_name").eq("trip_id", tripId);
@@ -86,16 +85,14 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       setSplits(sData);
     } catch (e) {
       setMembers(DEV_MEMBERS);
-    } finally {
-      setLoading(false);
     }
   }, [tripId, devMode]);
 
   useEffect(() => {
-    fetchAll();
+    setLoading(true);
+    fetchAll().finally(() => setLoading(false));
     if (devMode) return;
 
-    // Realtime — рефреш при промяна в expenses или splits
     const channel = supabase
       .channel(`expenses-${tripId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "expenses", filter: `trip_id=eq.${tripId}` },
@@ -137,7 +134,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   .in("expense_id", splitsToSettle.map((s) => s.expense_id))
                   .eq("user_id", settlement.from);
               }
-              // fetchAll ще се извика автоматично от realtime
+              await fetchAll(); // локален refresh + realtime за другите
             } catch (e) {
               Alert.alert("Грешка", e.message);
             } finally {
@@ -168,7 +165,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       if (splitError) throw splitError;
       setModalVisible(false);
       setDesc(""); setAmount(""); setPaidBy(userId); setCategory("other");
-      // fetchAll ще се извика автоматично от realtime
+      await fetchAll();
     } catch (e) {
       Alert.alert("Грешка", e.message);
     } finally {
@@ -184,6 +181,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         onPress: async () => {
           await supabase.from("expense_splits").delete().eq("expense_id", expId);
           await supabase.from("expenses").delete().eq("id", expId);
+          await fetchAll();
         },
       },
     ]);
