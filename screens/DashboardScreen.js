@@ -1,11 +1,12 @@
 import { useState } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, Alert, Share, Clipboard,
+  ScrollView, Alert, Share, Clipboard, Modal,
 } from "react-native";
 
-export default function DashboardScreen({ user, trip, onSignOut, onAI, onDocuments, onExpenses }) {
+export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onSwitchTrip }) {
   const [copied, setCopied] = useState(false);
+  const [tripPickerVisible, setTripPickerVisible] = useState(false);
 
   const cards = [
     { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE" },
@@ -40,9 +41,7 @@ export default function DashboardScreen({ user, trip, onSignOut, onAI, onDocumen
 
   const startDate = formatDate(trip?.start_date);
   const endDate = formatDate(trip?.end_date);
-  const dateRange = startDate && endDate
-    ? `${startDate} – ${endDate}`
-    : startDate || null;
+  const dateRange = startDate && endDate ? `${startDate} – ${endDate}` : startDate || null;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
@@ -75,6 +74,11 @@ export default function DashboardScreen({ user, trip, onSignOut, onAI, onDocumen
               </TouchableOpacity>
             </View>
           </View>
+          {allTrips && allTrips.length > 1 && (
+            <TouchableOpacity style={styles.switchBtn} onPress={() => setTripPickerVisible(true)}>
+              <Text style={styles.switchBtnText}>🔄 Смени пътуване</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -97,6 +101,40 @@ export default function DashboardScreen({ user, trip, onSignOut, onAI, onDocumen
       <TouchableOpacity style={styles.signOut} onPress={onSignOut}>
         <Text style={styles.signOutText}>Изход</Text>
       </TouchableOpacity>
+
+      {/* Trip picker modal */}
+      <Modal visible={tripPickerVisible} animationType="slide" transparent>
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>Избери пътуване</Text>
+            {(allTrips || []).map((t) => (
+              <TouchableOpacity
+                key={t.id}
+                style={[styles.tripOption, t.id === trip?.id && styles.tripOptionActive]}
+                onPress={() => {
+                  setTripPickerVisible(false);
+                  if (t.id !== trip?.id) onSwitchTrip(t);
+                }}
+              >
+                <View style={styles.tripOptionInfo}>
+                  <Text style={[styles.tripOptionName, t.id === trip?.id && styles.tripOptionNameActive]}>
+                    {t.name}
+                  </Text>
+                  {t.destination && (
+                    <Text style={styles.tripOptionDest}>📍 {t.destination}</Text>
+                  )}
+                </View>
+                {t.id === trip?.id && (
+                  <Text style={styles.tripOptionCheck}>✓</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.modalClose} onPress={() => setTripPickerVisible(false)}>
+              <Text style={styles.modalCloseText}>Затвори</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
     </ScrollView>
   );
@@ -132,6 +170,12 @@ const styles = StyleSheet.create({
   },
   inviteCopy: { fontSize: 10, color: "#E1F5EE", textAlign: "center", marginTop: 4 },
 
+  switchBtn: {
+    marginTop: 14, backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 10, padding: 10, alignItems: "center",
+  },
+  switchBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 8 },
   card: { width: "47%", borderRadius: 16, padding: 20, alignItems: "center" },
   cardEmoji: { fontSize: 32, marginBottom: 8 },
@@ -143,4 +187,27 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "#ddd", alignItems: "center",
   },
   signOutText: { color: "#aaa", fontSize: 14 },
+
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  modal: {
+    backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 40,
+  },
+  modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 16 },
+  tripOption: {
+    flexDirection: "row", alignItems: "center",
+    padding: 14, borderRadius: 12, marginBottom: 8,
+    backgroundColor: "#F5F5F5",
+  },
+  tripOptionActive: { backgroundColor: "#E1F5EE", borderWidth: 1.5, borderColor: "#1D9E75" },
+  tripOptionInfo: { flex: 1 },
+  tripOptionName: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
+  tripOptionNameActive: { color: "#1D9E75" },
+  tripOptionDest: { fontSize: 12, color: "#888", marginTop: 2 },
+  tripOptionCheck: { fontSize: 18, color: "#1D9E75", fontWeight: "bold" },
+  modalClose: {
+    marginTop: 8, padding: 14, borderRadius: 12,
+    borderWidth: 1, borderColor: "#ddd", alignItems: "center",
+  },
+  modalCloseText: { color: "#888", fontSize: 15 },
 });
