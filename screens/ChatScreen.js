@@ -95,16 +95,14 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
     }
   }
 
-  // Намираме ID на последното МОЕ съобщение
   const myMessages = messages.filter((m) => m.user_id === userId);
   const lastMyMsgId = myMessages.length > 0 ? myMessages[myMessages.length - 1].id : null;
 
-  // Статус само за последното ми съобщение
-  function getReadStatus(msg) {
-    if (!lastMyMsgId || msg.id !== lastMyMsgId) return null;
+  function getReadStatus(msgId, createdAt) {
+    if (msgId !== lastMyMsgId) return null;
     if (memberReads.length === 0) return "delivered";
     const allRead = memberReads.every(
-      (m) => m.chat_last_read && new Date(m.chat_last_read) >= new Date(msg.created_at)
+      (m) => m.chat_last_read && new Date(m.chat_last_read) >= new Date(createdAt)
     );
     return allRead ? "read" : "delivered";
   }
@@ -171,32 +169,34 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
               );
             }
             const isMe = item.user_id === userId;
-            const readStatus = isMe ? getReadStatus(item) : null;
+            const readStatus = isMe ? getReadStatus(item.id, item.created_at) : null;
 
             return (
-              <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
-                {!isMe && (
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {(item.display_name || "?")[0].toUpperCase()}
+              <View style={[styles.msgWrapper, isMe && styles.msgWrapperMe]}>
+                <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
+                  {!isMe && (
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>
+                        {(item.display_name || "?")[0].toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={[styles.bubble, isMe && styles.bubbleMe]}>
+                    {!isMe && (
+                      <Text style={styles.senderName}>{item.display_name}</Text>
+                    )}
+                    <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
+                    <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>{formatTime(item.created_at)}</Text>
+                  </View>
+                </View>
+                {/* Отметки извън балона */}
+                {readStatus && (
+                  <View style={styles.tickRow}>
+                    <Text style={readStatus === "read" ? styles.tickRead : styles.tickDelivered}>
+                      {readStatus === "read" ? "✓✓ Прочетено" : "✓✓ Доставено"}
                     </Text>
                   </View>
                 )}
-                <View style={[styles.bubble, isMe && styles.bubbleMe]}>
-                  {!isMe && (
-                    <Text style={styles.senderName}>{item.display_name}</Text>
-                  )}
-                  <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
-                  <View style={styles.msgMeta}>
-                    <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>{formatTime(item.created_at)}</Text>
-                    {readStatus === "read" && (
-                      <Text style={styles.tickRead}>✓✓</Text>
-                    )}
-                    {readStatus === "delivered" && (
-                      <Text style={styles.tickDelivered}>✓✓</Text>
-                    )}
-                  </View>
-                </View>
               </View>
             );
           }}
@@ -251,7 +251,9 @@ const styles = StyleSheet.create({
     fontSize: 11, color: "#888", backgroundColor: "#e8e8e8",
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
   },
-  msgRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 8 },
+  msgWrapper: { marginBottom: 8 },
+  msgWrapperMe: { alignItems: "flex-end" },
+  msgRow: { flexDirection: "row", alignItems: "flex-end" },
   msgRowMe: { flexDirection: "row-reverse" },
   avatar: {
     width: 30, height: 30, borderRadius: 15,
@@ -262,7 +264,7 @@ const styles = StyleSheet.create({
   bubble: {
     maxWidth: "75%", backgroundColor: "#fff",
     borderRadius: 16, borderBottomLeftRadius: 4,
-    padding: 10, paddingBottom: 6,
+    padding: 10, paddingBottom: 8,
     shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
   },
   bubbleMe: {
@@ -273,13 +275,11 @@ const styles = StyleSheet.create({
   senderName: { fontSize: 11, fontWeight: "700", color: "#1D9E75", marginBottom: 3 },
   msgText: { fontSize: 15, color: "#1a1a1a", lineHeight: 20 },
   msgTextMe: { color: "#fff" },
-  msgMeta: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 4 },
-  msgTime: { fontSize: 10, color: "#bbb" },
-  msgTimeMe: { color: "rgba(255,255,255,0.7)" },
-  // Прочетено — ярко бяло
-  tickRead: { fontSize: 11, color: "#fff", fontWeight: "bold" },
-  // Доставено — полупрозрачно бяло
-  tickDelivered: { fontSize: 11, color: "rgba(255,255,255,0.45)", fontWeight: "bold" },
+  msgTime: { fontSize: 10, color: "#bbb", marginTop: 3, textAlign: "right" },
+  msgTimeMe: { color: "rgba(255,255,255,0.6)" },
+  tickRow: { marginTop: 2, marginRight: 4 },
+  tickRead: { fontSize: 10, color: "#1D9E75", fontWeight: "600" },
+  tickDelivered: { fontSize: 10, color: "#aaa", fontWeight: "600" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 80 },
   emptyEmoji: { fontSize: 48, marginBottom: 12 },
   emptyText: { fontSize: 14, color: "#aaa", textAlign: "center", lineHeight: 22 },
