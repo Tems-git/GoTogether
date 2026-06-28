@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
   ScrollView, Alert, Share, Clipboard, Modal, TextInput, KeyboardAvoidingView, Platform,
@@ -18,14 +18,34 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [savingName, setSavingName] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
+  const fetchMembers = useCallback(async () => {
     if (!trip?.id) return;
-    supabase
+    const { data } = await supabase
       .from("trip_members")
       .select("user_id, display_name, role, weight")
-      .eq("trip_id", trip.id)
-      .then(({ data }) => setMembers(data || []));
+      .eq("trip_id", trip.id);
+    setMembers(data || []);
   }, [trip?.id]);
+
+  // Members + Realtime за нови участници
+  useEffect(() => {
+    fetchMembers();
+    if (!trip?.id) return;
+
+    const channel = supabase
+      .channel(`members-${trip.id}-${user.id}`)
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "trip_members", filter: `trip_id=eq.${trip.id}` },
+        () => fetchMembers()
+      )
+      .on("postgres_changes",
+        { event: "UPDATE", schema: "public", table: "trip_members", filter: `trip_id=eq.${trip.id}` },
+        () => fetchMembers()
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [trip?.id, fetchMembers, user.id]);
 
   useEffect(() => {
     if (!user?.id) return;
