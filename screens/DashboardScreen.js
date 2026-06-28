@@ -40,7 +40,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       });
   }, [user?.id]);
 
-  // Брой непрочетени съобщения
   useEffect(() => {
     if (!trip?.id || !user?.id) return;
 
@@ -66,9 +65,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
     fetchUnread();
 
-    // Realtime за нови съобщения
+    // Уникален channel name по trip + user — важно!
     const channel = supabase
-      .channel(`dashboard-chat-${trip.id}`)
+      .channel(`dashboard-chat-${trip.id}-${user.id}`)
       .on("postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `trip_id=eq.${trip.id}` },
         (payload) => {
