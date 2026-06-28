@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback,
-  FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal,
+  FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
+  Alert, Modal, Keyboard,
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
@@ -14,7 +15,14 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
   const [memberReads, setMemberReads] = useState([]);
   const [editingMsg, setEditingMsg] = useState(null);
   const [editText, setEditText] = useState("");
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const flatRef = useRef(null);
+
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardWillShow", (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardWillHide", () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const markAsRead = useCallback(async () => {
     await supabase.from("trip_members")
@@ -268,13 +276,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
         </TouchableOpacity>
       </View>
 
-      {/* Edit modal — отдолу, над клавиатурата */}
+      {/* Edit modal — използва keyboardHeight вместо KeyboardAvoidingView */}
       <Modal visible={!!editingMsg} animationType="slide" transparent>
-        <KeyboardAvoidingView
-          style={styles.overlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
-          <View style={styles.editModal}>
+        <View style={styles.overlay}>
+          <View style={[styles.editModal, { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 16 : 40 }]}>
             <Text style={styles.editModalTitle}>✏️ Редактирай съобщение</Text>
             <TextInput
               style={styles.editModalInput}
@@ -288,7 +293,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
             <View style={styles.editModalBtns}>
               <TouchableOpacity
                 style={styles.editModalCancel}
-                onPress={() => { setEditingMsg(null); setEditText(""); }}
+                onPress={() => { setEditingMsg(null); setEditText(""); Keyboard.dismiss(); }}
               >
                 <Text style={styles.editModalCancelText}>Отказ</Text>
               </TouchableOpacity>
@@ -297,7 +302,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
               </TouchableOpacity>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -374,7 +379,7 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   editModal: {
     backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, paddingBottom: 40,
+    padding: 24,
   },
   editModalTitle: { fontSize: 16, fontWeight: "bold", color: "#1a1a1a", marginBottom: 12 },
   editModalInput: {
