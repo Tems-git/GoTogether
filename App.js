@@ -14,6 +14,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState("home");
   const [activeTrip, setActiveTrip] = useState(null);
+  const [allTrips, setAllTrips] = useState([]);
   const [tripLoading, setTripLoading] = useState(false);
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [inviteInput, setInviteInput] = useState("");
@@ -27,7 +28,7 @@ export default function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) handleUser(session.user);
-      else { setUser(null); setActiveTrip(null); }
+      else { setUser(null); setActiveTrip(null); setAllTrips([]); }
     });
 
     return () => subscription.unsubscribe();
@@ -40,10 +41,11 @@ export default function App() {
       .from("trip_members")
       .select("trip_id, trips(*)")
       .eq("user_id", u.id)
-      .order("joined_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (data?.trips) setActiveTrip(data.trips);
+      .order("joined_at", { ascending: false });
+
+    const trips = (data || []).map((d) => d.trips).filter(Boolean);
+    setAllTrips(trips);
+    if (trips.length > 0) setActiveTrip(trips[0]);
     setTripLoading(false);
     setScreen("dashboard");
   }
@@ -106,6 +108,7 @@ export default function App() {
           pendingInviteCode={pendingInviteCode}
           onTripReady={(trip) => {
             setActiveTrip(trip);
+            setAllTrips((prev) => [trip, ...prev.filter((t) => t.id !== trip.id)]);
             setPendingInviteCode(null);
             setScreen("dashboard");
           }}
@@ -116,10 +119,12 @@ export default function App() {
       <DashboardScreen
         user={user}
         trip={activeTrip}
-        onSignOut={() => { supabase.auth.signOut(); setUser(null); setActiveTrip(null); setScreen("home"); }}
+        allTrips={allTrips}
+        onSignOut={() => { supabase.auth.signOut(); setUser(null); setActiveTrip(null); setAllTrips([]); setScreen("home"); }}
         onAI={() => setScreen("ai")}
         onDocuments={() => setScreen("documents")}
         onExpenses={() => setScreen("expenses")}
+        onSwitchTrip={(trip) => setActiveTrip(trip)}
       />
     );
   }
