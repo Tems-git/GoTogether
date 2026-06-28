@@ -11,6 +11,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [displayName, setDisplayName] = useState("");
+  const [memberReads, setMemberReads] = useState([]); // chat_last_read за всички останали
   const flatRef = useRef(null);
 
   const markAsRead = useCallback(async () => {
@@ -18,6 +19,15 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
       .update({ chat_last_read: new Date().toISOString() })
       .eq("trip_id", tripId)
       .eq("user_id", userId);
+  }, [tripId, userId]);
+
+  const fetchMemberReads = useCallback(async () => {
+    const { data } = await supabase
+      .from("trip_members")
+      .select("user_id, chat_last_read")
+      .eq("trip_id", tripId)
+      .neq("user_id", userId);
+    setMemberReads(data || []);
   }, [tripId, userId]);
 
   const fetchMessages = useCallback(async () => {
@@ -40,6 +50,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
       .then(({ data }) => setDisplayName(data?.display_name || "Непознат"));
 
     fetchMessages();
+    fetchMemberReads();
 
     const channel = supabase
       .channel(`chat-${tripId}`)
@@ -50,10 +61,14 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
           await markAsRead();
         }
       )
+      .on("postgres_changes",
+        { event: "UPDATE", schema: "public", table: "trip_members", filter: `trip_id=eq.${tripId}` },
+        () => fetchMemberReads() // при промяна на chat_last_read
+      )
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [tripId, userId, fetchMessages, markAsRead]);
+  }, [tripId, userId, fetchMessages, fetchMemberReads, markAsRead]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -79,6 +94,20 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
       setSending(false);
     }
   }
+
+  // Проверяваме дали всички останали са прочели след created_at на съобщението
+  function getReadStatus(msg) {
+    if (msg.user_id !== userId) return null; // само моите съобщения
+    if (memberReads.length === 0) return "sent";
+    const allRead = memberReads.every(
+      (m) => m.chat_last_read && new Date(m.chat_last_read) >= new Date(msg.created_at)
+    );
+    return allRead ? "read" : "delivered";
+  }
+
+  // Показваме отметки само на последното ми съобщение
+  const myMessages = messages.filter((m) => m.user_id === userId);
+  const lastMyMsgId = myMessages.length > 0 ? myMessages[myMessages.length - 1].id : null;
 
   function formatTime(iso) {
     const d = new Date(iso);
@@ -142,6 +171,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
               );
             }
             const isMe = item.user_id === userId;
+            const isLastMine = item.id === lastMyMsgId;
+            const readStatus = isLastMine ? getReadStatus(item) : null;
+
             return (
               <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
                 {!isMe && (
@@ -156,7 +188,15 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
                     <Text style={styles.senderName}>{item.display_name}</Text>
                   )}
                   <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
-                  <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>{formatTime(item.created_at)}</Text>
+                  <View style={styles.msgMeta}>
+                    <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>{formatTime(item.created_at)}</Text>
+                    {readStatus === "read" && (
+                      <Text style={styles.tickRead}>✓✓</Text>
+                    )}
+                    {readStatus === "delivered" && (
+                      <Text style={styles.tickDelivered}>✓✓</Text>
+                    )}
+                  </View>
                 </View>
               </View>
             );
@@ -234,8 +274,11 @@ const styles = StyleSheet.create({
   senderName: { fontSize: 11, fontWeight: "700", color: "#1D9E75", marginBottom: 3 },
   msgText: { fontSize: 15, color: "#1a1a1a", lineHeight: 20 },
   msgTextMe: { color: "#fff" },
-  msgTime: { fontSize: 10, color: "#bbb", marginTop: 4, alignSelf: "flex-end" },
+  msgMeta: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 4 },
+  msgTime: { fontSize: 10, color: "#bbb" },
   msgTimeMe: { color: "rgba(255,255,255,0.7)" },
+  tickRead: { fontSize: 11, color: "#A8F0D4", fontWeight: "bold" },
+  tickDelivered: { fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: "bold" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 80 },
   emptyEmoji: { fontSize: 48, marginBottom: 12 },
   emptyText: { fontSize: 14, color: "#aaa", textAlign: "center", lineHeight: 22 },
