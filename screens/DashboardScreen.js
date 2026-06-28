@@ -3,9 +3,17 @@ import {
   StyleSheet, Text, View, TouchableOpacity,
   ScrollView, Alert, Share, Clipboard, Modal, TextInput, KeyboardAvoidingView, Platform,
 } from "react-native";
+import Constants from "expo-constants";
 import { supabase } from "../lib/supabase";
 
 const MAX_VISIBLE = 4;
+
+// В Expo Go linkovete са exp+gotogether://, в production — gotogether://
+function getDeepLink(code) {
+  const isExpoGo = Constants.appOwnership === "expo";
+  const scheme = isExpoGo ? "exp+gotogether" : "gotogether";
+  return `${scheme}://join/${code}`;
+}
 
 export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onChat, onSwitchTrip, onNewTrip }) {
   const [copied, setCopied] = useState(false);
@@ -125,11 +133,15 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   async function handleShare() {
     if (!trip?.invite_code) return;
     const code = trip.invite_code;
-    const deepLink = `gotogether://join/${code}`;
+    const deepLink = getDeepLink(code);
     try {
       await Share.share({
-        message: `Присъедини се към "${trip.name}" в GoTogether!\n\nОтвори линка: ${deepLink}\n\nИли въведи код: ${code}`,
-        url: deepLink, // iOS показва като линк
+        message: `Присъедини се към "${trip.name}" в GoTogether!
+
+Отвори линка: ${deepLink}
+
+Или въведи код: ${code}`,
+        url: deepLink,
       });
     } catch (e) {
       Alert.alert("Грешка", e.message);

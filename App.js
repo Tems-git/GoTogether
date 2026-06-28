@@ -1,7 +1,6 @@
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Text, View, TouchableOpacity, TextInput } from "react-native";
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, Linking } from "react-native";
 import { useState, useEffect } from "react";
-import { Linking } from "react-native";
 import { supabase } from "./lib/supabase";
 import SignInScreen from "./screens/SignInScreen";
 import DashboardScreen from "./screens/DashboardScreen";
@@ -11,9 +10,9 @@ import ExpensesScreen from "./screens/ExpensesScreen";
 import ChatScreen from "./screens/ChatScreen";
 import TripSetupScreen from "./screens/TripSetupScreen";
 
+// Разпознаваме код от gotogether://join/XXX или exp+gotogether://join/XXX
 function parseInviteCode(url) {
   if (!url) return null;
-  // gotogether://join/XXXXXX
   const match = url.match(/join\/([A-Z0-9]+)/i);
   return match ? match[1].toUpperCase() : null;
 }
@@ -29,7 +28,6 @@ export default function App() {
   const [inviteInput, setInviteInput] = useState("");
   const [showInviteInput, setShowInviteInput] = useState(false);
 
-  // Deep link handling
   useEffect(() => {
     // App отворена чрез deep link докато е затворена
     Linking.getInitialURL().then((url) => {
