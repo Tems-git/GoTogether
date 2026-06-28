@@ -106,82 +106,85 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const dateRange = startDate && endDate ? `${startDate} – ${endDate}` : startDate || null;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <View style={styles.flex}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
 
-      <View style={styles.header}>
-        <Text style={styles.headerEmoji}>🧳</Text>
-        <Text style={styles.appName}>GoTogether</Text>
-        <TouchableOpacity style={styles.nameRow} onPress={() => { setNewName(displayName); setEditNameVisible(true); }}>
-          <Text style={styles.displayName}>👤 {displayName}</Text>
-          <Text style={styles.editIcon}>✏️</Text>
-        </TouchableOpacity>
-      </View>
-
-      {trip && (
-        <View style={styles.tripCard}>
-          <View style={styles.tripTop}>
-            <View style={styles.tripInfo}>
-              <Text style={styles.tripName}>{trip.name}</Text>
-              {trip.destination && <Text style={styles.tripDest}>📍 {trip.destination}</Text>}
-              {dateRange && <Text style={styles.tripDates}>📅 {dateRange}</Text>}
-            </View>
-            <View style={styles.inviteBox}>
-              <Text style={styles.inviteLabel}>Код</Text>
-              <TouchableOpacity onPress={handleCopyCode}>
-                <Text style={styles.inviteCode}>{trip.invite_code}</Text>
-                <Text style={styles.inviteCopy}>{copied ? "✓ Копирано" : "докосни"}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Участници — аватари + "+N" */}
-          {otherMembers.length > 0 && (
-            <TouchableOpacity style={styles.membersRow} onPress={() => setMembersModalVisible(true)}>
-              {visibleMembers.map((m, i) => (
-                <View
-                  key={m.user_id}
-                  style={[styles.avatar, { backgroundColor: COLORS[(i + 1) % COLORS.length], marginLeft: i > 0 ? -8 : 0 }]}
-                >
-                  <Text style={styles.avatarText}>{getInitials(m.display_name)}</Text>
-                </View>
-              ))}
-              {extraCount > 0 && (
-                <View style={[styles.avatar, styles.avatarExtra, { marginLeft: -8 }]}>
-                  <Text style={styles.avatarExtraText}>+{extraCount}</Text>
-                </View>
-              )}
-              <Text style={styles.membersLabel}>
-                {members.length} {members.length === 1 ? "участник" : "участника"}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity style={styles.switchBtn} onPress={() => setTripPickerVisible(true)}>
-            <Text style={styles.switchBtnText}>🔄 Смени / добави пътуване</Text>
+        <View style={styles.header}>
+          <Text style={styles.headerEmoji}>🧳</Text>
+          <Text style={styles.appName}>GoTogether</Text>
+          <TouchableOpacity style={styles.nameRow} onPress={() => { setNewName(displayName); setEditNameVisible(true); }}>
+            <Text style={styles.displayName}>👤 {displayName}</Text>
+            <Text style={styles.editIcon}>✏️</Text>
           </TouchableOpacity>
         </View>
-      )}
 
-      <View style={styles.cards}>
-        {cards.map((card, i) => (
-          <TouchableOpacity
-            key={i}
-            style={[styles.card, { backgroundColor: card.color }]}
-            onPress={card.onPress}
-            disabled={!card.onPress}
-          >
-            <Text style={styles.cardEmoji}>{card.emoji}</Text>
-            <Text style={styles.cardTitle}>{card.title}</Text>
-            <Text style={styles.cardSub}>{card.sub}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+        {trip && (
+          <View style={styles.tripCard}>
+            <View style={styles.tripTop}>
+              <View style={styles.tripInfo}>
+                <Text style={styles.tripName}>{trip.name}</Text>
+                {trip.destination && <Text style={styles.tripDest}>📍 {trip.destination}</Text>}
+                {dateRange && <Text style={styles.tripDates}>📅 {dateRange}</Text>}
+              </View>
+              <View style={styles.inviteBox}>
+                <Text style={styles.inviteLabel}>Код</Text>
+                <TouchableOpacity onPress={handleCopyCode}>
+                  <Text style={styles.inviteCode}>{trip.invite_code}</Text>
+                  <Text style={styles.inviteCopy}>{copied ? "✓ Копирано" : "докосни"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
-      <TouchableOpacity style={styles.signOut} onPress={onSignOut}>
-        <Text style={styles.signOutText}>Изход</Text>
-      </TouchableOpacity>
+            {otherMembers.length > 0 && (
+              <TouchableOpacity style={styles.membersRow} onPress={() => setMembersModalVisible(true)}>
+                {visibleMembers.map((m, i) => (
+                  <View
+                    key={m.user_id}
+                    style={[styles.avatar, { backgroundColor: COLORS[(i + 1) % COLORS.length], marginLeft: i > 0 ? -8 : 0 }]}
+                  >
+                    <Text style={styles.avatarText}>{getInitials(m.display_name)}</Text>
+                  </View>
+                ))}
+                {extraCount > 0 && (
+                  <View style={[styles.avatar, styles.avatarExtra, { marginLeft: -8 }]}>
+                    <Text style={styles.avatarExtraText}>+{extraCount}</Text>
+                  </View>
+                )}
+                <Text style={styles.membersLabel}>
+                  {members.length} {members.length === 1 ? "участник" : "участника"}
+                </Text>
+              </TouchableOpacity>
+            )}
 
-      {/* Members list modal */}
+            <TouchableOpacity style={styles.switchBtn} onPress={() => setTripPickerVisible(true)}>
+              <Text style={styles.switchBtnText}>🔄 Смени / добави пътуване</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={styles.cards}>
+          {cards.map((card, i) => (
+            <TouchableOpacity
+              key={i}
+              style={[styles.card, { backgroundColor: card.color }]}
+              onPress={card.onPress}
+              disabled={!card.onPress}
+            >
+              <Text style={styles.cardEmoji}>{card.emoji}</Text>
+              <Text style={styles.cardTitle}>{card.title}</Text>
+              <Text style={styles.cardSub}>{card.sub}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <TouchableOpacity style={styles.signOut} onPress={onSignOut}>
+          <Text style={styles.signOutText}>Изход</Text>
+        </TouchableOpacity>
+
+      </ScrollView>
+
+      {/* Всички модали са извън ScrollView */}
+
       <Modal visible={membersModalVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.modal}>
@@ -205,7 +208,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         </View>
       </Modal>
 
-      {/* Edit name modal */}
       <Modal visible={editNameVisible} animationType="slide" transparent>
         <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={styles.modal}>
@@ -232,7 +234,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Trip picker modal */}
       <Modal visible={tripPickerVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.modal}>
@@ -260,11 +261,12 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         </View>
       </Modal>
 
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   container: { flex: 1, backgroundColor: "#F5F5F5" },
   scroll: { padding: 24, paddingTop: 60, paddingBottom: 40 },
   header: { alignItems: "center", marginBottom: 20 },
