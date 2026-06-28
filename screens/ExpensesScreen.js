@@ -93,7 +93,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // Цвят по индекс на участника
   const memberColor = (uid) => {
     const idx = members.findIndex((m) => m.user_id === uid);
     return MEMBER_COLORS[idx % MEMBER_COLORS.length];
@@ -183,6 +182,12 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const iOwe = Math.max(0, myUnsettledShare - (iPaid - mySettledShare));
   const owedToMe = Math.max(0, (iPaid - mySettledShare) - myUnsettledShare);
 
+  // Похарчено по участник
+  const spentByMember = members.map((m) => ({
+    ...m,
+    spent: expenses.filter((e) => e.paid_by === m.user_id).reduce((s, e) => s + Number(e.amount), 0),
+  })).filter((m) => m.spent > 0);
+
   const settlements = calcSettlements(members, expenses, splits);
   const memberName = (uid) => members.find((m) => m.user_id === uid)?.display_name || "Непознат";
   const catInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[4];
@@ -220,6 +225,22 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
           <Text style={styles.summaryLbl}>Дължат ти</Text>
         </View>
       </View>
+
+      {/* Похарчено по участник */}
+      {spentByMember.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.spentRow}>
+          {spentByMember.map((m, i) => {
+            const color = memberColor(m.user_id);
+            return (
+              <View key={m.user_id} style={styles.spentChip}>
+                <View style={[styles.spentDot, { backgroundColor: color }]} />
+                <Text style={styles.spentName}>{m.display_name}</Text>
+                <Text style={[styles.spentAmt, { color }]}>{m.spent.toFixed(0)} лв.</Text>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {allSettled && (
         <View style={styles.settledBanner}>
@@ -365,11 +386,20 @@ const styles = StyleSheet.create({
   backText: { color: "#1D9E75", fontSize: 16 },
   title: { fontSize: 26, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
   subtitle: { fontSize: 14, color: "#888", marginBottom: 24 },
-  summary: { backgroundColor: "#1D9E75", borderRadius: 16, padding: 20, flexDirection: "row", marginBottom: 16 },
+  summary: { backgroundColor: "#1D9E75", borderRadius: 16, padding: 20, flexDirection: "row", marginBottom: 10 },
   summaryItem: { flex: 1, alignItems: "center" },
   summaryVal: { fontSize: 16, fontWeight: "bold", color: "#fff" },
   summaryLbl: { fontSize: 11, color: "#E1F5EE", marginTop: 4 },
   divider: { width: 0.5, backgroundColor: "rgba(255,255,255,0.3)" },
+  spentRow: { flexDirection: "row", marginBottom: 14 },
+  spentChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "#fff", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+    marginRight: 8,
+  },
+  spentDot: { width: 8, height: 8, borderRadius: 4 },
+  spentName: { fontSize: 12, color: "#555", fontWeight: "500" },
+  spentAmt: { fontSize: 12, fontWeight: "700" },
   settledBanner: { backgroundColor: "#E8F8F0", borderRadius: 12, padding: 14, marginBottom: 16, alignItems: "center" },
   settledBannerText: { color: "#1D9E75", fontWeight: "bold", fontSize: 15 },
   settleCard: { backgroundColor: "#fff", borderRadius: 14, padding: 16, marginBottom: 16, borderLeftWidth: 4, borderLeftColor: "#1D9E75" },
