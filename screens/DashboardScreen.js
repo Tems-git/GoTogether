@@ -9,6 +9,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [copied, setCopied] = useState(false);
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
   const [members, setMembers] = useState([]);
+  const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
     if (!trip?.id) return;
@@ -18,6 +19,19 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       .eq("trip_id", trip.id)
       .then(({ data }) => setMembers(data || []));
   }, [trip?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.display_name) setDisplayName(data.display_name);
+        else setDisplayName(user.email.split("@")[0]);
+      });
+  }, [user?.id]);
 
   const cards = [
     { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE" },
@@ -55,6 +69,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   }
 
   const COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8"];
+  const otherMembers = members.filter((m) => m.user_id !== user.id);
 
   const startDate = formatDate(trip?.start_date);
   const endDate = formatDate(trip?.end_date);
@@ -66,7 +81,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       <View style={styles.header}>
         <Text style={styles.headerEmoji}>🧳</Text>
         <Text style={styles.appName}>GoTogether</Text>
-        <Text style={styles.email}>{user.email}</Text>
+        <Text style={styles.displayName}>👤 {displayName}</Text>
       </View>
 
       {trip && (
@@ -87,19 +102,16 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
           </View>
 
           {/* Участници */}
-          {members.length > 0 && (
+          {otherMembers.length > 0 && (
             <View style={styles.membersRow}>
-              {members.map((m, i) => (
-                <View
-                  key={m.user_id}
-                  style={[styles.avatar, { backgroundColor: COLORS[i % COLORS.length] }]}
-                >
-                  <Text style={styles.avatarText}>{getInitials(m.display_name)}</Text>
+              {otherMembers.map((m, i) => (
+                <View key={m.user_id} style={styles.memberChip}>
+                  <View style={[styles.avatar, { backgroundColor: COLORS[(i + 1) % COLORS.length] }]}>
+                    <Text style={styles.avatarText}>{getInitials(m.display_name)}</Text>
+                  </View>
+                  <Text style={styles.memberName}>{m.display_name}</Text>
                 </View>
               ))}
-              <Text style={styles.membersCount}>
-                {members.length} {members.length === 1 ? "участник" : "участника"}
-              </Text>
             </View>
           )}
 
@@ -173,7 +185,7 @@ const styles = StyleSheet.create({
   header: { alignItems: "center", marginBottom: 20 },
   headerEmoji: { fontSize: 44, marginBottom: 6 },
   appName: { fontSize: 22, fontWeight: "bold", color: "#1D9E75" },
-  email: { fontSize: 13, color: "#aaa", marginTop: 2 },
+  displayName: { fontSize: 14, color: "#555", marginTop: 4, fontWeight: "500" },
   tripCard: {
     backgroundColor: "#1D9E75", borderRadius: 20, padding: 20,
     marginBottom: 24, shadowColor: "#1D9E75", shadowOpacity: 0.3,
@@ -193,17 +205,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
   },
   inviteCopy: { fontSize: 10, color: "#E1F5EE", textAlign: "center", marginTop: 4 },
-  membersRow: {
-    flexDirection: "row", alignItems: "center", marginTop: 14,
-    flexWrap: "wrap", gap: 6,
-  },
+  membersRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
+  memberChip: { flexDirection: "row", alignItems: "center", gap: 6 },
   avatar: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 28, height: 28, borderRadius: 14,
     alignItems: "center", justifyContent: "center",
-    borderWidth: 2, borderColor: "rgba(255,255,255,0.4)",
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.4)",
   },
-  avatarText: { fontSize: 12, fontWeight: "bold", color: "#fff" },
-  membersCount: { fontSize: 12, color: "#E1F5EE", marginLeft: 4 },
+  avatarText: { fontSize: 11, fontWeight: "bold", color: "#fff" },
+  memberName: { fontSize: 13, color: "#E1F5EE", fontWeight: "500" },
   switchBtn: {
     marginTop: 14, backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 10, padding: 10, alignItems: "center",
