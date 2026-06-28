@@ -3,17 +3,9 @@ import {
   StyleSheet, Text, View, TouchableOpacity,
   ScrollView, Alert, Share, Clipboard, Modal, TextInput, KeyboardAvoidingView, Platform,
 } from "react-native";
-import Constants from "expo-constants";
 import { supabase } from "../lib/supabase";
 
 const MAX_VISIBLE = 4;
-
-// В Expo Go linkovete са exp+gotogether://, в production — gotogether://
-function getDeepLink(code) {
-  const isExpoGo = Constants.appOwnership === "expo";
-  const scheme = isExpoGo ? "exp+gotogether" : "gotogether";
-  return `${scheme}://join/${code}`;
-}
 
 export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onChat, onSwitchTrip, onNewTrip }) {
   const [copied, setCopied] = useState(false);
@@ -132,16 +124,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   async function handleShare() {
     if (!trip?.invite_code) return;
-    const code = trip.invite_code;
-    const deepLink = getDeepLink(code);
     try {
       await Share.share({
-        message: `Присъедини се към "${trip.name}" в GoTogether!
-
-Отвори линка: ${deepLink}
-
-Или въведи код: ${code}`,
-        url: deepLink,
+        message: `Присъедини се към "${trip.name}" в GoTogether!\n\n1. Инсталирай Expo Go\n2. Отвори GoTogether\n3. Въведи код: ${trip.invite_code}`,
       });
     } catch (e) {
       Alert.alert("Грешка", e.message);
@@ -248,7 +233,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         </View>
 
         <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
-          <Text style={styles.shareBtnText}>🔗 Покани с линк</Text>
+          <Text style={styles.shareBtnText}>🔗 Покани участник</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.signOut} onPress={onSignOut}>
