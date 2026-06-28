@@ -4,7 +4,7 @@ import {
   ScrollView, Alert, Share, Clipboard, Modal,
 } from "react-native";
 
-export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onSwitchTrip }) {
+export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onSwitchTrip, onNewTrip }) {
   const [copied, setCopied] = useState(false);
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
 
@@ -46,25 +46,19 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
 
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerEmoji}>🧳</Text>
         <Text style={styles.appName}>GoTogether</Text>
         <Text style={styles.email}>{user.email}</Text>
       </View>
 
-      {/* Trip card */}
       {trip && (
         <View style={styles.tripCard}>
           <View style={styles.tripTop}>
             <View style={styles.tripInfo}>
               <Text style={styles.tripName}>{trip.name}</Text>
-              {trip.destination && (
-                <Text style={styles.tripDest}>📍 {trip.destination}</Text>
-              )}
-              {dateRange && (
-                <Text style={styles.tripDates}>📅 {dateRange}</Text>
-              )}
+              {trip.destination && <Text style={styles.tripDest}>📍 {trip.destination}</Text>}
+              {dateRange && <Text style={styles.tripDates}>📅 {dateRange}</Text>}
             </View>
             <View style={styles.inviteBox}>
               <Text style={styles.inviteLabel}>Код</Text>
@@ -74,15 +68,12 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               </TouchableOpacity>
             </View>
           </View>
-          {allTrips && allTrips.length > 1 && (
-            <TouchableOpacity style={styles.switchBtn} onPress={() => setTripPickerVisible(true)}>
-              <Text style={styles.switchBtnText}>🔄 Смени пътуване</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.switchBtn} onPress={() => setTripPickerVisible(true)}>
+            <Text style={styles.switchBtnText}>🔄 Смени / добави пътуване</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* Cards */}
       <View style={styles.cards}>
         {cards.map((card, i) => (
           <TouchableOpacity
@@ -102,11 +93,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         <Text style={styles.signOutText}>Изход</Text>
       </TouchableOpacity>
 
-      {/* Trip picker modal */}
       <Modal visible={tripPickerVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.modal}>
-            <Text style={styles.modalTitle}>Избери пътуване</Text>
+            <Text style={styles.modalTitle}>Пътувания</Text>
             {(allTrips || []).map((t) => (
               <TouchableOpacity
                 key={t.id}
@@ -120,15 +110,17 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                   <Text style={[styles.tripOptionName, t.id === trip?.id && styles.tripOptionNameActive]}>
                     {t.name}
                   </Text>
-                  {t.destination && (
-                    <Text style={styles.tripOptionDest}>📍 {t.destination}</Text>
-                  )}
+                  {t.destination && <Text style={styles.tripOptionDest}>📍 {t.destination}</Text>}
                 </View>
-                {t.id === trip?.id && (
-                  <Text style={styles.tripOptionCheck}>✓</Text>
-                )}
+                {t.id === trip?.id && <Text style={styles.tripOptionCheck}>✓</Text>}
               </TouchableOpacity>
             ))}
+            <TouchableOpacity
+              style={styles.newTripBtn}
+              onPress={() => { setTripPickerVisible(false); onNewTrip(); }}
+            >
+              <Text style={styles.newTripBtnText}>+ Ново пътуване</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.modalClose} onPress={() => setTripPickerVisible(false)}>
               <Text style={styles.modalCloseText}>Затвори</Text>
             </TouchableOpacity>
@@ -143,12 +135,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F5F5" },
   scroll: { padding: 24, paddingTop: 60, paddingBottom: 40 },
-
   header: { alignItems: "center", marginBottom: 20 },
   headerEmoji: { fontSize: 44, marginBottom: 6 },
   appName: { fontSize: 22, fontWeight: "bold", color: "#1D9E75" },
   email: { fontSize: 13, color: "#aaa", marginTop: 2 },
-
   tripCard: {
     backgroundColor: "#1D9E75", borderRadius: 20, padding: 20,
     marginBottom: 24, shadowColor: "#1D9E75", shadowOpacity: 0.3,
@@ -159,7 +149,6 @@ const styles = StyleSheet.create({
   tripName: { fontSize: 20, fontWeight: "bold", color: "#fff", marginBottom: 6 },
   tripDest: { fontSize: 13, color: "#E1F5EE", marginBottom: 3 },
   tripDates: { fontSize: 13, color: "#E1F5EE" },
-
   inviteBox: { alignItems: "center", marginLeft: 12 },
   inviteLabel: { fontSize: 10, color: "#E1F5EE", marginBottom: 4, letterSpacing: 1 },
   inviteCode: {
@@ -169,25 +158,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
   },
   inviteCopy: { fontSize: 10, color: "#E1F5EE", textAlign: "center", marginTop: 4 },
-
   switchBtn: {
     marginTop: 14, backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 10, padding: 10, alignItems: "center",
   },
   switchBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 8 },
   card: { width: "47%", borderRadius: 16, padding: 20, alignItems: "center" },
   cardEmoji: { fontSize: 32, marginBottom: 8 },
   cardTitle: { fontSize: 15, fontWeight: "bold", color: "#1a1a1a" },
   cardSub: { fontSize: 12, color: "#666", marginTop: 4, textAlign: "center", fontWeight: "600" },
-
   signOut: {
     marginTop: 24, padding: 14, borderRadius: 12,
     borderWidth: 1, borderColor: "#ddd", alignItems: "center",
   },
   signOutText: { color: "#aaa", fontSize: 14 },
-
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modal: {
     backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24,
@@ -196,8 +181,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 16 },
   tripOption: {
     flexDirection: "row", alignItems: "center",
-    padding: 14, borderRadius: 12, marginBottom: 8,
-    backgroundColor: "#F5F5F5",
+    padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: "#F5F5F5",
   },
   tripOptionActive: { backgroundColor: "#E1F5EE", borderWidth: 1.5, borderColor: "#1D9E75" },
   tripOptionInfo: { flex: 1 },
@@ -205,8 +189,13 @@ const styles = StyleSheet.create({
   tripOptionNameActive: { color: "#1D9E75" },
   tripOptionDest: { fontSize: 12, color: "#888", marginTop: 2 },
   tripOptionCheck: { fontSize: 18, color: "#1D9E75", fontWeight: "bold" },
+  newTripBtn: {
+    backgroundColor: "#1D9E75", padding: 14, borderRadius: 12,
+    alignItems: "center", marginTop: 4, marginBottom: 8,
+  },
+  newTripBtnText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
   modalClose: {
-    marginTop: 8, padding: 14, borderRadius: 12,
+    padding: 14, borderRadius: 12,
     borderWidth: 1, borderColor: "#ddd", alignItems: "center",
   },
   modalCloseText: { color: "#888", fontSize: 15 },
