@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, Alert, Share, Clipboard, Modal,
+  ScrollView, Alert, Share, Clipboard, Modal, TextInput,
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
@@ -10,6 +10,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
   const [members, setMembers] = useState([]);
   const [displayName, setDisplayName] = useState("");
+  const [editNameVisible, setEditNameVisible] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   useEffect(() => {
     if (!trip?.id) return;
@@ -32,6 +35,29 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         else setDisplayName(user.email.split("@")[0]);
       });
   }, [user?.id]);
+
+  async function handleSaveName() {
+    const name = newName.trim();
+    if (!name) return Alert.alert("Грешка", "Въведи ново име");
+    setSavingName(true);
+    try {
+      await supabase.from("profiles").upsert({ id: user.id, display_name: name });
+      // Обновяваме и в trip_members за текущото пътуване
+      if (trip?.id) {
+        await supabase.from("trip_members")
+          .update({ display_name: name })
+          .eq("trip_id", trip.id)
+          .eq("user_id", user.id);
+      }
+      setDisplayName(name);
+      setEditNameVisible(false);
+      setNewName("");
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    } finally {
+      setSavingName(false);
+    }
+  }
 
   const cards = [
     { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE" },
@@ -81,7 +107,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       <View style={styles.header}>
         <Text style={styles.headerEmoji}>🧳</Text>
         <Text style={styles.appName}>GoTogether</Text>
-        <Text style={styles.displayName}>👤 {displayName}</Text>
+        <TouchableOpacity style={styles.nameRow} onPress={() => { setNewName(displayName); setEditNameVisible(true); }}>
+          <Text style={styles.displayName}>👤 {displayName}</Text>
+          <Text style={styles.editIcon}>✏️</Text>
+        </TouchableOpacity>
       </View>
 
       {trip && (
@@ -101,7 +130,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
             </View>
           </View>
 
-          {/* Участници */}
           {otherMembers.length > 0 && (
             <View style={styles.membersRow}>
               {otherMembers.map((m, i) => (
@@ -140,6 +168,34 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         <Text style={styles.signOutText}>Изход</Text>
       </TouchableOpacity>
 
+      {/* Edit name modal */}
+      <Modal visible={editNameVisible} animationType="fade" transparent>
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>Смени никнейм</Text>
+            <TextInput
+              style={styles.nameInput}
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="Новото ти име"
+              placeholderTextColor="#bbb"
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleSaveName}
+            />
+            <View style={styles.modalBtns}>
+              <TouchableOpacity style={styles.btnCancel} onPress={() => { setEditNameVisible(false); setNewName(""); }}>
+                <Text style={styles.btnCancelText}>Отказ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnSave} onPress={handleSaveName} disabled={savingName}>
+                <Text style={styles.btnSaveText}>Запази</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Trip picker modal */}
       <Modal visible={tripPickerVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.modal}>
@@ -185,7 +241,9 @@ const styles = StyleSheet.create({
   header: { alignItems: "center", marginBottom: 20 },
   headerEmoji: { fontSize: 44, marginBottom: 6 },
   appName: { fontSize: 22, fontWeight: "bold", color: "#1D9E75" },
-  displayName: { fontSize: 14, color: "#555", marginTop: 4, fontWeight: "500" },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
+  displayName: { fontSize: 14, color: "#555", fontWeight: "500" },
+  editIcon: { fontSize: 12 },
   tripCard: {
     backgroundColor: "#1D9E75", borderRadius: 20, padding: 20,
     marginBottom: 24, shadowColor: "#1D9E75", shadowOpacity: 0.3,
@@ -235,6 +293,15 @@ const styles = StyleSheet.create({
     padding: 24, paddingBottom: 40,
   },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 16 },
+  nameInput: {
+    backgroundColor: "#F5F5F5", borderRadius: 12, padding: 14,
+    fontSize: 16, color: "#1a1a1a", marginBottom: 16,
+  },
+  modalBtns: { flexDirection: "row", gap: 10 },
+  btnCancel: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
+  btnCancelText: { color: "#888", fontSize: 15 },
+  btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#1D9E75", alignItems: "center" },
+  btnSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
   tripOption: {
     flexDirection: "row", alignItems: "center",
     padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: "#F5F5F5",
