@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback,
-  FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal,
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
@@ -12,10 +12,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
   const [sending, setSending] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [memberReads, setMemberReads] = useState([]);
-  const [editingId, setEditingId] = useState(null);
+  const [editingMsg, setEditingMsg] = useState(null);
   const [editText, setEditText] = useState("");
   const flatRef = useRef(null);
-  const editInputRef = useRef(null);
 
   const markAsRead = useCallback(async () => {
     await supabase.from("trip_members")
@@ -85,12 +84,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
     }
   }, [messages]);
 
-  useEffect(() => {
-    if (editingId) {
-      setTimeout(() => editInputRef.current?.focus(), 100);
-    }
-  }, [editingId]);
-
   async function handleSend() {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -110,14 +103,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
     }
   }
 
-  function startEdit(msg) {
-    setEditingId(msg.id);
+  function handleLongPress(msg) {
+    if (msg.user_id !== userId) return;
+    setEditingMsg(msg);
     setEditText(msg.text);
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-    setEditText("");
   }
 
   async function handleSaveEdit() {
@@ -126,25 +115,17 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
     try {
       await supabase.from("messages")
         .update({ text: trimmed, updated_at: new Date().toISOString() })
-        .eq("id", editingId)
+        .eq("id", editingMsg.id)
         .eq("user_id", userId);
       setMessages((prev) => prev.map((m) =>
-        m.id === editingId ? { ...m, text: trimmed, updated_at: new Date().toISOString() } : m
+        m.id === editingMsg.id ? { ...m, text: trimmed, updated_at: new Date().toISOString() } : m
       ));
     } catch (e) {
       Alert.alert("Грешка", e.message);
     } finally {
-      setEditingId(null);
+      setEditingMsg(null);
       setEditText("");
     }
-  }
-
-  function handleLongPress(msg) {
-    if (msg.user_id !== userId) return;
-    Alert.alert("Съобщение", undefined, [
-      { text: "Редактирай ✏️", onPress: () => startEdit(msg) },
-      { text: "Отказ", style: "cancel" },
-    ]);
   }
 
   const myMessages = messages.filter((m) => m.user_id === userId);
@@ -222,7 +203,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
             }
             const isMe = item.user_id === userId;
             const readStatus = isMe ? getReadStatus(item.id, item.created_at) : null;
-            const isEditing = item.id === editingId;
 
             return (
               <View style={[styles.msgWrapper, isMe && styles.msgWrapperMe]}>
@@ -239,40 +219,17 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
                       {!isMe && (
                         <Text style={styles.senderName}>{item.display_name}</Text>
                       )}
-                      {isEditing ? (
-                        <View>
-                          <TextInput
-                            ref={editInputRef}
-                            style={styles.editInput}
-                            value={editText}
-                            onChangeText={setEditText}
-                            multiline
-                            autoFocus
-                          />
-                          <View style={styles.editBtns}>
-                            <TouchableOpacity onPress={cancelEdit} style={styles.editCancelBtn}>
-                              <Text style={styles.editCancelText}>Отказ</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={handleSaveEdit} style={styles.editSaveBtn}>
-                              <Text style={styles.editSaveText}>Запази</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ) : (
-                        <>
-                          <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
-                          <View style={styles.timeLine}>
-                            <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>
-                              {formatTime(item.created_at)}
-                              {item.updated_at ? " · редактирано" : ""}
-                            </Text>
-                          </View>
-                        </>
-                      )}
+                      <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
+                      <View style={styles.timeLine}>
+                        <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>
+                          {formatTime(item.created_at)}
+                          {item.updated_at ? " · редактирано" : ""}
+                        </Text>
+                      </View>
                     </View>
                   </TouchableWithoutFeedback>
                 </View>
-                {readStatus && !isEditing && (
+                {readStatus && (
                   <View style={styles.tickRow}>
                     <Text style={readStatus === "read" ? styles.tickRead : styles.tickDelivered}>
                       {readStatus === "read" ? "✓✓ Прочетено" : "✓✓ Доставено"}
@@ -310,6 +267,38 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
           <Text style={styles.sendIcon}>{sending ? "..." : "➤"}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Edit modal — отдолу, над клавиатурата */}
+      <Modal visible={!!editingMsg} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          style={styles.overlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={styles.editModal}>
+            <Text style={styles.editModalTitle}>✏️ Редактирай съобщение</Text>
+            <TextInput
+              style={styles.editModalInput}
+              value={editText}
+              onChangeText={setEditText}
+              multiline
+              autoFocus
+              placeholderTextColor="#bbb"
+              maxLength={500}
+            />
+            <View style={styles.editModalBtns}>
+              <TouchableOpacity
+                style={styles.editModalCancel}
+                onPress={() => { setEditingMsg(null); setEditText(""); }}
+              >
+                <Text style={styles.editModalCancelText}>Отказ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.editModalSave} onPress={handleSaveEdit}>
+                <Text style={styles.editModalSaveText}>Запази</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -360,16 +349,6 @@ const styles = StyleSheet.create({
   timeLine: { flexDirection: "row", justifyContent: "flex-end", marginTop: 3 },
   msgTime: { fontSize: 10, color: "#bbb" },
   msgTimeMe: { color: "rgba(255,255,255,0.6)" },
-  editInput: {
-    color: "#fff", fontSize: 15, lineHeight: 20,
-    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.5)",
-    paddingBottom: 4, minWidth: 160,
-  },
-  editBtns: { flexDirection: "row", gap: 8, marginTop: 8, justifyContent: "flex-end" },
-  editCancelBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.15)" },
-  editCancelText: { color: "rgba(255,255,255,0.8)", fontSize: 12 },
-  editSaveBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.3)" },
-  editSaveText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
   tickRow: { marginTop: 2, marginRight: 4 },
   tickRead: { fontSize: 10, color: "#1D9E75", fontWeight: "600" },
   tickDelivered: { fontSize: 10, color: "#aaa", fontWeight: "600" },
@@ -392,4 +371,26 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: "#ccc" },
   sendIcon: { color: "#fff", fontSize: 16, marginLeft: 2 },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  editModal: {
+    backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 40,
+  },
+  editModalTitle: { fontSize: 16, fontWeight: "bold", color: "#1a1a1a", marginBottom: 12 },
+  editModalInput: {
+    backgroundColor: "#F5F5F5", borderRadius: 12, padding: 14,
+    fontSize: 15, color: "#1a1a1a", minHeight: 80, maxHeight: 160,
+    textAlignVertical: "top", marginBottom: 14,
+  },
+  editModalBtns: { flexDirection: "row", gap: 10 },
+  editModalCancel: {
+    flex: 1, padding: 14, borderRadius: 12,
+    borderWidth: 1, borderColor: "#ddd", alignItems: "center",
+  },
+  editModalCancelText: { color: "#888", fontSize: 15 },
+  editModalSave: {
+    flex: 1, padding: 14, borderRadius: 12,
+    backgroundColor: "#1D9E75", alignItems: "center",
+  },
+  editModalSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
 });
