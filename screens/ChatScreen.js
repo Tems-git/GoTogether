@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  StyleSheet, Text, View, TouchableOpacity, FlatList,
-  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
+  StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback,
+  FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
@@ -12,7 +12,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
   const [sending, setSending] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [memberReads, setMemberReads] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState("");
   const flatRef = useRef(null);
+  const editInputRef = useRef(null);
 
   const markAsRead = useCallback(async () => {
     await supabase.from("trip_members")
@@ -62,6 +65,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
         }
       )
       .on("postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages", filter: `trip_id=eq.${tripId}` },
+        (payload) => {
+          setMessages((prev) => prev.map((m) => m.id === payload.new.id ? payload.new : m));
+        }
+      )
+      .on("postgres_changes",
         { event: "UPDATE", schema: "public", table: "trip_members", filter: `trip_id=eq.${tripId}` },
         () => fetchMemberReads()
       )
@@ -75,6 +84,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
       setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (editingId) {
+      setTimeout(() => editInputRef.current?.focus(), 100);
+    }
+  }, [editingId]);
 
   async function handleSend() {
     const trimmed = text.trim();
@@ -93,6 +108,43 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
     } finally {
       setSending(false);
     }
+  }
+
+  function startEdit(msg) {
+    setEditingId(msg.id);
+    setEditText(msg.text);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditText("");
+  }
+
+  async function handleSaveEdit() {
+    const trimmed = editText.trim();
+    if (!trimmed) return;
+    try {
+      await supabase.from("messages")
+        .update({ text: trimmed, updated_at: new Date().toISOString() })
+        .eq("id", editingId)
+        .eq("user_id", userId);
+      setMessages((prev) => prev.map((m) =>
+        m.id === editingId ? { ...m, text: trimmed, updated_at: new Date().toISOString() } : m
+      ));
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    } finally {
+      setEditingId(null);
+      setEditText("");
+    }
+  }
+
+  function handleLongPress(msg) {
+    if (msg.user_id !== userId) return;
+    Alert.alert("Съобщение", undefined, [
+      { text: "Редактирай ✏️", onPress: () => startEdit(msg) },
+      { text: "Отказ", style: "cancel" },
+    ]);
   }
 
   const myMessages = messages.filter((m) => m.user_id === userId);
@@ -170,6 +222,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
             }
             const isMe = item.user_id === userId;
             const readStatus = isMe ? getReadStatus(item.id, item.created_at) : null;
+            const isEditing = item.id === editingId;
 
             return (
               <View style={[styles.msgWrapper, isMe && styles.msgWrapperMe]}>
@@ -181,16 +234,45 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
                       </Text>
                     </View>
                   )}
-                  <View style={[styles.bubble, isMe && styles.bubbleMe]}>
-                    {!isMe && (
-                      <Text style={styles.senderName}>{item.display_name}</Text>
-                    )}
-                    <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
-                    <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>{formatTime(item.created_at)}</Text>
-                  </View>
+                  <TouchableWithoutFeedback onLongPress={() => handleLongPress(item)}>
+                    <View style={[styles.bubble, isMe && styles.bubbleMe]}>
+                      {!isMe && (
+                        <Text style={styles.senderName}>{item.display_name}</Text>
+                      )}
+                      {isEditing ? (
+                        <View>
+                          <TextInput
+                            ref={editInputRef}
+                            style={styles.editInput}
+                            value={editText}
+                            onChangeText={setEditText}
+                            multiline
+                            autoFocus
+                          />
+                          <View style={styles.editBtns}>
+                            <TouchableOpacity onPress={cancelEdit} style={styles.editCancelBtn}>
+                              <Text style={styles.editCancelText}>Отказ</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleSaveEdit} style={styles.editSaveBtn}>
+                              <Text style={styles.editSaveText}>Запази</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ) : (
+                        <>
+                          <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
+                          <View style={styles.timeLine}>
+                            <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>
+                              {formatTime(item.created_at)}
+                              {item.updated_at ? " · редактирано" : ""}
+                            </Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  </TouchableWithoutFeedback>
                 </View>
-                {/* Отметки извън балона */}
-                {readStatus && (
+                {readStatus && !isEditing && (
                   <View style={styles.tickRow}>
                     <Text style={readStatus === "read" ? styles.tickRead : styles.tickDelivered}>
                       {readStatus === "read" ? "✓✓ Прочетено" : "✓✓ Доставено"}
@@ -275,8 +357,19 @@ const styles = StyleSheet.create({
   senderName: { fontSize: 11, fontWeight: "700", color: "#1D9E75", marginBottom: 3 },
   msgText: { fontSize: 15, color: "#1a1a1a", lineHeight: 20 },
   msgTextMe: { color: "#fff" },
-  msgTime: { fontSize: 10, color: "#bbb", marginTop: 3, textAlign: "right" },
+  timeLine: { flexDirection: "row", justifyContent: "flex-end", marginTop: 3 },
+  msgTime: { fontSize: 10, color: "#bbb" },
   msgTimeMe: { color: "rgba(255,255,255,0.6)" },
+  editInput: {
+    color: "#fff", fontSize: 15, lineHeight: 20,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.5)",
+    paddingBottom: 4, minWidth: 160,
+  },
+  editBtns: { flexDirection: "row", gap: 8, marginTop: 8, justifyContent: "flex-end" },
+  editCancelBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.15)" },
+  editCancelText: { color: "rgba(255,255,255,0.8)", fontSize: 12 },
+  editSaveBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.3)" },
+  editSaveText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
   tickRow: { marginTop: 2, marginRight: 4 },
   tickRead: { fontSize: 10, color: "#1D9E75", fontWeight: "600" },
   tickDelivered: { fontSize: 10, color: "#aaa", fontWeight: "600" },
