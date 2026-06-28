@@ -91,7 +91,23 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     }
   }, [tripId, devMode]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    fetchAll();
+    if (devMode) return;
+
+    // Realtime — рефреш при промяна в expenses или splits
+    const channel = supabase
+      .channel(`expenses-${tripId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "expenses", filter: `trip_id=eq.${tripId}` },
+        () => fetchAll()
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "expense_splits" },
+        () => fetchAll()
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [fetchAll, tripId, devMode]);
 
   const memberColor = (uid) => {
     const idx = members.findIndex((m) => m.user_id === uid);
@@ -121,7 +137,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   .in("expense_id", splitsToSettle.map((s) => s.expense_id))
                   .eq("user_id", settlement.from);
               }
-              await fetchAll();
+              // fetchAll ще се извика автоматично от realtime
             } catch (e) {
               Alert.alert("Грешка", e.message);
             } finally {
@@ -152,7 +168,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       if (splitError) throw splitError;
       setModalVisible(false);
       setDesc(""); setAmount(""); setPaidBy(userId); setCategory("other");
-      await fetchAll();
+      // fetchAll ще се извика автоматично от realtime
     } catch (e) {
       Alert.alert("Грешка", e.message);
     } finally {
@@ -168,7 +184,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         onPress: async () => {
           await supabase.from("expense_splits").delete().eq("expense_id", expId);
           await supabase.from("expenses").delete().eq("id", expId);
-          await fetchAll();
         },
       },
     ]);
@@ -182,7 +197,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const iOwe = Math.max(0, myUnsettledShare - (iPaid - mySettledShare));
   const owedToMe = Math.max(0, (iPaid - mySettledShare) - myUnsettledShare);
 
-  // Похарчено по участник
   const spentByMember = members.map((m) => ({
     ...m,
     spent: expenses.filter((e) => e.paid_by === m.user_id).reduce((s, e) => s + Number(e.amount), 0),
@@ -226,10 +240,9 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         </View>
       </View>
 
-      {/* Похарчено по участник */}
       {spentByMember.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.spentRow}>
-          {spentByMember.map((m, i) => {
+          {spentByMember.map((m) => {
             const color = memberColor(m.user_id);
             return (
               <View key={m.user_id} style={styles.spentChip}>
