@@ -65,7 +65,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
     fetchUnread();
 
-    // Уникален channel name по trip + user — важно!
     const channel = supabase
       .channel(`dashboard-chat-${trip.id}-${user.id}`)
       .on("postgres_changes",
@@ -125,9 +124,12 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   async function handleShare() {
     if (!trip?.invite_code) return;
+    const code = trip.invite_code;
+    const deepLink = `gotogether://join/${code}`;
     try {
       await Share.share({
-        message: `Присъедини се към "${trip.name}" в GoTogether!\nКод за покана: ${trip.invite_code}`,
+        message: `Присъедини се към "${trip.name}" в GoTogether!\n\nОтвори линка: ${deepLink}\n\nИли въведи код: ${code}`,
+        url: deepLink, // iOS показва като линк
       });
     } catch (e) {
       Alert.alert("Грешка", e.message);
@@ -234,7 +236,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         </View>
 
         <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
-          <Text style={styles.shareBtnText}>🔗 Сподели покана</Text>
+          <Text style={styles.shareBtnText}>🔗 Покани с линк</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.signOut} onPress={onSignOut}>

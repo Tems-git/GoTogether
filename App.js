@@ -1,6 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, Text, View, TouchableOpacity, TextInput } from "react-native";
 import { useState, useEffect } from "react";
+import { Linking } from "react-native";
 import { supabase } from "./lib/supabase";
 import SignInScreen from "./screens/SignInScreen";
 import DashboardScreen from "./screens/DashboardScreen";
@@ -9,6 +10,13 @@ import DocumentsScreen from "./screens/DocumentsScreen";
 import ExpensesScreen from "./screens/ExpensesScreen";
 import ChatScreen from "./screens/ChatScreen";
 import TripSetupScreen from "./screens/TripSetupScreen";
+
+function parseInviteCode(url) {
+  if (!url) return null;
+  // gotogether://join/XXXXXX
+  const match = url.match(/join\/([A-Z0-9]+)/i);
+  return match ? match[1].toUpperCase() : null;
+}
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -20,6 +28,26 @@ export default function App() {
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [inviteInput, setInviteInput] = useState("");
   const [showInviteInput, setShowInviteInput] = useState(false);
+
+  // Deep link handling
+  useEffect(() => {
+    // App отворена чрез deep link докато е затворена
+    Linking.getInitialURL().then((url) => {
+      const code = parseInviteCode(url);
+      if (code) setPendingInviteCode(code);
+    });
+
+    // App отворена чрез deep link докато върви
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      const code = parseInviteCode(url);
+      if (code) {
+        setPendingInviteCode(code);
+        setScreen("signin");
+      }
+    });
+
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
