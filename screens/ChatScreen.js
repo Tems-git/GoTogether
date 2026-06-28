@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback,
-  FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
-  Alert, Modal, Keyboard,
+  FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
@@ -15,17 +14,8 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
   const [memberReads, setMemberReads] = useState([]);
   const [editingMsg, setEditingMsg] = useState(null);
   const [editText, setEditText] = useState("");
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const flatRef = useRef(null);
-
-  // Keyboard listeners — работи на iOS и Android
-  useEffect(() => {
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const show = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
+  const editInputRef = useRef(null);
 
   const markAsRead = useCallback(async () => {
     await supabase.from("trip_members")
@@ -65,8 +55,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
     fetchMessages();
     fetchMemberReads();
 
-    // Уникален channel за INSERT/UPDATE на messages — по trip, не по user
-    // За да получават всички UPDATE events
     const msgChannel = supabase
       .channel(`messages-${tripId}-${userId}`)
       .on("postgres_changes",
@@ -87,7 +75,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
       )
       .subscribe();
 
-    // Отделен channel за trip_members (chat_last_read)
     const membersChannel = supabase
       .channel(`members-reads-${tripId}-${userId}`)
       .on("postgres_changes",
@@ -107,6 +94,13 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
       setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }, [messages]);
+
+  // При влизане в edit mode — фокусираме input-а
+  useEffect(() => {
+    if (editingMsg) {
+      setTimeout(() => editInputRef.current?.focus(), 50);
+    }
+  }, [editingMsg]);
 
   async function handleSend() {
     const trimmed = text.trim();
@@ -133,16 +127,19 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
     setEditText(msg.text);
   }
 
+  function cancelEdit() {
+    setEditingMsg(null);
+    setEditText("");
+  }
+
   async function handleSaveEdit() {
     const trimmed = editText.trim();
     if (!trimmed) return;
-    Keyboard.dismiss();
     try {
       await supabase.from("messages")
         .update({ text: trimmed, updated_at: new Date().toISOString() })
         .eq("id", editingMsg.id)
         .eq("user_id", userId);
-      // Оптимистичен update локално
       setMessages((prev) => prev.map((m) =>
         m.id === editingMsg.id ? { ...m, text: trimmed, updated_at: new Date().toISOString() } : m
       ));
@@ -242,9 +239,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
                   )}
                   <TouchableWithoutFeedback onLongPress={() => handleLongPress(item)}>
                     <View style={[styles.bubble, isMe && styles.bubbleMe]}>
-                      {!isMe && (
-                        <Text style={styles.senderName}>{item.display_name}</Text>
-                      )}
+                      {!isMe && <Text style={styles.senderName}>{item.display_name}</Text>}
                       <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
                       <View style={styles.timeLine}>
                         <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>
@@ -274,54 +269,55 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
         />
       )}
 
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          placeholder="Напиши съобщение..."
-          placeholderTextColor="#aaa"
-          value={text}
-          onChangeText={setText}
-          multiline
-          maxLength={500}
-          returnKeyType="default"
-        />
-        <TouchableOpacity
-          style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
-          onPress={handleSend}
-          disabled={!text.trim() || sending}
-        >
-          <Text style={styles.sendIcon}>{sending ? "..." : "➤"}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Edit modal с динамичен paddingBottom */}
-      <Modal visible={!!editingMsg} animationType="slide" transparent>
-        <View style={styles.overlay}>
-          <View style={[styles.editModal, { paddingBottom: Math.max(keyboardHeight, 40) }]}>
-            <Text style={styles.editModalTitle}>✏️ Редактирай съобщение</Text>
+      {/* Edit bar или обикновен input — в СЪЩИЯ KeyboardAvoidingView */}
+      {editingMsg ? (
+        <View style={styles.editBar}>
+          <View style={styles.editBarTop}>
+            <Text style={styles.editBarLabel}>✏️ Редактиране</Text>
+            <TouchableOpacity onPress={cancelEdit}>
+              <Text style={styles.editBarCancel}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.editBarRow}>
             <TextInput
-              style={styles.editModalInput}
+              ref={editInputRef}
+              style={styles.editBarInput}
               value={editText}
               onChangeText={setEditText}
               multiline
-              autoFocus
-              placeholderTextColor="#bbb"
               maxLength={500}
+              placeholderTextColor="#aaa"
             />
-            <View style={styles.editModalBtns}>
-              <TouchableOpacity
-                style={styles.editModalCancel}
-                onPress={() => { setEditingMsg(null); setEditText(""); Keyboard.dismiss(); }}
-              >
-                <Text style={styles.editModalCancelText}>Отказ</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.editModalSave} onPress={handleSaveEdit}>
-                <Text style={styles.editModalSaveText}>Запази</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={[styles.sendBtn, !editText.trim() && styles.sendBtnDisabled]}
+              onPress={handleSaveEdit}
+              disabled={!editText.trim()}
+            >
+              <Text style={styles.sendIcon}>✓</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      ) : (
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            placeholder="Напиши съобщение..."
+            placeholderTextColor="#aaa"
+            value={text}
+            onChangeText={setText}
+            multiline
+            maxLength={500}
+            returnKeyType="default"
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
+            onPress={handleSend}
+            disabled={!text.trim() || sending}
+          >
+            <Text style={styles.sendIcon}>{sending ? "..." : "➤"}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -394,26 +390,22 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: "#ccc" },
   sendIcon: { color: "#fff", fontSize: 16, marginLeft: 2 },
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  editModal: {
-    backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24,
+  // Edit bar — замества inputRow
+  editBar: {
+    backgroundColor: "#fff", borderTopWidth: 0.5, borderTopColor: "#e0e0e0",
+    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10,
   },
-  editModalTitle: { fontSize: 16, fontWeight: "bold", color: "#1a1a1a", marginBottom: 12 },
-  editModalInput: {
-    backgroundColor: "#F5F5F5", borderRadius: 12, padding: 14,
-    fontSize: 15, color: "#1a1a1a", minHeight: 80, maxHeight: 160,
-    textAlignVertical: "top", marginBottom: 14,
+  editBarTop: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    marginBottom: 6,
   },
-  editModalBtns: { flexDirection: "row", gap: 10 },
-  editModalCancel: {
-    flex: 1, padding: 14, borderRadius: 12,
-    borderWidth: 1, borderColor: "#ddd", alignItems: "center",
+  editBarLabel: { fontSize: 12, color: "#1D9E75", fontWeight: "600" },
+  editBarCancel: { fontSize: 18, color: "#aaa", padding: 4 },
+  editBarRow: { flexDirection: "row", alignItems: "flex-end" },
+  editBarInput: {
+    flex: 1, backgroundColor: "#F5F5F5", borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 8, fontSize: 15,
+    color: "#1a1a1a", maxHeight: 100, marginRight: 10,
+    borderWidth: 1.5, borderColor: "#1D9E75",
   },
-  editModalCancelText: { color: "#888", fontSize: 15 },
-  editModalSave: {
-    flex: 1, padding: 14, borderRadius: 12,
-    backgroundColor: "#1D9E75", alignItems: "center",
-  },
-  editModalSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
 });
