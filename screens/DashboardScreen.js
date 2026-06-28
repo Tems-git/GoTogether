@@ -27,7 +27,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     setMembers(data || []);
   }, [trip?.id]);
 
-  // Members + Realtime за нови участници
   useEffect(() => {
     fetchMembers();
     if (!trip?.id) return;
@@ -40,6 +39,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       )
       .on("postgres_changes",
         { event: "UPDATE", schema: "public", table: "trip_members", filter: `trip_id=eq.${trip.id}` },
+        () => fetchMembers()
+      )
+      .on("postgres_changes",
+        { event: "DELETE", schema: "public", table: "trip_members", filter: `trip_id=eq.${trip.id}` },
         () => fetchMembers()
       )
       .subscribe();
@@ -134,6 +137,33 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       Alert.alert("Грешка", e.message);
     }
   }
+
+  async function handleRemoveMember(member) {
+    Alert.alert(
+      "Премахване",
+      `Сигурен ли си, че искаш да премахнеш ${member.display_name} от пътуването?\n\nМинали разходи си остават.`,
+      [
+        { text: "Отказ", style: "cancel" },
+        {
+          text: "Премахни", style: "destructive",
+          onPress: async () => {
+            try {
+              const { error } = await supabase.from("trip_members")
+                .delete()
+                .eq("trip_id", trip.id)
+                .eq("user_id", member.user_id);
+              if (error) throw error;
+              setMembers((prev) => prev.filter((m) => m.user_id !== member.user_id));
+            } catch (e) {
+              Alert.alert("Грешка", e.message);
+            }
+          }
+        }
+      ]
+    );
+  }
+
+  const isOwner = members.find((m) => m.user_id === user.id)?.role === "owner";
 
   const cards = [
     { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE", badge: 0 },
@@ -266,12 +296,21 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         <View style={styles.overlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>👥 Участници</Text>
-            <Text style={styles.modalSubtitle}>Брой хора определя дела от разходите</Text>
+            <Text style={styles.modalSubtitle}>
+              {isOwner ? "Натисни и задръж за да премахнеш участник" : "Брой хора определя дела от разходите"}
+            </Text>
             {members.map((m, i) => {
               const weight = m.weight || 1;
               const isMe = m.user_id === user.id;
+              const canRemove = isOwner && !isMe;
               return (
-                <View key={m.user_id} style={styles.memberRow}>
+                <TouchableOpacity
+                  key={m.user_id}
+                  style={styles.memberRow}
+                  onLongPress={() => canRemove && handleRemoveMember(m)}
+                  delayLongPress={500}
+                  activeOpacity={canRemove ? 0.6 : 1}
+                >
                   <View style={[styles.avatarLg, { backgroundColor: isMe ? "#1D9E75" : COLORS[i % COLORS.length] }]}>
                     <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
                   </View>
@@ -282,16 +321,23 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                       {m.role === "owner" && <Text style={styles.memberOwner}>организатор</Text>}
                     </View>
                   </View>
-                  <View style={styles.weightControl}>
-                    <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={weight <= 1}>
-                      <Text style={[styles.weightBtnText, weight <= 1 && { color: "#ccc" }]}>−</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.weightVal}>{weight}</Text>
-                    <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)}>
-                      <Text style={styles.weightBtnText}>+</Text>
-                    </TouchableOpacity>
+                  <View style={styles.memberRight}>
+                    <View style={styles.weightControl}>
+                      <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={weight <= 1}>
+                        <Text style={[styles.weightBtnText, weight <= 1 && { color: "#ccc" }]}>−</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.weightVal}>{weight}</Text>
+                      <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)}>
+                        <Text style={styles.weightBtnText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {canRemove && (
+                      <TouchableOpacity onPress={() => handleRemoveMember(m)} style={styles.removeBtn}>
+                        <Text style={styles.removeBtnText}>✕</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
             <Text style={styles.weightHint}>💡 Смени броя хора за пропорционално делене на разходите</Text>
@@ -418,10 +464,13 @@ const styles = StyleSheet.create({
   memberBadges: { flexDirection: "row", gap: 6, marginTop: 2 },
   memberYou: { fontSize: 11, color: "#1D9E75", backgroundColor: "#E1F5EE", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   memberOwner: { fontSize: 11, color: "#888", backgroundColor: "#F5F5F5", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  weightControl: { flexDirection: "row", alignItems: "center", gap: 8 },
+  memberRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  weightControl: { flexDirection: "row", alignItems: "center", gap: 6 },
   weightBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#F0F0F0", alignItems: "center", justifyContent: "center" },
   weightBtnText: { fontSize: 18, fontWeight: "bold", color: "#1D9E75", lineHeight: 22 },
   weightVal: { fontSize: 16, fontWeight: "bold", color: "#1a1a1a", minWidth: 20, textAlign: "center" },
+  removeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#FFE8E8", alignItems: "center", justifyContent: "center" },
+  removeBtnText: { fontSize: 13, color: "#FF3B30", fontWeight: "bold" },
   weightHint: { fontSize: 12, color: "#888", marginTop: 16, marginBottom: 8, textAlign: "center" },
   nameInput: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 14, fontSize: 16, color: "#1a1a1a", marginBottom: 16 },
   modalBtns: { flexDirection: "row", gap: 10 },
