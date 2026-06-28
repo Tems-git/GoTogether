@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, Alert, Share, Clipboard, Modal, TextInput,
+  ScrollView, Alert, Share, Clipboard, Modal, TextInput, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
@@ -42,7 +42,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     setSavingName(true);
     try {
       await supabase.from("profiles").upsert({ id: user.id, display_name: name });
-      // Обновяваме и в trip_members за текущото пътуване
       if (trip?.id) {
         await supabase.from("trip_members")
           .update({ display_name: name })
@@ -169,8 +168,11 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       </TouchableOpacity>
 
       {/* Edit name modal */}
-      <Modal visible={editNameVisible} animationType="fade" transparent>
-        <View style={styles.overlay}>
+      <Modal visible={editNameVisible} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          style={styles.overlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>Смени никнейм</Text>
             <TextInput
@@ -192,7 +194,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Trip picker modal */}
