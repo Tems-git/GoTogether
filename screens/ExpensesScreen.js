@@ -6,8 +6,8 @@ import {
 import { supabase } from "../lib/supabase";
 
 const DEV_MEMBERS = [
-  { user_id: "00000000-0000-0000-0000-000000000002", display_name: "Теmelko" },
-  { user_id: "00000000-0000-0000-0000-000000000003", display_name: "Спас" },
+  { user_id: "00000000-0000-0000-0000-000000000002", display_name: "Теmelko", weight: 2 },
+  { user_id: "00000000-0000-0000-0000-000000000003", display_name: "Спас", weight: 3 },
 ];
 
 const MEMBER_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#DDA0DD", "#98D8C8", "#FFEAA7"];
@@ -72,7 +72,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     if (devMode) return;
     try {
       const { data: mData } = await supabase
-        .from("trip_members").select("user_id, display_name").eq("trip_id", tripId);
+        .from("trip_members").select("user_id, display_name, weight").eq("trip_id", tripId);
       const { data: eData } = await supabase
         .from("expenses").select("*").eq("trip_id", tripId).order("created_at", { ascending: false });
       const expenseIds = (eData || []).map((e) => e.id);
@@ -127,6 +127,21 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return MEMBER_COLORS[idx % MEMBER_COLORS.length];
   };
 
+  const getMemberWeight = (uid) => {
+    const m = members.find((m) => m.user_id === uid);
+    return m?.weight || 1;
+  };
+
+  // Изчисляваме shares пропорционално по weight
+  function calcShares(amt, participantIds) {
+    const nonPayers = participantIds.filter((uid) => uid !== paidBy);
+    const totalWeight = nonPayers.reduce((s, uid) => s + getMemberWeight(uid), 0);
+    return nonPayers.map((uid) => ({
+      uid,
+      share: parseFloat(((amt * getMemberWeight(uid)) / totalWeight).toFixed(2)),
+    }));
+  }
+
   async function handleMarkSettled(settlement, index) {
     Alert.alert(
       "Изравняване",
@@ -140,13 +155,11 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
               const relevantExpenseIds = expenses
                 .filter((e) => e.paid_by === settlement.to)
                 .map((e) => e.id);
-
               const splitsToSettle = splits.filter(
                 (s) => s.user_id === settlement.from &&
                   relevantExpenseIds.includes(s.expense_id) &&
                   !s.is_settled
               );
-
               if (splitsToSettle.length > 0) {
                 await supabase
                   .from("expense_splits")
@@ -170,23 +183,21 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     if (!desc.trim()) return Alert.alert("Грешка", "Въведи описание");
     const amt = parseFloat(amount.replace(",", "."));
     if (isNaN(amt) || amt <= 0) return Alert.alert("Грешка", "Въведи валидна сума");
-    if (splitWith.length === 0) return Alert.alert("Грешка", "Избери поне един участник");
+    const nonPayers = splitWith.filter((uid) => uid !== paidBy);
+    if (nonPayers.length === 0) return Alert.alert("Грешка", "Избери поне един участник");
     setSaving(true);
     try {
-      const share = parseFloat((amt / splitWith.length).toFixed(2));
       const { data: exp, error } = await supabase.from("expenses").insert({
         trip_id: tripId, paid_by: paidBy, amount: amt,
-        description: desc.trim(), category, split_type: "equal",
+        description: desc.trim(), category, split_type: "weighted",
       }).select().single();
       if (error) throw error;
-      // Записваме splits само за НЕ-платците
-      const nonPayerSplits = splitWith.filter((uid) => uid !== paidBy);
-      if (nonPayerSplits.length > 0) {
-        const { error: splitError } = await supabase.from("expense_splits").insert(
-          nonPayerSplits.map((uid) => ({ expense_id: exp.id, user_id: uid, share, is_settled: false }))
-        );
-        if (splitError) throw splitError;
-      }
+
+      const shares = calcShares(amt, splitWith);
+      const { error: splitError } = await supabase.from("expense_splits").insert(
+        shares.map(({ uid, share }) => ({ expense_id: exp.id, user_id: uid, share, is_settled: false }))
+      );
+      if (splitError) throw splitError;
       setModalVisible(false);
       await fetchAll();
     } catch (e) {
@@ -210,21 +221,18 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     ]);
   }
 
-  // Изчисляваме баланс само от splits на НЕ-платци
   const total = expenses.reduce((s, e) => s + Number(e.amount), 0);
 
-  // iOwe: сумата която аз дължа към другите (само моите splits в разходи, платени от друг)
   const iOwe = expenses.reduce((sum, exp) => {
     if (exp.paid_by === userId) return sum;
     const mySplit = splits.find((s) => s.expense_id === exp.id && s.user_id === userId && !s.is_settled);
     return sum + (mySplit ? Number(mySplit.share) : 0);
   }, 0);
 
-  // owedToMe: сумата която другите дължат на мен (техните splits в моите разходи)
   const owedToMe = expenses.reduce((sum, exp) => {
     if (exp.paid_by !== userId) return sum;
-    const unsettledSplits = splits.filter((s) => s.expense_id === exp.id && s.user_id !== userId && !s.is_settled);
-    return sum + unsettledSplits.reduce((s, x) => s + Number(x.share), 0);
+    const unsettled = splits.filter((s) => s.expense_id === exp.id && s.user_id !== userId && !s.is_settled);
+    return sum + unsettled.reduce((s, x) => s + Number(x.share), 0);
   }, 0);
 
   const spentByMember = members.map((m) => ({
@@ -237,9 +245,9 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const catInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[4];
 
   const amtNum = parseFloat(amount.replace(",", ".")) || 0;
-  const nonPayerCount = splitWith.filter((uid) => uid !== paidBy).length;
-  const sharePerPerson = nonPayerCount > 0 && amtNum > 0
-    ? (amtNum / nonPayerCount).toFixed(2) : null;
+  const nonPayerIds = splitWith.filter((uid) => uid !== paidBy);
+  const previewShares = amtNum > 0 && nonPayerIds.length > 0 ? calcShares(amtNum, splitWith) : [];
+  const allEqual = previewShares.length > 0 && previewShares.every((s) => s.share === previewShares[0].share);
 
   function formatDate(iso) {
     const d = new Date(iso);
@@ -322,8 +330,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             const expSplits = splits.filter((s) => s.expense_id === exp.id);
             const settled = isExpenseSettled(exp);
             const payerColor = memberColor(exp.paid_by);
-            const splitCount = expSplits.length;
-            const allMembersCount = members.length - 1; // без платеца
             return (
               <View key={exp.id} style={[styles.expRow, settled && styles.expRowSettled]}>
                 <Text style={styles.expEmoji}>{settled ? "✅" : cat.emoji}</Text>
@@ -334,9 +340,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                     <Text style={[styles.expMetaPayer, { color: settled ? "#aaa" : payerColor }]}>
                       {memberName(exp.paid_by)}
                     </Text>
-                    {splitCount < allMembersCount && (
-                      <Text style={styles.expMetaText}> · {splitCount}/{allMembersCount}</Text>
-                    )}
                   </View>
                 </View>
                 <View style={styles.expRight}>
@@ -398,6 +401,8 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
               const isPayer = m.user_id === paidBy;
               const checked = splitWith.includes(m.user_id);
               const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
+              const weight = m.weight || 1;
+              const preview = previewShares.find((s) => s.uid === m.user_id);
               return (
                 <TouchableOpacity
                   key={m.user_id}
@@ -412,21 +417,30 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   ]}>
                     {isPayer ? <Text style={styles.checkmarkDisabled}>–</Text> : checked && <Text style={styles.checkmark}>✓</Text>}
                   </View>
-                  <Text style={[
-                    styles.checkLabel,
-                    isPayer && { color: "#aaa" },
-                    !isPayer && checked && { color }
-                  ]}>
-                    {m.display_name}{isPayer ? " (платил)" : ""}
-                  </Text>
+                  <View style={styles.checkInfo}>
+                    <Text style={[
+                      styles.checkLabel,
+                      isPayer && { color: "#aaa" },
+                      !isPayer && checked && { color }
+                    ]}>
+                      {m.display_name}
+                      {weight > 1 ? ` ×${weight}` : ""}
+                      {isPayer ? " (платил)" : ""}
+                    </Text>
+                    {preview && !allEqual && (
+                      <Text style={[styles.checkShare, { color }]}>{preview.share.toFixed(2)} лв.</Text>
+                    )}
+                  </View>
                 </TouchableOpacity>
               );
             })}
 
-            {sharePerPerson && (
+            {previewShares.length > 0 && (
               <View style={styles.splitNote}>
                 <Text style={styles.splitNoteText}>
-                  ✂️ {nonPayerCount} участника · {sharePerPerson} лв. на човек
+                  {allEqual
+                    ? `✂️ ${nonPayerIds.length} участника · ${previewShares[0].share.toFixed(2)} лв. на човек`
+                    : `✂️ Пропорционално делене по брой хора`}
                 </Text>
               </View>
             )}
@@ -533,18 +547,14 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: "#1D9E75" },
   chipText: { fontSize: 13, color: "#555" },
   chipTextActive: { color: "#fff", fontWeight: "600" },
-  checkRow: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    paddingVertical: 8, paddingHorizontal: 4,
-  },
-  checkbox: {
-    width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: "#ddd",
-    alignItems: "center", justifyContent: "center",
-  },
+  checkRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8, paddingHorizontal: 4 },
+  checkInfo: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: "#ddd", alignItems: "center", justifyContent: "center" },
   checkboxDisabled: { backgroundColor: "#f0f0f0", borderColor: "#e0e0e0" },
   checkmark: { color: "#fff", fontSize: 14, fontWeight: "bold" },
   checkmarkDisabled: { color: "#ccc", fontSize: 14 },
   checkLabel: { fontSize: 14, fontWeight: "500" },
+  checkShare: { fontSize: 12, fontWeight: "700" },
   splitNote: { backgroundColor: "#F0F9F5", borderRadius: 10, padding: 10, marginTop: 4 },
   splitNoteText: { fontSize: 12, color: "#1D9E75", fontWeight: "600" },
   modalBtns: { flexDirection: "row", gap: 10, marginTop: 16 },

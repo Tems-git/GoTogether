@@ -21,7 +21,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     if (!trip?.id) return;
     supabase
       .from("trip_members")
-      .select("user_id, display_name, role")
+      .select("user_id, display_name, role, weight")
       .eq("trip_id", trip.id)
       .then(({ data }) => setMembers(data || []));
   }, [trip?.id]);
@@ -58,6 +58,19 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       Alert.alert("Грешка", e.message);
     } finally {
       setSavingName(false);
+    }
+  }
+
+  async function handleSetWeight(memberId, newWeight) {
+    if (newWeight < 1 || newWeight > 20) return;
+    try {
+      await supabase.from("trip_members")
+        .update({ weight: newWeight })
+        .eq("trip_id", trip.id)
+        .eq("user_id", memberId);
+      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, weight: newWeight } : m));
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
     }
   }
 
@@ -104,6 +117,8 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const startDate = formatDate(trip?.start_date);
   const endDate = formatDate(trip?.end_date);
   const dateRange = startDate && endDate ? `${startDate} – ${endDate}` : startDate || null;
+
+  const hasWeights = members.some((m) => (m.weight || 1) > 1);
 
   return (
     <View style={styles.flex}>
@@ -152,6 +167,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                 )}
                 <Text style={styles.membersLabel}>
                   {members.length} {members.length === 1 ? "участник" : "участника"}
+                  {hasWeights ? " · с тегла" : ""}
                 </Text>
               </TouchableOpacity>
             )}
@@ -183,31 +199,55 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
       </ScrollView>
 
-      {/* Всички модали са извън ScrollView */}
-
+      {/* Members modal с weight настройка */}
       <Modal visible={membersModalVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>👥 Участници</Text>
-            {members.map((m, i) => (
-              <View key={m.user_id} style={styles.memberRow}>
-                <View style={[styles.avatarLg, { backgroundColor: m.user_id === user.id ? "#1D9E75" : COLORS[i % COLORS.length] }]}>
-                  <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
+            <Text style={styles.modalSubtitle}>Брой хора определя дела от разходите</Text>
+            {members.map((m, i) => {
+              const weight = m.weight || 1;
+              const isMe = m.user_id === user.id;
+              return (
+                <View key={m.user_id} style={styles.memberRow}>
+                  <View style={[styles.avatarLg, { backgroundColor: isMe ? "#1D9E75" : COLORS[i % COLORS.length] }]}>
+                    <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
+                  </View>
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberRowName}>{m.display_name}</Text>
+                    <View style={styles.memberBadges}>
+                      {isMe && <Text style={styles.memberYou}>ти</Text>}
+                      {m.role === "owner" && <Text style={styles.memberOwner}>организатор</Text>}
+                    </View>
+                  </View>
+                  <View style={styles.weightControl}>
+                    <TouchableOpacity
+                      style={styles.weightBtn}
+                      onPress={() => handleSetWeight(m.user_id, weight - 1)}
+                      disabled={weight <= 1}
+                    >
+                      <Text style={[styles.weightBtnText, weight <= 1 && { color: "#ccc" }]}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.weightVal}>{weight}</Text>
+                    <TouchableOpacity
+                      style={styles.weightBtn}
+                      onPress={() => handleSetWeight(m.user_id, weight + 1)}
+                    >
+                      <Text style={styles.weightBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <View style={styles.memberInfo}>
-                  <Text style={styles.memberRowName}>{m.display_name}</Text>
-                  {m.user_id === user.id && <Text style={styles.memberYou}>ти</Text>}
-                  {m.role === "owner" && <Text style={styles.memberOwner}>организатор</Text>}
-                </View>
-              </View>
-            ))}
+              );
+            })}
+            <Text style={styles.weightHint}>💡 Смени броя хора за пропорционално делене на разходите</Text>
             <TouchableOpacity style={styles.modalClose} onPress={() => setMembersModalVisible(false)}>
-              <Text style={styles.modalCloseText}>Затвори</Text>
+              <Text style={styles.modalCloseText}>Готово</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
+      {/* Edit name modal */}
       <Modal visible={editNameVisible} animationType="slide" transparent>
         <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={styles.modal}>
@@ -234,6 +274,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* Trip picker modal */}
       <Modal visible={tripPickerVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.modal}>
@@ -318,14 +359,21 @@ const styles = StyleSheet.create({
   signOutText: { color: "#aaa", fontSize: 14 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
-  modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 16 },
+  modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 4 },
+  modalSubtitle: { fontSize: 12, color: "#888", marginBottom: 16 },
   memberRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
   avatarLg: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   avatarLgText: { fontSize: 14, fontWeight: "bold", color: "#fff" },
-  memberInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+  memberInfo: { flex: 1 },
   memberRowName: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
+  memberBadges: { flexDirection: "row", gap: 6, marginTop: 2 },
   memberYou: { fontSize: 11, color: "#1D9E75", backgroundColor: "#E1F5EE", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   memberOwner: { fontSize: 11, color: "#888", backgroundColor: "#F5F5F5", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  weightControl: { flexDirection: "row", alignItems: "center", gap: 8 },
+  weightBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#F0F0F0", alignItems: "center", justifyContent: "center" },
+  weightBtnText: { fontSize: 18, fontWeight: "bold", color: "#1D9E75", lineHeight: 22 },
+  weightVal: { fontSize: 16, fontWeight: "bold", color: "#1a1a1a", minWidth: 20, textAlign: "center" },
+  weightHint: { fontSize: 12, color: "#888", marginTop: 16, marginBottom: 8, textAlign: "center" },
   nameInput: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 14, fontSize: 16, color: "#1a1a1a", marginBottom: 16 },
   modalBtns: { flexDirection: "row", gap: 10 },
   btnCancel: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
