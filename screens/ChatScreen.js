@@ -18,9 +18,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const flatRef = useRef(null);
 
+  // Keyboard listeners — работи на iOS и Android
   useEffect(() => {
-    const show = Keyboard.addListener("keyboardWillShow", (e) => setKeyboardHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener("keyboardWillHide", () => setKeyboardHeight(0));
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
     return () => { show.remove(); hide.remove(); };
   }, []);
 
@@ -62,12 +65,17 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
     fetchMessages();
     fetchMemberReads();
 
-    const channel = supabase
-      .channel(`chat-${tripId}-${userId}`)
+    // Уникален channel за INSERT/UPDATE на messages — по trip, не по user
+    // За да получават всички UPDATE events
+    const msgChannel = supabase
+      .channel(`messages-${tripId}-${userId}`)
       .on("postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `trip_id=eq.${tripId}` },
         async (payload) => {
-          setMessages((prev) => [...prev, payload.new]);
+          setMessages((prev) => {
+            if (prev.find((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
           await markAsRead();
         }
       )
@@ -77,13 +85,21 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
           setMessages((prev) => prev.map((m) => m.id === payload.new.id ? payload.new : m));
         }
       )
+      .subscribe();
+
+    // Отделен channel за trip_members (chat_last_read)
+    const membersChannel = supabase
+      .channel(`members-reads-${tripId}-${userId}`)
       .on("postgres_changes",
         { event: "UPDATE", schema: "public", table: "trip_members", filter: `trip_id=eq.${tripId}` },
         () => fetchMemberReads()
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(msgChannel);
+      supabase.removeChannel(membersChannel);
+    };
   }, [tripId, userId, fetchMessages, fetchMemberReads, markAsRead]);
 
   useEffect(() => {
@@ -120,11 +136,13 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
   async function handleSaveEdit() {
     const trimmed = editText.trim();
     if (!trimmed) return;
+    Keyboard.dismiss();
     try {
       await supabase.from("messages")
         .update({ text: trimmed, updated_at: new Date().toISOString() })
         .eq("id", editingMsg.id)
         .eq("user_id", userId);
+      // Оптимистичен update локално
       setMessages((prev) => prev.map((m) =>
         m.id === editingMsg.id ? { ...m, text: trimmed, updated_at: new Date().toISOString() } : m
       ));
@@ -276,10 +294,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
         </TouchableOpacity>
       </View>
 
-      {/* Edit modal — използва keyboardHeight вместо KeyboardAvoidingView */}
+      {/* Edit modal с динамичен paddingBottom */}
       <Modal visible={!!editingMsg} animationType="slide" transparent>
         <View style={styles.overlay}>
-          <View style={[styles.editModal, { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 16 : 40 }]}>
+          <View style={[styles.editModal, { paddingBottom: Math.max(keyboardHeight, 40) }]}>
             <Text style={styles.editModalTitle}>✏️ Редактирай съобщение</Text>
             <TextInput
               style={styles.editModalInput}
