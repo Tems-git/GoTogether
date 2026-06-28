@@ -73,6 +73,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
           setMessages((prev) => prev.map((m) => m.id === payload.new.id ? payload.new : m));
         }
       )
+      .on("postgres_changes",
+        { event: "DELETE", schema: "public", table: "messages", filter: `trip_id=eq.${tripId}` },
+        (payload) => {
+          setMessages((prev) => prev.filter((m) => m.id !== payload.old.id));
+        }
+      )
       .subscribe();
 
     const membersChannel = supabase
@@ -95,7 +101,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
     }
   }, [messages]);
 
-  // При влизане в edit mode — фокусираме input-а
   useEffect(() => {
     if (editingMsg) {
       setTimeout(() => editInputRef.current?.focus(), 50);
@@ -123,8 +128,35 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
 
   function handleLongPress(msg) {
     if (msg.user_id !== userId) return;
-    setEditingMsg(msg);
-    setEditText(msg.text);
+    Alert.alert("Съобщение", undefined, [
+      {
+        text: "✏️ Редактирай",
+        onPress: () => { setEditingMsg(msg); setEditText(msg.text); }
+      },
+      {
+        text: "🗑 Изтрий",
+        style: "destructive",
+        onPress: () => handleDelete(msg),
+      },
+      { text: "Отказ", style: "cancel" },
+    ]);
+  }
+
+  async function handleDelete(msg) {
+    Alert.alert("Изтриване", "Сигурен ли си?", [
+      { text: "Отказ", style: "cancel" },
+      {
+        text: "Изтрий", style: "destructive",
+        onPress: async () => {
+          try {
+            await supabase.from("messages").delete().eq("id", msg.id).eq("user_id", userId);
+            setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+          } catch (e) {
+            Alert.alert("Грешка", e.message);
+          }
+        }
+      }
+    ]);
   }
 
   function cancelEdit() {
@@ -269,7 +301,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
         />
       )}
 
-      {/* Edit bar или обикновен input — в СЪЩИЯ KeyboardAvoidingView */}
       {editingMsg ? (
         <View style={styles.editBar}>
           <View style={styles.editBarTop}>
@@ -390,7 +421,6 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: "#ccc" },
   sendIcon: { color: "#fff", fontSize: 16, marginLeft: 2 },
-  // Edit bar — замества inputRow
   editBar: {
     backgroundColor: "#fff", borderTopWidth: 0.5, borderTopColor: "#e0e0e0",
     paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10,
