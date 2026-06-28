@@ -5,9 +5,12 @@ import {
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
+const MAX_VISIBLE = 4;
+
 export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onSwitchTrip, onNewTrip }) {
   const [copied, setCopied] = useState(false);
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
+  const [membersModalVisible, setMembersModalVisible] = useState(false);
   const [members, setMembers] = useState([]);
   const [displayName, setDisplayName] = useState("");
   const [editNameVisible, setEditNameVisible] = useState(false);
@@ -95,6 +98,8 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   const COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8"];
   const otherMembers = members.filter((m) => m.user_id !== user.id);
+  const visibleMembers = otherMembers.slice(0, MAX_VISIBLE);
+  const extraCount = otherMembers.length - MAX_VISIBLE;
 
   const startDate = formatDate(trip?.start_date);
   const endDate = formatDate(trip?.end_date);
@@ -129,17 +134,26 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
             </View>
           </View>
 
+          {/* Участници — аватари + "+N" */}
           {otherMembers.length > 0 && (
-            <View style={styles.membersRow}>
-              {otherMembers.map((m, i) => (
-                <View key={m.user_id} style={styles.memberChip}>
-                  <View style={[styles.avatar, { backgroundColor: COLORS[(i + 1) % COLORS.length] }]}>
-                    <Text style={styles.avatarText}>{getInitials(m.display_name)}</Text>
-                  </View>
-                  <Text style={styles.memberName}>{m.display_name}</Text>
+            <TouchableOpacity style={styles.membersRow} onPress={() => setMembersModalVisible(true)}>
+              {visibleMembers.map((m, i) => (
+                <View
+                  key={m.user_id}
+                  style={[styles.avatar, { backgroundColor: COLORS[(i + 1) % COLORS.length], marginLeft: i > 0 ? -8 : 0 }]}
+                >
+                  <Text style={styles.avatarText}>{getInitials(m.display_name)}</Text>
                 </View>
               ))}
-            </View>
+              {extraCount > 0 && (
+                <View style={[styles.avatar, styles.avatarExtra, { marginLeft: -8 }]}>
+                  <Text style={styles.avatarExtraText}>+{extraCount}</Text>
+                </View>
+              )}
+              <Text style={styles.membersLabel}>
+                {members.length} {members.length === 1 ? "участник" : "участника"}
+              </Text>
+            </TouchableOpacity>
           )}
 
           <TouchableOpacity style={styles.switchBtn} onPress={() => setTripPickerVisible(true)}>
@@ -167,12 +181,33 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         <Text style={styles.signOutText}>Изход</Text>
       </TouchableOpacity>
 
+      {/* Members list modal */}
+      <Modal visible={membersModalVisible} animationType="slide" transparent>
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>👥 Участници</Text>
+            {members.map((m, i) => (
+              <View key={m.user_id} style={styles.memberRow}>
+                <View style={[styles.avatarLg, { backgroundColor: m.user_id === user.id ? "#1D9E75" : COLORS[i % COLORS.length] }]}>
+                  <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
+                </View>
+                <View style={styles.memberInfo}>
+                  <Text style={styles.memberRowName}>{m.display_name}</Text>
+                  {m.user_id === user.id && <Text style={styles.memberYou}>ти</Text>}
+                  {m.role === "owner" && <Text style={styles.memberOwner}>организатор</Text>}
+                </View>
+              </View>
+            ))}
+            <TouchableOpacity style={styles.modalClose} onPress={() => setMembersModalVisible(false)}>
+              <Text style={styles.modalCloseText}>Затвори</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Edit name modal */}
       <Modal visible={editNameVisible} animationType="slide" transparent>
-        <KeyboardAvoidingView
-          style={styles.overlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
+        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>Смени никнейм</Text>
             <TextInput
@@ -206,24 +241,16 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               <TouchableOpacity
                 key={t.id}
                 style={[styles.tripOption, t.id === trip?.id && styles.tripOptionActive]}
-                onPress={() => {
-                  setTripPickerVisible(false);
-                  if (t.id !== trip?.id) onSwitchTrip(t);
-                }}
+                onPress={() => { setTripPickerVisible(false); if (t.id !== trip?.id) onSwitchTrip(t); }}
               >
                 <View style={styles.tripOptionInfo}>
-                  <Text style={[styles.tripOptionName, t.id === trip?.id && styles.tripOptionNameActive]}>
-                    {t.name}
-                  </Text>
+                  <Text style={[styles.tripOptionName, t.id === trip?.id && styles.tripOptionNameActive]}>{t.name}</Text>
                   {t.destination && <Text style={styles.tripOptionDest}>📍 {t.destination}</Text>}
                 </View>
                 {t.id === trip?.id && <Text style={styles.tripOptionCheck}>✓</Text>}
               </TouchableOpacity>
             ))}
-            <TouchableOpacity
-              style={styles.newTripBtn}
-              onPress={() => { setTripPickerVisible(false); onNewTrip(); }}
-            >
+            <TouchableOpacity style={styles.newTripBtn} onPress={() => { setTripPickerVisible(false); onNewTrip(); }}>
               <Text style={styles.newTripBtnText}>+ Ново пътуване</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.modalClose} onPress={() => setTripPickerVisible(false)}>
@@ -265,15 +292,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
   },
   inviteCopy: { fontSize: 10, color: "#E1F5EE", textAlign: "center", marginTop: 4 },
-  membersRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
-  memberChip: { flexDirection: "row", alignItems: "center", gap: 6 },
+  membersRow: { flexDirection: "row", alignItems: "center", marginTop: 14 },
   avatar: {
-    width: 28, height: 28, borderRadius: 14,
+    width: 32, height: 32, borderRadius: 16,
     alignItems: "center", justifyContent: "center",
-    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.4)",
+    borderWidth: 2, borderColor: "#1D9E75",
   },
   avatarText: { fontSize: 11, fontWeight: "bold", color: "#fff" },
-  memberName: { fontSize: 13, color: "#E1F5EE", fontWeight: "500" },
+  avatarExtra: { backgroundColor: "rgba(255,255,255,0.3)" },
+  avatarExtraText: { fontSize: 10, fontWeight: "bold", color: "#fff" },
+  membersLabel: { fontSize: 12, color: "#E1F5EE", marginLeft: 10 },
   switchBtn: {
     marginTop: 14, backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 10, padding: 10, alignItems: "center",
@@ -284,44 +312,33 @@ const styles = StyleSheet.create({
   cardEmoji: { fontSize: 32, marginBottom: 8 },
   cardTitle: { fontSize: 15, fontWeight: "bold", color: "#1a1a1a" },
   cardSub: { fontSize: 12, color: "#666", marginTop: 4, textAlign: "center", fontWeight: "600" },
-  signOut: {
-    marginTop: 24, padding: 14, borderRadius: 12,
-    borderWidth: 1, borderColor: "#ddd", alignItems: "center",
-  },
+  signOut: { marginTop: 24, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
   signOutText: { color: "#aaa", fontSize: 14 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modal: {
-    backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, paddingBottom: 40,
-  },
+  modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 16 },
-  nameInput: {
-    backgroundColor: "#F5F5F5", borderRadius: 12, padding: 14,
-    fontSize: 16, color: "#1a1a1a", marginBottom: 16,
-  },
+  memberRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
+  avatarLg: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  avatarLgText: { fontSize: 14, fontWeight: "bold", color: "#fff" },
+  memberInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+  memberRowName: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
+  memberYou: { fontSize: 11, color: "#1D9E75", backgroundColor: "#E1F5EE", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  memberOwner: { fontSize: 11, color: "#888", backgroundColor: "#F5F5F5", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  nameInput: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 14, fontSize: 16, color: "#1a1a1a", marginBottom: 16 },
   modalBtns: { flexDirection: "row", gap: 10 },
   btnCancel: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
   btnCancelText: { color: "#888", fontSize: 15 },
   btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#1D9E75", alignItems: "center" },
   btnSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
-  tripOption: {
-    flexDirection: "row", alignItems: "center",
-    padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: "#F5F5F5",
-  },
+  tripOption: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: "#F5F5F5" },
   tripOptionActive: { backgroundColor: "#E1F5EE", borderWidth: 1.5, borderColor: "#1D9E75" },
   tripOptionInfo: { flex: 1 },
   tripOptionName: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
   tripOptionNameActive: { color: "#1D9E75" },
   tripOptionDest: { fontSize: 12, color: "#888", marginTop: 2 },
   tripOptionCheck: { fontSize: 18, color: "#1D9E75", fontWeight: "bold" },
-  newTripBtn: {
-    backgroundColor: "#1D9E75", padding: 14, borderRadius: 12,
-    alignItems: "center", marginTop: 4, marginBottom: 8,
-  },
+  newTripBtn: { backgroundColor: "#1D9E75", padding: 14, borderRadius: 12, alignItems: "center", marginTop: 4, marginBottom: 8 },
   newTripBtnText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
-  modalClose: {
-    padding: 14, borderRadius: 12,
-    borderWidth: 1, borderColor: "#ddd", alignItems: "center",
-  },
+  modalClose: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
   modalCloseText: { color: "#888", fontSize: 15 },
 });
