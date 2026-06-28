@@ -137,8 +137,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
           text: "Да, изравнено!", onPress: async () => {
             setSettling(index);
             try {
-              // Маркираме само splits за разходи, платени от settlement.to
-              // където потребителят settlement.from е участник
               const relevantExpenseIds = expenses
                 .filter((e) => e.paid_by === settlement.to)
                 .map((e) => e.id);
@@ -234,6 +232,14 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}`;
   }
 
+  // Разход е изравнен когато всички НЕ-платци са settled
+  function isExpenseSettled(exp) {
+    const expSplits = splits.filter((s) => s.expense_id === exp.id);
+    const nonPayerSplits = expSplits.filter((s) => s.user_id !== exp.paid_by);
+    if (nonPayerSplits.length === 0) return false;
+    return nonPayerSplits.every((s) => s.is_settled);
+  }
+
   const allSettled = settlements.length === 0 && expenses.length > 0;
 
   return (
@@ -302,18 +308,18 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
           {expenses.map((exp) => {
             const cat = catInfo(exp.category);
             const expSplits = splits.filter((s) => s.expense_id === exp.id);
-            const isFullySettled = expSplits.length > 0 && expSplits.every((s) => s.is_settled);
+            const settled = isExpenseSettled(exp);
             const payerColor = memberColor(exp.paid_by);
             const splitCount = expSplits.length;
             const allMembersCount = members.length;
             return (
-              <View key={exp.id} style={[styles.expRow, isFullySettled && styles.expRowSettled]}>
-                <Text style={styles.expEmoji}>{isFullySettled ? "✅" : cat.emoji}</Text>
+              <View key={exp.id} style={[styles.expRow, settled && styles.expRowSettled]}>
+                <Text style={styles.expEmoji}>{settled ? "✅" : cat.emoji}</Text>
                 <View style={styles.expInfo}>
-                  <Text style={[styles.expDesc, isFullySettled && styles.expDescSettled]}>{exp.description}</Text>
+                  <Text style={[styles.expDesc, settled && styles.expDescSettled]}>{exp.description}</Text>
                   <View style={styles.expMetaRow}>
                     <Text style={styles.expMetaText}>{cat.label} · {formatDate(exp.created_at)} · </Text>
-                    <Text style={[styles.expMetaPayer, { color: isFullySettled ? "#aaa" : payerColor }]}>
+                    <Text style={[styles.expMetaPayer, { color: settled ? "#aaa" : payerColor }]}>
                       {memberName(exp.paid_by)}
                     </Text>
                     {splitCount < allMembersCount && (
@@ -322,8 +328,8 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   </View>
                 </View>
                 <View style={styles.expRight}>
-                  <Text style={[styles.expAmount, isFullySettled && { color: "#aaa" }]}>{Number(exp.amount).toFixed(2)} лв.</Text>
-                  {exp.paid_by === userId && !isFullySettled && (
+                  <Text style={[styles.expAmount, settled && { color: "#aaa" }]}>{Number(exp.amount).toFixed(2)} лв.</Text>
+                  {exp.paid_by === userId && !settled && (
                     <TouchableOpacity onPress={() => handleDelete(exp.id)}>
                       <Text style={styles.deleteBtn}>🗑</Text>
                     </TouchableOpacity>
