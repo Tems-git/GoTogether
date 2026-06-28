@@ -65,7 +65,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const [amount, setAmount] = useState("");
   const [paidBy, setPaidBy] = useState(userId);
   const [category, setCategory] = useState("other");
-  const [splitWith, setSplitWith] = useState([]); // subset от members
+  const [splitWith, setSplitWith] = useState([]);
   const [saving, setSaving] = useState(false);
 
   const fetchAll = useCallback(async () => {
@@ -107,7 +107,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return () => supabase.removeChannel(channel);
   }, [fetchAll, tripId, devMode]);
 
-  // При отваряне на модала — всички са избрани по подразбиране
   function openModal() {
     setSplitWith(members.map((m) => m.user_id));
     setPaidBy(userId);
@@ -138,12 +137,18 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
           text: "Да, изравнено!", onPress: async () => {
             setSettling(index);
             try {
-              const expenseIds = expenses.map((e) => e.id);
+              // Маркираме само splits за разходи, платени от settlement.to
+              // където потребителят settlement.from е участник
+              const relevantExpenseIds = expenses
+                .filter((e) => e.paid_by === settlement.to)
+                .map((e) => e.id);
+
               const splitsToSettle = splits.filter(
                 (s) => s.user_id === settlement.from &&
-                  expenseIds.includes(s.expense_id) &&
+                  relevantExpenseIds.includes(s.expense_id) &&
                   !s.is_settled
               );
+
               if (splitsToSettle.length > 0) {
                 await supabase
                   .from("expense_splits")
@@ -334,7 +339,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         <Text style={styles.btnText}>+ Добави разход</Text>
       </TouchableOpacity>
 
-      {/* Нов разход модал — scrollable */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}
