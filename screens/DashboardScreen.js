@@ -7,7 +7,7 @@ import { supabase } from "../lib/supabase";
 
 const MAX_VISIBLE = 4;
 
-export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onSwitchTrip, onNewTrip }) {
+export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onChat, onSwitchTrip, onNewTrip }) {
   const [copied, setCopied] = useState(false);
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
   const [membersModalVisible, setMembersModalVisible] = useState(false);
@@ -76,9 +76,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   const cards = [
     { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE" },
+    { emoji: "💬", title: "Чат", sub: "Групов чат", onPress: onChat, color: "#E8F4FD" },
     { emoji: "📁", title: "Документи", sub: "Резервации и билети", onPress: onDocuments, color: "#E6F1FB" },
     { emoji: "💸", title: "Разходи", sub: "Кой колко дължи", onPress: onExpenses, color: "#FAEEDA" },
-    { emoji: "🔗", title: "Покани", sub: trip?.invite_code || "...", onPress: handleShare, color: "#FCEBEB" },
   ];
 
   async function handleShare() {
@@ -113,12 +113,11 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const otherMembers = members.filter((m) => m.user_id !== user.id);
   const visibleMembers = otherMembers.slice(0, MAX_VISIBLE);
   const extraCount = otherMembers.length - MAX_VISIBLE;
+  const hasWeights = members.some((m) => (m.weight || 1) > 1);
 
   const startDate = formatDate(trip?.start_date);
   const endDate = formatDate(trip?.end_date);
   const dateRange = startDate && endDate ? `${startDate} – ${endDate}` : startDate || null;
-
-  const hasWeights = members.some((m) => (m.weight || 1) > 1);
 
   return (
     <View style={styles.flex}>
@@ -153,10 +152,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
             {otherMembers.length > 0 && (
               <TouchableOpacity style={styles.membersRow} onPress={() => setMembersModalVisible(true)}>
                 {visibleMembers.map((m, i) => (
-                  <View
-                    key={m.user_id}
-                    style={[styles.avatar, { backgroundColor: COLORS[(i + 1) % COLORS.length], marginLeft: i > 0 ? -8 : 0 }]}
-                  >
+                  <View key={m.user_id} style={[styles.avatar, { backgroundColor: COLORS[(i + 1) % COLORS.length], marginLeft: i > 0 ? -8 : 0 }]}>
                     <Text style={styles.avatarText}>{getInitials(m.display_name)}</Text>
                   </View>
                 ))}
@@ -180,12 +176,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
         <View style={styles.cards}>
           {cards.map((card, i) => (
-            <TouchableOpacity
-              key={i}
-              style={[styles.card, { backgroundColor: card.color }]}
-              onPress={card.onPress}
-              disabled={!card.onPress}
-            >
+            <TouchableOpacity key={i} style={[styles.card, { backgroundColor: card.color }]} onPress={card.onPress}>
               <Text style={styles.cardEmoji}>{card.emoji}</Text>
               <Text style={styles.cardTitle}>{card.title}</Text>
               <Text style={styles.cardSub}>{card.sub}</Text>
@@ -193,13 +184,16 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
           ))}
         </View>
 
+        <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
+          <Text style={styles.shareBtnText}>🔗 Сподели покана</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.signOut} onPress={onSignOut}>
           <Text style={styles.signOutText}>Изход</Text>
         </TouchableOpacity>
 
       </ScrollView>
 
-      {/* Members modal с weight настройка */}
       <Modal visible={membersModalVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.modal}>
@@ -221,18 +215,11 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                     </View>
                   </View>
                   <View style={styles.weightControl}>
-                    <TouchableOpacity
-                      style={styles.weightBtn}
-                      onPress={() => handleSetWeight(m.user_id, weight - 1)}
-                      disabled={weight <= 1}
-                    >
+                    <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={weight <= 1}>
                       <Text style={[styles.weightBtnText, weight <= 1 && { color: "#ccc" }]}>−</Text>
                     </TouchableOpacity>
                     <Text style={styles.weightVal}>{weight}</Text>
-                    <TouchableOpacity
-                      style={styles.weightBtn}
-                      onPress={() => handleSetWeight(m.user_id, weight + 1)}
-                    >
+                    <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)}>
                       <Text style={styles.weightBtnText}>+</Text>
                     </TouchableOpacity>
                   </View>
@@ -247,7 +234,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         </View>
       </Modal>
 
-      {/* Edit name modal */}
       <Modal visible={editNameVisible} animationType="slide" transparent>
         <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={styles.modal}>
@@ -274,17 +260,13 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Trip picker modal */}
       <Modal visible={tripPickerVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>Пътувания</Text>
             {(allTrips || []).map((t) => (
-              <TouchableOpacity
-                key={t.id}
-                style={[styles.tripOption, t.id === trip?.id && styles.tripOptionActive]}
-                onPress={() => { setTripPickerVisible(false); if (t.id !== trip?.id) onSwitchTrip(t); }}
-              >
+              <TouchableOpacity key={t.id} style={[styles.tripOption, t.id === trip?.id && styles.tripOptionActive]}
+                onPress={() => { setTripPickerVisible(false); if (t.id !== trip?.id) onSwitchTrip(t); }}>
                 <View style={styles.tripOptionInfo}>
                   <Text style={[styles.tripOptionName, t.id === trip?.id && styles.tripOptionNameActive]}>{t.name}</Text>
                   {t.destination && <Text style={styles.tripOptionDest}>📍 {t.destination}</Text>}
@@ -301,7 +283,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
           </View>
         </View>
       </Modal>
-
     </View>
   );
 }
@@ -317,9 +298,8 @@ const styles = StyleSheet.create({
   displayName: { fontSize: 14, color: "#555", fontWeight: "500" },
   editIcon: { fontSize: 12 },
   tripCard: {
-    backgroundColor: "#1D9E75", borderRadius: 20, padding: 20,
-    marginBottom: 24, shadowColor: "#1D9E75", shadowOpacity: 0.3,
-    shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+    backgroundColor: "#1D9E75", borderRadius: 20, padding: 20, marginBottom: 24,
+    shadowColor: "#1D9E75", shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
   },
   tripTop: { flexDirection: "row", alignItems: "flex-start" },
   tripInfo: { flex: 1 },
@@ -329,33 +309,26 @@ const styles = StyleSheet.create({
   inviteBox: { alignItems: "center", marginLeft: 12 },
   inviteLabel: { fontSize: 10, color: "#E1F5EE", marginBottom: 4, letterSpacing: 1 },
   inviteCode: {
-    fontSize: 22, fontWeight: "bold", color: "#fff",
-    letterSpacing: 4, textAlign: "center",
-    backgroundColor: "rgba(255,255,255,0.15)",
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
+    fontSize: 22, fontWeight: "bold", color: "#fff", letterSpacing: 4, textAlign: "center",
+    backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
   },
   inviteCopy: { fontSize: 10, color: "#E1F5EE", textAlign: "center", marginTop: 4 },
   membersRow: { flexDirection: "row", alignItems: "center", marginTop: 14 },
-  avatar: {
-    width: 32, height: 32, borderRadius: 16,
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 2, borderColor: "#1D9E75",
-  },
+  avatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#1D9E75" },
   avatarText: { fontSize: 11, fontWeight: "bold", color: "#fff" },
   avatarExtra: { backgroundColor: "rgba(255,255,255,0.3)" },
   avatarExtraText: { fontSize: 10, fontWeight: "bold", color: "#fff" },
   membersLabel: { fontSize: 12, color: "#E1F5EE", marginLeft: 10 },
-  switchBtn: {
-    marginTop: 14, backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 10, padding: 10, alignItems: "center",
-  },
+  switchBtn: { marginTop: 14, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 10, padding: 10, alignItems: "center" },
   switchBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  cards: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 8 },
+  cards: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 12 },
   card: { width: "47%", borderRadius: 16, padding: 20, alignItems: "center" },
   cardEmoji: { fontSize: 32, marginBottom: 8 },
   cardTitle: { fontSize: 15, fontWeight: "bold", color: "#1a1a1a" },
   cardSub: { fontSize: 12, color: "#666", marginTop: 4, textAlign: "center", fontWeight: "600" },
-  signOut: { marginTop: 24, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
+  shareBtn: { backgroundColor: "#fff", padding: 14, borderRadius: 12, alignItems: "center", marginBottom: 10, borderWidth: 1, borderColor: "#e0e0e0" },
+  shareBtnText: { color: "#1D9E75", fontSize: 14, fontWeight: "600" },
+  signOut: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
   signOutText: { color: "#aaa", fontSize: 14 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },

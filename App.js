@@ -7,6 +7,7 @@ import DashboardScreen from "./screens/DashboardScreen";
 import AIPlannerScreen from "./screens/AIPlannerScreen";
 import DocumentsScreen from "./screens/DocumentsScreen";
 import ExpensesScreen from "./screens/ExpensesScreen";
+import ChatScreen from "./screens/ChatScreen";
 import TripSetupScreen from "./screens/TripSetupScreen";
 
 export default function App() {
@@ -91,6 +92,17 @@ export default function App() {
     );
   }
 
+  if (screen === "chat") {
+    return (
+      <ChatScreen
+        onBack={() => setScreen("dashboard")}
+        tripId={activeTrip?.id}
+        userId={user?.id}
+        tripName={activeTrip?.name}
+      />
+    );
+  }
+
   if (screen === "signin") {
     return (
       <SignInScreen
@@ -100,7 +112,6 @@ export default function App() {
     );
   }
 
-  // Нов TripSetup от Dashboard
   if (screen === "newtrip" && user) {
     return (
       <TripSetupScreen
@@ -139,6 +150,7 @@ export default function App() {
         onAI={() => setScreen("ai")}
         onDocuments={() => setScreen("documents")}
         onExpenses={() => setScreen("expenses")}
+        onChat={() => setScreen("chat")}
         onSwitchTrip={(trip) => setActiveTrip(trip)}
         onNewTrip={() => setScreen("newtrip")}
       />
