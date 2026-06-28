@@ -179,10 +179,14 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         description: desc.trim(), category, split_type: "equal",
       }).select().single();
       if (error) throw error;
-      const { error: splitError } = await supabase.from("expense_splits").insert(
-        splitWith.map((uid) => ({ expense_id: exp.id, user_id: uid, share, is_settled: false }))
-      );
-      if (splitError) throw splitError;
+      // Записваме splits само за НЕ-платците
+      const nonPayerSplits = splitWith.filter((uid) => uid !== paidBy);
+      if (nonPayerSplits.length > 0) {
+        const { error: splitError } = await supabase.from("expense_splits").insert(
+          nonPayerSplits.map((uid) => ({ expense_id: exp.id, user_id: uid, share, is_settled: false }))
+        );
+        if (splitError) throw splitError;
+      }
       setModalVisible(false);
       await fetchAll();
     } catch (e) {
@@ -206,13 +210,22 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     ]);
   }
 
-  const unsettledSplits = splits.filter((s) => !s.is_settled);
+  // Изчисляваме баланс само от splits на НЕ-платци
   const total = expenses.reduce((s, e) => s + Number(e.amount), 0);
-  const myUnsettledShare = unsettledSplits.filter((s) => s.user_id === userId).reduce((s, x) => s + Number(x.share), 0);
-  const iPaid = expenses.filter((e) => e.paid_by === userId).reduce((s, e) => s + Number(e.amount), 0);
-  const mySettledShare = splits.filter((s) => s.user_id === userId && s.is_settled).reduce((s, x) => s + Number(x.share), 0);
-  const iOwe = Math.max(0, myUnsettledShare - (iPaid - mySettledShare));
-  const owedToMe = Math.max(0, (iPaid - mySettledShare) - myUnsettledShare);
+
+  // iOwe: сумата която аз дължа към другите (само моите splits в разходи, платени от друг)
+  const iOwe = expenses.reduce((sum, exp) => {
+    if (exp.paid_by === userId) return sum;
+    const mySplit = splits.find((s) => s.expense_id === exp.id && s.user_id === userId && !s.is_settled);
+    return sum + (mySplit ? Number(mySplit.share) : 0);
+  }, 0);
+
+  // owedToMe: сумата която другите дължат на мен (техните splits в моите разходи)
+  const owedToMe = expenses.reduce((sum, exp) => {
+    if (exp.paid_by !== userId) return sum;
+    const unsettledSplits = splits.filter((s) => s.expense_id === exp.id && s.user_id !== userId && !s.is_settled);
+    return sum + unsettledSplits.reduce((s, x) => s + Number(x.share), 0);
+  }, 0);
 
   const spentByMember = members.map((m) => ({
     ...m,
@@ -224,18 +237,17 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const catInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[4];
 
   const amtNum = parseFloat(amount.replace(",", ".")) || 0;
-  const sharePerPerson = splitWith.length > 0 && amtNum > 0
-    ? (amtNum / splitWith.length).toFixed(2) : null;
+  const nonPayerCount = splitWith.filter((uid) => uid !== paidBy).length;
+  const sharePerPerson = nonPayerCount > 0 && amtNum > 0
+    ? (amtNum / nonPayerCount).toFixed(2) : null;
 
   function formatDate(iso) {
     const d = new Date(iso);
     return `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}`;
   }
 
-  // Разход е изравнен когато всички НЕ-платци са settled
   function isExpenseSettled(exp) {
-    const expSplits = splits.filter((s) => s.expense_id === exp.id);
-    const nonPayerSplits = expSplits.filter((s) => s.user_id !== exp.paid_by);
+    const nonPayerSplits = splits.filter((s) => s.expense_id === exp.id && s.user_id !== exp.paid_by);
     if (nonPayerSplits.length === 0) return false;
     return nonPayerSplits.every((s) => s.is_settled);
   }
@@ -311,7 +323,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             const settled = isExpenseSettled(exp);
             const payerColor = memberColor(exp.paid_by);
             const splitCount = expSplits.length;
-            const allMembersCount = members.length;
+            const allMembersCount = members.length - 1; // без платеца
             return (
               <View key={exp.id} style={[styles.expRow, settled && styles.expRowSettled]}>
                 <Text style={styles.expEmoji}>{settled ? "✅" : cat.emoji}</Text>
@@ -383,18 +395,30 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
             <Text style={styles.label}>Дели между</Text>
             {members.map((m, i) => {
+              const isPayer = m.user_id === paidBy;
               const checked = splitWith.includes(m.user_id);
               const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
               return (
                 <TouchableOpacity
                   key={m.user_id}
                   style={styles.checkRow}
-                  onPress={() => toggleSplitWith(m.user_id)}
+                  onPress={() => !isPayer && toggleSplitWith(m.user_id)}
+                  disabled={isPayer}
                 >
-                  <View style={[styles.checkbox, checked && { backgroundColor: color, borderColor: color }]}>
-                    {checked && <Text style={styles.checkmark}>✓</Text>}
+                  <View style={[
+                    styles.checkbox,
+                    isPayer && styles.checkboxDisabled,
+                    !isPayer && checked && { backgroundColor: color, borderColor: color }
+                  ]}>
+                    {isPayer ? <Text style={styles.checkmarkDisabled}>–</Text> : checked && <Text style={styles.checkmark}>✓</Text>}
                   </View>
-                  <Text style={[styles.checkLabel, { color: checked ? color : "#555" }]}>{m.display_name}</Text>
+                  <Text style={[
+                    styles.checkLabel,
+                    isPayer && { color: "#aaa" },
+                    !isPayer && checked && { color }
+                  ]}>
+                    {m.display_name}{isPayer ? " (платил)" : ""}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -402,7 +426,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             {sharePerPerson && (
               <View style={styles.splitNote}>
                 <Text style={styles.splitNoteText}>
-                  ✂️ {splitWith.length} участника · {sharePerPerson} лв. на човек
+                  ✂️ {nonPayerCount} участника · {sharePerPerson} лв. на човек
                 </Text>
               </View>
             )}
@@ -517,7 +541,9 @@ const styles = StyleSheet.create({
     width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: "#ddd",
     alignItems: "center", justifyContent: "center",
   },
+  checkboxDisabled: { backgroundColor: "#f0f0f0", borderColor: "#e0e0e0" },
   checkmark: { color: "#fff", fontSize: 14, fontWeight: "bold" },
+  checkmarkDisabled: { color: "#ccc", fontSize: 14 },
   checkLabel: { fontSize: 14, fontWeight: "500" },
   splitNote: { backgroundColor: "#F0F9F5", borderRadius: 10, padding: 10, marginTop: 4 },
   splitNoteText: { fontSize: 12, color: "#1D9E75", fontWeight: "600" },
