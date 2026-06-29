@@ -57,6 +57,11 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         { event: "*", schema: "public", table: "trip_members", filter: `trip_id=eq.${trip.id}` },
         () => { fetchMembers(); fetchRemovedMembers(); }
       )
+      // Realtime за removed_members — при деблокиране или блокиране
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "removed_members", filter: `trip_id=eq.${trip.id}` },
+        () => { fetchMembers(); fetchRemovedMembers(); }
+      )
       .subscribe();
 
     return () => supabase.removeChannel(channel);
@@ -175,8 +180,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                 .delete()
                 .eq("trip_id", trip.id)
                 .eq("user_id", member.user_id);
-              fetchMembers();
-              fetchRemovedMembers();
             } catch (e) {
               Alert.alert("Грешка", e.message);
             }
@@ -198,7 +201,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               await supabase.from("removed_members")
                 .delete()
                 .eq("id", removed.id);
-              fetchRemovedMembers();
             } catch (e) {
               Alert.alert("Грешка", e.message);
             }
@@ -255,7 +257,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const endDate = formatDate(trip?.end_date);
   const dateRange = startDate && endDate ? `${startDate} – ${endDate}` : startDate || null;
 
-  // Показваме members row ако има други участници ИЛИ ако е организатор (за достъп до блокираните)
   const showMembersRow = otherMembers.length > 0 || isOwner;
 
   return (
