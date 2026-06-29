@@ -34,7 +34,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       .from("removed_members")
       .select("id, user_id")
       .eq("trip_id", trip.id);
-    // Зареждаме имената от profiles
     if (data && data.length > 0) {
       const ids = data.map((r) => r.user_id);
       const { data: profiles } = await supabase
@@ -62,6 +61,14 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
     return () => supabase.removeChannel(channel);
   }, [trip?.id, fetchMembers, fetchRemovedMembers, user.id]);
+
+  // Рефрешваме блокираните при всяко отваряне на модала
+  useEffect(() => {
+    if (membersModalVisible) {
+      fetchMembers();
+      fetchRemovedMembers();
+    }
+  }, [membersModalVisible, fetchMembers, fetchRemovedMembers]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -161,12 +168,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
           text: "Премахни", style: "destructive",
           onPress: async () => {
             try {
-              // Добавяме в blacklist
               await supabase.from("removed_members").upsert({
                 trip_id: trip.id,
                 user_id: member.user_id,
               });
-              // Изтриваме от групата
               await supabase.from("trip_members")
                 .delete()
                 .eq("trip_id", trip.id)
@@ -336,7 +341,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       {/* Members modal */}
       <Modal visible={membersModalVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
-          <ScrollView style={styles.modal}>
+          <ScrollView style={styles.modal} contentContainerStyle={styles.modalContent}>
             <Text style={styles.modalTitle}>👥 Участници</Text>
             <Text style={styles.modalSubtitle}>Брой хора определя дела от разходите</Text>
 
@@ -376,19 +381,23 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               );
             })}
 
-            {/* Блокирани участници — само за организатора */}
-            {isOwner && removedMembers.length > 0 && (
-              <>
+            {/* Блокирани — винаги видими за организатора дори след затваряне */}
+            {isOwner && (
+              <View style={styles.blockedSection}>
                 <Text style={styles.blockedTitle}>🚫 Блокирани</Text>
-                {removedMembers.map((r) => (
-                  <View key={r.id} style={styles.blockedRow}>
-                    <Text style={styles.blockedName}>{r.display_name}</Text>
-                    <TouchableOpacity onPress={() => handleUnblock(r)} style={styles.unblockBtn}>
-                      <Text style={styles.unblockBtnText}>Деблокирай</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </>
+                {removedMembers.length === 0 ? (
+                  <Text style={styles.blockedEmpty}>Няма блокирани участници</Text>
+                ) : (
+                  removedMembers.map((r) => (
+                    <View key={r.id} style={styles.blockedRow}>
+                      <Text style={styles.blockedName}>{r.display_name}</Text>
+                      <TouchableOpacity onPress={() => handleUnblock(r)} style={styles.unblockBtn}>
+                        <Text style={styles.unblockBtnText}>Деблокирай</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
+              </View>
             )}
 
             <Text style={styles.weightHint}>💡 Смени броя хора за пропорционално делене на разходите</Text>
@@ -504,7 +513,8 @@ const styles = StyleSheet.create({
   signOut: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
   signOutText: { color: "#aaa", fontSize: 14 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%", padding: 24, paddingBottom: 40 },
+  modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%" },
+  modalContent: { padding: 24, paddingBottom: 40 },
   modalInner: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 4 },
   modalSubtitle: { fontSize: 12, color: "#888", marginBottom: 16 },
@@ -523,7 +533,9 @@ const styles = StyleSheet.create({
   weightVal: { fontSize: 16, fontWeight: "bold", color: "#1a1a1a", minWidth: 20, textAlign: "center" },
   removeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#FFE8E8", alignItems: "center", justifyContent: "center" },
   removeBtnText: { fontSize: 13, color: "#FF3B30", fontWeight: "bold" },
-  blockedTitle: { fontSize: 13, fontWeight: "700", color: "#888", marginTop: 20, marginBottom: 8 },
+  blockedSection: { marginTop: 20, borderTopWidth: 0.5, borderTopColor: "#f0f0f0", paddingTop: 16 },
+  blockedTitle: { fontSize: 13, fontWeight: "700", color: "#888", marginBottom: 10 },
+  blockedEmpty: { fontSize: 13, color: "#ccc", fontStyle: "italic" },
   blockedRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
   blockedName: { fontSize: 14, color: "#aaa", flex: 1 },
   unblockBtn: { backgroundColor: "#E1F5EE", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
