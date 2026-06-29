@@ -12,6 +12,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
   const [membersModalVisible, setMembersModalVisible] = useState(false);
   const [members, setMembers] = useState([]);
+  const [removedMembers, setRemovedMembers] = useState([]);
   const [displayName, setDisplayName] = useState("");
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [newName, setNewName] = useState("");
@@ -27,28 +28,40 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     setMembers(data || []);
   }, [trip?.id]);
 
+  const fetchRemovedMembers = useCallback(async () => {
+    if (!trip?.id) return;
+    const { data } = await supabase
+      .from("removed_members")
+      .select("id, user_id")
+      .eq("trip_id", trip.id);
+    // Зареждаме имената от profiles
+    if (data && data.length > 0) {
+      const ids = data.map((r) => r.user_id);
+      const { data: profiles } = await supabase
+        .from("profiles").select("id, display_name").in("id", ids);
+      const profileMap = {};
+      (profiles || []).forEach((p) => { profileMap[p.id] = p.display_name; });
+      setRemovedMembers(data.map((r) => ({ ...r, display_name: profileMap[r.user_id] || "Непознат" })));
+    } else {
+      setRemovedMembers([]);
+    }
+  }, [trip?.id]);
+
   useEffect(() => {
     fetchMembers();
+    fetchRemovedMembers();
     if (!trip?.id) return;
 
     const channel = supabase
       .channel(`members-${trip.id}-${user.id}`)
       .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "trip_members", filter: `trip_id=eq.${trip.id}` },
-        () => fetchMembers()
-      )
-      .on("postgres_changes",
-        { event: "UPDATE", schema: "public", table: "trip_members", filter: `trip_id=eq.${trip.id}` },
-        () => fetchMembers()
-      )
-      .on("postgres_changes",
-        { event: "DELETE", schema: "public", table: "trip_members", filter: `trip_id=eq.${trip.id}` },
-        () => fetchMembers()
+        { event: "*", schema: "public", table: "trip_members", filter: `trip_id=eq.${trip.id}` },
+        () => { fetchMembers(); fetchRemovedMembers(); }
       )
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [trip?.id, fetchMembers, user.id]);
+  }, [trip?.id, fetchMembers, fetchRemovedMembers, user.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -141,19 +154,47 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   async function handleRemoveMember(member) {
     Alert.alert(
       "Премахване",
-      `Сигурен ли си, че искаш да премахнеш ${member.display_name} от пътуването?\n\nМинали разходи си остават.`,
+      `Сигурен ли си, че искаш да премахнеш ${member.display_name}?\n\nМинали разходи си остават. Те няма да могат да се върнат без твоето разрешение.`,
       [
         { text: "Отказ", style: "cancel" },
         {
           text: "Премахни", style: "destructive",
           onPress: async () => {
             try {
-              const { error } = await supabase.from("trip_members")
+              // Добавяме в blacklist
+              await supabase.from("removed_members").upsert({
+                trip_id: trip.id,
+                user_id: member.user_id,
+              });
+              // Изтриваме от групата
+              await supabase.from("trip_members")
                 .delete()
                 .eq("trip_id", trip.id)
                 .eq("user_id", member.user_id);
-              if (error) throw error;
-              setMembers((prev) => prev.filter((m) => m.user_id !== member.user_id));
+              fetchMembers();
+              fetchRemovedMembers();
+            } catch (e) {
+              Alert.alert("Грешка", e.message);
+            }
+          }
+        }
+      ]
+    );
+  }
+
+  async function handleUnblock(removed) {
+    Alert.alert(
+      "Деблокиране",
+      `Разреши на ${removed.display_name} да се присъедини отново?`,
+      [
+        { text: "Отказ", style: "cancel" },
+        {
+          text: "Да, разреши", onPress: async () => {
+            try {
+              await supabase.from("removed_members")
+                .delete()
+                .eq("id", removed.id);
+              fetchRemovedMembers();
             } catch (e) {
               Alert.alert("Грешка", e.message);
             }
@@ -292,25 +333,19 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
       </ScrollView>
 
+      {/* Members modal */}
       <Modal visible={membersModalVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
-          <View style={styles.modal}>
+          <ScrollView style={styles.modal}>
             <Text style={styles.modalTitle}>👥 Участници</Text>
-            <Text style={styles.modalSubtitle}>
-              {isOwner ? "Натисни и задръж за да премахнеш участник" : "Брой хора определя дела от разходите"}
-            </Text>
+            <Text style={styles.modalSubtitle}>Брой хора определя дела от разходите</Text>
+
             {members.map((m, i) => {
               const weight = m.weight || 1;
               const isMe = m.user_id === user.id;
               const canRemove = isOwner && !isMe;
               return (
-                <TouchableOpacity
-                  key={m.user_id}
-                  style={styles.memberRow}
-                  onLongPress={() => canRemove && handleRemoveMember(m)}
-                  delayLongPress={500}
-                  activeOpacity={canRemove ? 0.6 : 1}
-                >
+                <View key={m.user_id} style={styles.memberRow}>
                   <View style={[styles.avatarLg, { backgroundColor: isMe ? "#1D9E75" : COLORS[i % COLORS.length] }]}>
                     <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
                   </View>
@@ -337,20 +372,36 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                       </TouchableOpacity>
                     )}
                   </View>
-                </TouchableOpacity>
+                </View>
               );
             })}
+
+            {/* Блокирани участници — само за организатора */}
+            {isOwner && removedMembers.length > 0 && (
+              <>
+                <Text style={styles.blockedTitle}>🚫 Блокирани</Text>
+                {removedMembers.map((r) => (
+                  <View key={r.id} style={styles.blockedRow}>
+                    <Text style={styles.blockedName}>{r.display_name}</Text>
+                    <TouchableOpacity onPress={() => handleUnblock(r)} style={styles.unblockBtn}>
+                      <Text style={styles.unblockBtnText}>Деблокирай</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </>
+            )}
+
             <Text style={styles.weightHint}>💡 Смени броя хора за пропорционално делене на разходите</Text>
             <TouchableOpacity style={styles.modalClose} onPress={() => setMembersModalVisible(false)}>
               <Text style={styles.modalCloseText}>Готово</Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
       <Modal visible={editNameVisible} animationType="slide" transparent>
         <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <View style={styles.modal}>
+          <View style={styles.modalInner}>
             <Text style={styles.modalTitle}>Смени никнейм</Text>
             <TextInput
               style={styles.nameInput}
@@ -376,7 +427,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
       <Modal visible={tripPickerVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
-          <View style={styles.modal}>
+          <View style={styles.modalInner}>
             <Text style={styles.modalTitle}>Пътувания</Text>
             {(allTrips || []).map((t) => (
               <TouchableOpacity key={t.id} style={[styles.tripOption, t.id === trip?.id && styles.tripOptionActive]}
@@ -453,7 +504,8 @@ const styles = StyleSheet.create({
   signOut: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
   signOutText: { color: "#aaa", fontSize: 14 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%", padding: 24, paddingBottom: 40 },
+  modalInner: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 4 },
   modalSubtitle: { fontSize: 12, color: "#888", marginBottom: 16 },
   memberRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
@@ -471,6 +523,11 @@ const styles = StyleSheet.create({
   weightVal: { fontSize: 16, fontWeight: "bold", color: "#1a1a1a", minWidth: 20, textAlign: "center" },
   removeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#FFE8E8", alignItems: "center", justifyContent: "center" },
   removeBtnText: { fontSize: 13, color: "#FF3B30", fontWeight: "bold" },
+  blockedTitle: { fontSize: 13, fontWeight: "700", color: "#888", marginTop: 20, marginBottom: 8 },
+  blockedRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
+  blockedName: { fontSize: 14, color: "#aaa", flex: 1 },
+  unblockBtn: { backgroundColor: "#E1F5EE", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  unblockBtnText: { color: "#1D9E75", fontSize: 12, fontWeight: "600" },
   weightHint: { fontSize: 12, color: "#888", marginTop: 16, marginBottom: 8, textAlign: "center" },
   nameInput: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 14, fontSize: 16, color: "#1a1a1a", marginBottom: 16 },
   modalBtns: { flexDirection: "row", gap: 10 },
@@ -487,6 +544,6 @@ const styles = StyleSheet.create({
   tripOptionCheck: { fontSize: 18, color: "#1D9E75", fontWeight: "bold" },
   newTripBtn: { backgroundColor: "#1D9E75", padding: 14, borderRadius: 12, alignItems: "center", marginTop: 4, marginBottom: 8 },
   newTripBtnText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
-  modalClose: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
+  modalClose: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center", marginTop: 8 },
   modalCloseText: { color: "#888", fontSize: 15 },
 });

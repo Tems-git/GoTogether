@@ -13,7 +13,7 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
   const [inviteCode, setInviteCode] = useState(pendingInviteCode || "");
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [pendingTrip, setPendingTrip] = useState(null); // trip чака потвърждение на името
+  const [pendingTrip, setPendingTrip] = useState(null);
 
   useEffect(() => {
     if (pendingInviteCode) {
@@ -85,7 +85,7 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
       // Проверяваме дали вече е член
       const { data: existing } = await supabase
         .from("trip_members")
-        .select("user_id, display_name")
+        .select("user_id")
         .eq("trip_id", trip.id)
         .eq("user_id", user.id)
         .maybeSingle();
@@ -95,19 +95,28 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
         return;
       }
 
-      // Проверяваме дали има профил с истинско име
+      // Проверяваме blacklist
+      const { data: blocked } = await supabase
+        .from("removed_members")
+        .select("id")
+        .eq("trip_id", trip.id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (blocked) {
+        throw new Error("Нямаш достъп до това пътуване. Свържи се с организатора.");
+      }
+
       const profile = await getOrCreateProfile();
       const defaultName = user.email.split("@")[0];
       const hasRealName = profile?.display_name && profile.display_name !== defaultName;
 
       if (!hasRealName) {
-        // Питаме за истинско име преди да добавим
         setPendingTrip(trip);
         setLoading(false);
         return;
       }
 
-      // Директно присъединяване
       const { error: joinError } = await supabase.from("trip_members").insert({
         trip_id: trip.id,
         user_id: user.id,
@@ -128,13 +137,11 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
     if (!trimmedName) return Alert.alert("Грешка", "Въведи твоето име");
     setLoading(true);
     try {
-      // Запазваме профила
       await supabase.from("profiles").upsert({
         id: user.id,
         display_name: trimmedName,
       });
 
-      // Присъединяваме към пътуването
       const { error: joinError } = await supabase.from("trip_members").insert({
         trip_id: pendingTrip.id,
         user_id: user.id,
@@ -150,7 +157,6 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
     }
   }
 
-  // Стъпка за въвеждане на име преди присъединяване
   if (pendingTrip) {
     return (
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
