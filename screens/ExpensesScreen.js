@@ -159,7 +159,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   const memberName = (uid) => allNames[uid] || "Непознат";
 
-  // Дали потребителят е активен член на групата
   const activeIds = new Set(members.map((m) => m.user_id));
   const isOwner = members.find((m) => m.user_id === userId)?.role === "owner";
 
@@ -174,10 +173,10 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   async function handleMarkSettled(settlement, index, asAdmin = false) {
     const msg = asAdmin
-      ? `Потвърди като организатор, че ${memberName(settlement.from)} е платил ${settlement.amount.toFixed(2)} лв. на ${memberName(settlement.to)}?`
+      ? `Потвърди като организатор, че преводът ${settlement.amount.toFixed(2)} лв. от ${memberName(settlement.from)} към ${memberName(settlement.to)} е уреден?`
       : `Получи ли ${settlement.amount.toFixed(2)} лв. от ${memberName(settlement.from)}?`;
 
-    Alert.alert("Потвърди получаването", msg, [
+    Alert.alert("Потвърди", msg, [
       { text: "Не", style: "cancel" },
       {
         text: "Да, потвърждавам!", onPress: async () => {
@@ -496,16 +495,17 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             {settlements.map((s, i) => {
               const iAmReceiver = s.to === userId;
               const iAmSender = s.from === userId;
-              // Получателят е изтрит и аз съм организатор — мога да потвърдя
               const receiverLeft = !activeIds.has(s.to);
-              const iAmAdminForThis = isOwner && receiverLeft && !iAmSender;
+              // Организаторът може да потвърди когато получателят е напуснал
+              // — включително когато самият организатор е изпращачът
+              const iAmAdminForThis = isOwner && receiverLeft && !iAmReceiver;
 
               return (
                 <View key={i} style={styles.settleRow}>
                   <View style={styles.settleTop}>
                     <Text style={[styles.settleFrom, { color: memberColor(s.from) }]}>{memberName(s.from)}</Text>
                     <Text style={styles.settleArrow}>→</Text>
-                    <View>
+                    <View style={{ flex: 1 }}>
                       <Text style={[styles.settleTo, { color: memberColor(s.to) }]}>{memberName(s.to)}</Text>
                       {receiverLeft && <Text style={styles.settleLeftLabel}>напуснал</Text>}
                     </View>
@@ -629,7 +629,7 @@ const styles = StyleSheet.create({
   settleTop: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
   settleFrom: { fontWeight: "700", flex: 1, fontSize: 13 },
   settleArrow: { color: "#888" },
-  settleTo: { fontWeight: "700", flex: 1, fontSize: 13 },
+  settleTo: { fontWeight: "700", fontSize: 13 },
   settleLeftLabel: { fontSize: 10, color: "#FF6B6B", fontStyle: "italic" },
   settleAmt: { fontWeight: "bold", color: "#1a1a1a", fontSize: 13 },
   settleBtn: { backgroundColor: "#1D9E75", padding: 12, borderRadius: 10, alignItems: "center" },
