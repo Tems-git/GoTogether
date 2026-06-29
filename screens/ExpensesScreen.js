@@ -12,7 +12,6 @@ const DEV_MEMBERS = [
 
 const MEMBER_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#DDA0DD", "#98D8C8", "#FFEAA7"];
 
-// allParticipants е масив от всички { user_id } — активни + изтрити
 function calcSettlements(allParticipants, expenses, splits) {
   const unsettled = splits.filter((s) => !s.is_settled);
   const balance = {};
@@ -122,6 +121,10 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         () => fetchAll()
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "expense_splits" },
+        () => fetchAll()
+      )
+      // При промяна в участниците (включително изтриване) — рефрешваме
+      .on("postgres_changes", { event: "*", schema: "public", table: "trip_members", filter: `trip_id=eq.${tripId}` },
         () => fetchAll()
       )
       .subscribe();
@@ -265,7 +268,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     spent: expenses.filter((e) => e.paid_by === uid).reduce((s, e) => s + Number(e.amount), 0),
   })).filter((m) => m.spent > 0);
 
-  // Подаваме ВСИЧКИ участници (активни + изтрити) на calcSettlements
   const allParticipants = Object.keys(allNames).map((uid) => ({ user_id: uid }));
   const settlements = calcSettlements(allParticipants, expenses, splits);
 
