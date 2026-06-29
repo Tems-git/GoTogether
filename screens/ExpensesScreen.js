@@ -73,7 +73,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     if (devMode) return;
     try {
       const { data: mData } = await supabase
-        .from("trip_members").select("user_id, display_name, weight").eq("trip_id", tripId);
+        .from("trip_members").select("user_id, display_name, weight, role").eq("trip_id", tripId);
       const activeMembers = (mData && mData.length > 0) ? mData : DEV_MEMBERS;
 
       const { data: eData } = await supabase
@@ -123,7 +123,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "expense_splits" },
         () => fetchAll()
       )
-      // При промяна в участниците (включително изтриване) — рефрешваме
       .on("postgres_changes", { event: "*", schema: "public", table: "trip_members", filter: `trip_id=eq.${tripId}` },
         () => fetchAll()
       )
@@ -160,6 +159,10 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   const memberName = (uid) => allNames[uid] || "Непознат";
 
+  // Дали потребителят е активен член на групата
+  const activeIds = new Set(members.map((m) => m.user_id));
+  const isOwner = members.find((m) => m.user_id === userId)?.role === "owner";
+
   function calcShares(amt, participantIds, payerId) {
     const totalWeight = participantIds.reduce((s, uid) => s + getMemberWeight(uid), 0);
     const nonPayers = participantIds.filter((uid) => uid !== payerId);
@@ -169,41 +172,41 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     }));
   }
 
-  async function handleMarkSettled(settlement, index) {
-    Alert.alert(
-      "Потвърди получаването",
-      `Получи ли ${settlement.amount.toFixed(2)} лв. от ${memberName(settlement.from)}?`,
-      [
-        { text: "Не", style: "cancel" },
-        {
-          text: "Да, получих!", onPress: async () => {
-            setSettling(index);
-            try {
-              const relevantExpenseIds = expenses
-                .filter((e) => e.paid_by === settlement.to)
-                .map((e) => e.id);
-              const splitsToSettle = splits.filter(
-                (s) => s.user_id === settlement.from &&
-                  relevantExpenseIds.includes(s.expense_id) &&
-                  !s.is_settled
-              );
-              if (splitsToSettle.length > 0) {
-                await supabase
-                  .from("expense_splits")
-                  .update({ is_settled: true })
-                  .in("expense_id", splitsToSettle.map((s) => s.expense_id))
-                  .eq("user_id", settlement.from);
-              }
-              await fetchAll();
-            } catch (e) {
-              Alert.alert("Грешка", e.message);
-            } finally {
-              setSettling(null);
+  async function handleMarkSettled(settlement, index, asAdmin = false) {
+    const msg = asAdmin
+      ? `Потвърди като организатор, че ${memberName(settlement.from)} е платил ${settlement.amount.toFixed(2)} лв. на ${memberName(settlement.to)}?`
+      : `Получи ли ${settlement.amount.toFixed(2)} лв. от ${memberName(settlement.from)}?`;
+
+    Alert.alert("Потвърди получаването", msg, [
+      { text: "Не", style: "cancel" },
+      {
+        text: "Да, потвърждавам!", onPress: async () => {
+          setSettling(index);
+          try {
+            const relevantExpenseIds = expenses
+              .filter((e) => e.paid_by === settlement.to)
+              .map((e) => e.id);
+            const splitsToSettle = splits.filter(
+              (s) => s.user_id === settlement.from &&
+                relevantExpenseIds.includes(s.expense_id) &&
+                !s.is_settled
+            );
+            if (splitsToSettle.length > 0) {
+              await supabase
+                .from("expense_splits")
+                .update({ is_settled: true })
+                .in("expense_id", splitsToSettle.map((s) => s.expense_id))
+                .eq("user_id", settlement.from);
             }
+            await fetchAll();
+          } catch (e) {
+            Alert.alert("Грешка", e.message);
+          } finally {
+            setSettling(null);
           }
-        },
-      ]
-    );
+        }
+      },
+    ]);
   }
 
   async function handleSave() {
@@ -493,23 +496,40 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             {settlements.map((s, i) => {
               const iAmReceiver = s.to === userId;
               const iAmSender = s.from === userId;
+              // Получателят е изтрит и аз съм организатор — мога да потвърдя
+              const receiverLeft = !activeIds.has(s.to);
+              const iAmAdminForThis = isOwner && receiverLeft && !iAmSender;
+
               return (
                 <View key={i} style={styles.settleRow}>
                   <View style={styles.settleTop}>
                     <Text style={[styles.settleFrom, { color: memberColor(s.from) }]}>{memberName(s.from)}</Text>
                     <Text style={styles.settleArrow}>→</Text>
-                    <Text style={[styles.settleTo, { color: memberColor(s.to) }]}>{memberName(s.to)}</Text>
+                    <View>
+                      <Text style={[styles.settleTo, { color: memberColor(s.to) }]}>{memberName(s.to)}</Text>
+                      {receiverLeft && <Text style={styles.settleLeftLabel}>напуснал</Text>}
+                    </View>
                     <Text style={styles.settleAmt}>{s.amount.toFixed(2)} лв.</Text>
                   </View>
                   {iAmReceiver ? (
                     <TouchableOpacity
                       style={styles.settleBtn}
-                      onPress={() => handleMarkSettled(s, i)}
+                      onPress={() => handleMarkSettled(s, i, false)}
                       disabled={settling === i}
                     >
                       {settling === i
                         ? <ActivityIndicator size="small" color="#fff" />
                         : <Text style={styles.settleBtnText}>✓ Получих парите</Text>}
+                    </TouchableOpacity>
+                  ) : iAmAdminForThis ? (
+                    <TouchableOpacity
+                      style={styles.settleBtnAdmin}
+                      onPress={() => handleMarkSettled(s, i, true)}
+                      disabled={settling === i}
+                    >
+                      {settling === i
+                        ? <ActivityIndicator size="small" color="#1D9E75" />
+                        : <Text style={styles.settleBtnAdminText}>✓ Потвърди като организатор</Text>}
                     </TouchableOpacity>
                   ) : iAmSender ? (
                     <View style={styles.settlePending}>
@@ -610,9 +630,15 @@ const styles = StyleSheet.create({
   settleFrom: { fontWeight: "700", flex: 1, fontSize: 13 },
   settleArrow: { color: "#888" },
   settleTo: { fontWeight: "700", flex: 1, fontSize: 13 },
+  settleLeftLabel: { fontSize: 10, color: "#FF6B6B", fontStyle: "italic" },
   settleAmt: { fontWeight: "bold", color: "#1a1a1a", fontSize: 13 },
   settleBtn: { backgroundColor: "#1D9E75", padding: 12, borderRadius: 10, alignItems: "center" },
   settleBtnText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
+  settleBtnAdmin: {
+    backgroundColor: "#fff", padding: 12, borderRadius: 10, alignItems: "center",
+    borderWidth: 1.5, borderColor: "#1D9E75",
+  },
+  settleBtnAdminText: { color: "#1D9E75", fontSize: 14, fontWeight: "bold" },
   settlePending: { backgroundColor: "#F0F0F0", padding: 12, borderRadius: 10, alignItems: "center" },
   settlePendingText: { color: "#888", fontSize: 13 },
 });
