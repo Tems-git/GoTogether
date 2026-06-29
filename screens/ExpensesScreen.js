@@ -55,8 +55,8 @@ const CATEGORIES = [
 export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const [expenses, setExpenses] = useState([]);
   const [splits, setSplits] = useState([]);
-  const [members, setMembers] = useState(devMode ? DEV_MEMBERS : []); // само активни
-  const [allNames, setAllNames] = useState({}); // uid -> display_name (включва изтрити)
+  const [members, setMembers] = useState(devMode ? DEV_MEMBERS : []);
+  const [allNames, setAllNames] = useState({});
   const [loading, setLoading] = useState(!devMode);
   const [modalVisible, setModalVisible] = useState(false);
   const [settleVisible, setSettleVisible] = useState(false);
@@ -72,7 +72,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const fetchAll = useCallback(async () => {
     if (devMode) return;
     try {
-      // Активни участници
       const { data: mData } = await supabase
         .from("trip_members").select("user_id, display_name, weight").eq("trip_id", tripId);
       const activeMembers = (mData && mData.length > 0) ? mData : DEV_MEMBERS;
@@ -86,11 +85,9 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         sData = data || [];
       }
 
-      // Изграждаме кеш на имена — от активни членове
       const namesMap = {};
       activeMembers.forEach((m) => { namesMap[m.user_id] = m.display_name; });
 
-      // Добавяме имена от profiles за изтрити участници (тези в expenses но не в members)
       const activeIds = new Set(activeMembers.map((m) => m.user_id));
       const allPayers = [...new Set((eData || []).map((e) => e.paid_by))];
       const allSplitUsers = [...new Set(sData.map((s) => s.user_id))];
@@ -147,7 +144,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   }
 
   const memberColor = (uid) => {
-    // Цвят по позиция в allNames keys за консистентност
     const allIds = Object.keys(allNames);
     const idx = allIds.indexOf(uid);
     return MEMBER_COLORS[idx >= 0 ? idx % MEMBER_COLORS.length : 0];
@@ -158,7 +154,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return m?.weight || 1;
   };
 
-  // Показваме имена от allNames (включва изтрити)
   const memberName = (uid) => allNames[uid] || "Непознат";
 
   function calcShares(amt, participantIds, payerId) {
@@ -172,12 +167,12 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   async function handleMarkSettled(settlement, index) {
     Alert.alert(
-      "Изравняване",
-      `${memberName(settlement.from)} е платил ${settlement.amount.toFixed(2)} лв. на ${memberName(settlement.to)}?`,
+      "Потвърди получаването",
+      `Получи ли ${settlement.amount.toFixed(2)} лв. от ${memberName(settlement.from)}?`,
       [
-        { text: "Отказ", style: "cancel" },
+        { text: "Не", style: "cancel" },
         {
-          text: "Да, изравнено!", onPress: async () => {
+          text: "Да, получих!", onPress: async () => {
             setSettling(index);
             try {
               const relevantExpenseIds = expenses
@@ -263,7 +258,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return sum + unsettled.reduce((s, x) => s + Number(x.share), 0);
   }, 0);
 
-  // spentByMember — от всички в allNames, не само активни
   const spentByMember = Object.entries(allNames).map(([uid, name]) => ({
     user_id: uid,
     display_name: name,
@@ -489,26 +483,40 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         <View style={styles.overlay}>
           <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}>
             <Text style={styles.modalTitle}>⚖️ Как да се изравним</Text>
-            <Text style={styles.settleSubtitle}>Натисни ✓ когато преводът е направен:</Text>
-            {settlements.map((s, i) => (
-              <View key={i} style={styles.settleRow}>
-                <View style={styles.settleTop}>
-                  <Text style={[styles.settleFrom, { color: memberColor(s.from) }]}>{memberName(s.from)}</Text>
-                  <Text style={styles.settleArrow}>→</Text>
-                  <Text style={[styles.settleTo, { color: memberColor(s.to) }]}>{memberName(s.to)}</Text>
-                  <Text style={styles.settleAmt}>{s.amount.toFixed(2)} лв.</Text>
+            <Text style={styles.settleSubtitle}>Получателят потвърждава когато са получени парите:</Text>
+            {settlements.map((s, i) => {
+              const iAmReceiver = s.to === userId;
+              const iAmSender = s.from === userId;
+              return (
+                <View key={i} style={styles.settleRow}>
+                  <View style={styles.settleTop}>
+                    <Text style={[styles.settleFrom, { color: memberColor(s.from) }]}>{memberName(s.from)}</Text>
+                    <Text style={styles.settleArrow}>→</Text>
+                    <Text style={[styles.settleTo, { color: memberColor(s.to) }]}>{memberName(s.to)}</Text>
+                    <Text style={styles.settleAmt}>{s.amount.toFixed(2)} лв.</Text>
+                  </View>
+                  {iAmReceiver ? (
+                    <TouchableOpacity
+                      style={styles.settleBtn}
+                      onPress={() => handleMarkSettled(s, i)}
+                      disabled={settling === i}
+                    >
+                      {settling === i
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <Text style={styles.settleBtnText}>✓ Получих парите</Text>}
+                    </TouchableOpacity>
+                  ) : iAmSender ? (
+                    <View style={styles.settlePending}>
+                      <Text style={styles.settlePendingText}>⏳ Изпрати {s.amount.toFixed(2)} лв. на {memberName(s.to)}</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.settlePending}>
+                      <Text style={styles.settlePendingText}>⏳ Очаква потвърждение</Text>
+                    </View>
+                  )}
                 </View>
-                <TouchableOpacity
-                  style={styles.settleBtn}
-                  onPress={() => handleMarkSettled(s, i)}
-                  disabled={settling === i}
-                >
-                  {settling === i
-                    ? <ActivityIndicator size="small" color="#fff" />
-                    : <Text style={styles.settleBtnText}>✓ Маркирай като платено</Text>}
-                </TouchableOpacity>
-              </View>
-            ))}
+              );
+            })}
             <TouchableOpacity style={[styles.btnSave, { marginTop: 8 }]} onPress={() => setSettleVisible(false)}>
               <Text style={styles.btnSaveText}>Затвори</Text>
             </TouchableOpacity>
@@ -590,7 +598,7 @@ const styles = StyleSheet.create({
   btnCancelText: { color: "#888", fontSize: 15 },
   btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#1D9E75", alignItems: "center" },
   btnSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
-  settleSubtitle: { fontSize: 14, color: "#888", marginBottom: 12 },
+  settleSubtitle: { fontSize: 13, color: "#888", marginBottom: 12 },
   settleRow: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 12, marginBottom: 10 },
   settleTop: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
   settleFrom: { fontWeight: "700", flex: 1, fontSize: 13 },
@@ -599,4 +607,6 @@ const styles = StyleSheet.create({
   settleAmt: { fontWeight: "bold", color: "#1a1a1a", fontSize: 13 },
   settleBtn: { backgroundColor: "#1D9E75", padding: 12, borderRadius: 10, alignItems: "center" },
   settleBtnText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
+  settlePending: { backgroundColor: "#F0F0F0", padding: 12, borderRadius: 10, alignItems: "center" },
+  settlePendingText: { color: "#888", fontSize: 13 },
 });
