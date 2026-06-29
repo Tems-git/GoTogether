@@ -55,7 +55,8 @@ const CATEGORIES = [
 export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const [expenses, setExpenses] = useState([]);
   const [splits, setSplits] = useState([]);
-  const [members, setMembers] = useState(devMode ? DEV_MEMBERS : []);
+  const [members, setMembers] = useState(devMode ? DEV_MEMBERS : []); // само активни
+  const [allNames, setAllNames] = useState({}); // uid -> display_name (включва изтрити)
   const [loading, setLoading] = useState(!devMode);
   const [modalVisible, setModalVisible] = useState(false);
   const [settleVisible, setSettleVisible] = useState(false);
@@ -71,8 +72,11 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const fetchAll = useCallback(async () => {
     if (devMode) return;
     try {
+      // Активни участници
       const { data: mData } = await supabase
         .from("trip_members").select("user_id, display_name, weight").eq("trip_id", tripId);
+      const activeMembers = (mData && mData.length > 0) ? mData : DEV_MEMBERS;
+
       const { data: eData } = await supabase
         .from("expenses").select("*").eq("trip_id", tripId).order("created_at", { ascending: false });
       const expenseIds = (eData || []).map((e) => e.id);
@@ -81,7 +85,27 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         const { data } = await supabase.from("expense_splits").select("*").in("expense_id", expenseIds);
         sData = data || [];
       }
-      setMembers((mData && mData.length > 0) ? mData : DEV_MEMBERS);
+
+      // Изграждаме кеш на имена — от активни членове
+      const namesMap = {};
+      activeMembers.forEach((m) => { namesMap[m.user_id] = m.display_name; });
+
+      // Добавяме имена от profiles за изтрити участници (тези в expenses но не в members)
+      const activeIds = new Set(activeMembers.map((m) => m.user_id));
+      const allPayers = [...new Set((eData || []).map((e) => e.paid_by))];
+      const allSplitUsers = [...new Set(sData.map((s) => s.user_id))];
+      const missingIds = [...new Set([...allPayers, ...allSplitUsers])].filter((id) => !activeIds.has(id));
+
+      if (missingIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from("profiles").select("id, display_name").in("id", missingIds);
+        (profilesData || []).forEach((p) => {
+          namesMap[p.id] = p.display_name || "Бивш участник";
+        });
+      }
+
+      setMembers(activeMembers);
+      setAllNames(namesMap);
       setExpenses(eData || []);
       setSplits(sData);
     } catch (e) {
@@ -123,8 +147,10 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   }
 
   const memberColor = (uid) => {
-    const idx = members.findIndex((m) => m.user_id === uid);
-    return MEMBER_COLORS[idx % MEMBER_COLORS.length];
+    // Цвят по позиция в allNames keys за консистентност
+    const allIds = Object.keys(allNames);
+    const idx = allIds.indexOf(uid);
+    return MEMBER_COLORS[idx >= 0 ? idx % MEMBER_COLORS.length : 0];
   };
 
   const getMemberWeight = (uid) => {
@@ -132,9 +158,9 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return m?.weight || 1;
   };
 
-  // Изчисляваме shares пропорционално по weight:
-  // Делим сумата между ВСИЧКИ участници (splitWith), след което
-  // не-платците дължат своята пропорционална дял.
+  // Показваме имена от allNames (включва изтрити)
+  const memberName = (uid) => allNames[uid] || "Непознат";
+
   function calcShares(amt, participantIds, payerId) {
     const totalWeight = participantIds.reduce((s, uid) => s + getMemberWeight(uid), 0);
     const nonPayers = participantIds.filter((uid) => uid !== payerId);
@@ -237,13 +263,14 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return sum + unsettled.reduce((s, x) => s + Number(x.share), 0);
   }, 0);
 
-  const spentByMember = members.map((m) => ({
-    ...m,
-    spent: expenses.filter((e) => e.paid_by === m.user_id).reduce((s, e) => s + Number(e.amount), 0),
+  // spentByMember — от всички в allNames, не само активни
+  const spentByMember = Object.entries(allNames).map(([uid, name]) => ({
+    user_id: uid,
+    display_name: name,
+    spent: expenses.filter((e) => e.paid_by === uid).reduce((s, e) => s + Number(e.amount), 0),
   })).filter((m) => m.spent > 0);
 
   const settlements = calcSettlements(members, expenses, splits);
-  const memberName = (uid) => members.find((m) => m.user_id === uid)?.display_name || "Непознат";
   const catInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[4];
 
   const amtNum = parseFloat(amount.replace(",", ".")) || 0;
