@@ -12,10 +12,11 @@ const DEV_MEMBERS = [
 
 const MEMBER_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#DDA0DD", "#98D8C8", "#FFEAA7"];
 
-function calcSettlements(members, expenses, splits) {
+// allParticipants е масив от всички { user_id } — активни + изтрити
+function calcSettlements(allParticipants, expenses, splits) {
   const unsettled = splits.filter((s) => !s.is_settled);
   const balance = {};
-  members.forEach((m) => (balance[m.user_id] = 0));
+  allParticipants.forEach((m) => (balance[m.user_id] = 0));
   expenses.forEach((exp) => {
     const expSplits = unsettled.filter((s) => s.expense_id === exp.id);
     expSplits.forEach((s) => {
@@ -264,7 +265,10 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     spent: expenses.filter((e) => e.paid_by === uid).reduce((s, e) => s + Number(e.amount), 0),
   })).filter((m) => m.spent > 0);
 
-  const settlements = calcSettlements(members, expenses, splits);
+  // Подаваме ВСИЧКИ участници (активни + изтрити) на calcSettlements
+  const allParticipants = Object.keys(allNames).map((uid) => ({ user_id: uid }));
+  const settlements = calcSettlements(allParticipants, expenses, splits);
+
   const catInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[4];
 
   const amtNum = parseFloat(amount.replace(",", ".")) || 0;
