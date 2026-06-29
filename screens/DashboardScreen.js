@@ -62,7 +62,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     return () => supabase.removeChannel(channel);
   }, [trip?.id, fetchMembers, fetchRemovedMembers, user.id]);
 
-  // Рефрешваме блокираните при всяко отваряне на модала
   useEffect(() => {
     if (membersModalVisible) {
       fetchMembers();
@@ -256,6 +255,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const endDate = formatDate(trip?.end_date);
   const dateRange = startDate && endDate ? `${startDate} – ${endDate}` : startDate || null;
 
+  // Показваме members row ако има други участници ИЛИ ако е организатор (за достъп до блокираните)
+  const showMembersRow = otherMembers.length > 0 || isOwner;
+
   return (
     <View style={styles.flex}>
       <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
@@ -286,7 +288,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               </View>
             </View>
 
-            {otherMembers.length > 0 && (
+            {showMembersRow && (
               <TouchableOpacity style={styles.membersRow} onPress={() => setMembersModalVisible(true)}>
                 {visibleMembers.map((m, i) => (
                   <View key={m.user_id} style={[styles.avatar, { backgroundColor: COLORS[(i + 1) % COLORS.length], marginLeft: i > 0 ? -8 : 0 }]}>
@@ -299,8 +301,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                   </View>
                 )}
                 <Text style={styles.membersLabel}>
-                  {members.length} {members.length === 1 ? "участник" : "участника"}
-                  {hasWeights ? " · с тегла" : ""}
+                  {otherMembers.length > 0
+                    ? `${members.length} ${members.length === 1 ? "участник" : "участника"}${hasWeights ? " · с тегла" : ""}`
+                    : "👥 Управление на участници"}
                 </Text>
               </TouchableOpacity>
             )}
@@ -338,7 +341,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
       </ScrollView>
 
-      {/* Members modal */}
       <Modal visible={membersModalVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <ScrollView style={styles.modal} contentContainerStyle={styles.modalContent}>
@@ -381,7 +383,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               );
             })}
 
-            {/* Блокирани — винаги видими за организатора дори след затваряне */}
             {isOwner && (
               <View style={styles.blockedSection}>
                 <Text style={styles.blockedTitle}>🚫 Блокирани</Text>
