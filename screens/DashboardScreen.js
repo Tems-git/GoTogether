@@ -51,20 +51,36 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     fetchRemovedMembers();
     if (!trip?.id) return;
 
-    const channel = supabase
+    // Channel за trip_members
+    const membersChannel = supabase
       .channel(`members-${trip.id}-${user.id}`)
       .on("postgres_changes",
         { event: "*", schema: "public", table: "trip_members", filter: `trip_id=eq.${trip.id}` },
         () => { fetchMembers(); fetchRemovedMembers(); }
       )
-      // Realtime за removed_members — при деблокиране или блокиране
+      .subscribe();
+
+    // Отделен channel за removed_members — БЕЗ filter, защото DELETE events
+    // не се филтрират надеждно по колони без специален индекс
+    const removedChannel = supabase
+      .channel(`removed-${trip.id}-${user.id}`)
       .on("postgres_changes",
-        { event: "*", schema: "public", table: "removed_members", filter: `trip_id=eq.${trip.id}` },
-        () => { fetchMembers(); fetchRemovedMembers(); }
+        { event: "*", schema: "public", table: "removed_members" },
+        (payload) => {
+          // Проверяваме дали е за нашето пътуване
+          const tripId = payload.new?.trip_id || payload.old?.trip_id;
+          if (tripId === trip.id) {
+            fetchMembers();
+            fetchRemovedMembers();
+          }
+        }
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(membersChannel);
+      supabase.removeChannel(removedChannel);
+    };
   }, [trip?.id, fetchMembers, fetchRemovedMembers, user.id]);
 
   useEffect(() => {
