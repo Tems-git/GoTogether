@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, Alert, Share, Clipboard, Modal, TextInput, KeyboardAvoidingView, Platform,
+  ScrollView, Alert, Share, Modal, TextInput, KeyboardAvoidingView, Platform,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { supabase } from "../lib/supabase";
 
 const MAX_VISIBLE = 4;
@@ -246,9 +247,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     }
   }
 
-  function handleCopyCode() {
+  async function handleCopyCode() {
     if (!trip?.invite_code) return;
-    Clipboard.setString(trip.invite_code);
+    await Clipboard.setStringAsync(trip.invite_code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
