@@ -17,7 +17,6 @@ jobs:
       - run: npm install -g eas-cli@20.4.0
       - run: npm install
       - run: echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
-      - run: echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
       - run: eas update --branch preview --platform all --message "Auto update" --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
