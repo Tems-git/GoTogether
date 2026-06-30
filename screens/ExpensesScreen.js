@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, ScrollView,
-  Modal, TextInput, ActivityIndicator, Alert,
+  Modal, TextInput, ActivityIndicator, Alert, FlatList,
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
@@ -12,7 +12,33 @@ const DEV_MEMBERS = [
 
 const MEMBER_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#DDA0DD", "#98D8C8", "#FFEAA7"];
 
-function calcSettlements(allParticipants, expenses, splits) {
+// Чести валути — pinned горе в избирателя, преди пълния ISO списък от Frankfurter.
+const COMMON_CURRENCIES = ["EUR", "BGN", "USD", "GBP"];
+const CURRENCY_SYMBOLS = { EUR: "€", USD: "$", GBP: "£", BGN: "лв." };
+
+function currencyLabel(code) {
+  return CURRENCY_SYMBOLS[code] ? `${code} ${CURRENCY_SYMBOLS[code]}` : code;
+}
+
+function formatMoney(amount, code) {
+  const symbol = CURRENCY_SYMBOLS[code];
+  const num = amount.toFixed(2);
+  return symbol ? `${num} ${symbol}` : `${num} ${code}`;
+}
+
+// Баланс изчисленията стават изцяло в EUR (базова валута за пътуването),
+// защото разходите могат да са в различни валути. rates е {CODE: курсEURtoCODE}.
+function toEUR(amount, currency, rates) {
+  if (currency === "EUR") return amount;
+  const rate = rates?.[currency];
+  if (!rate) return amount; // ако курсът липсва, не блокираме — показваме суровата сума
+  return amount / rate;
+}
+
+function calcSettlements(allParticipants, expenses, splits, rates) {
+  const expenseById = {};
+  expenses.forEach((e) => { expenseById[e.id] = e; });
+
   const unsettled = splits.filter((s) => !s.is_settled);
   const balance = {};
   allParticipants.forEach((m) => (balance[m.user_id] = 0));
@@ -20,8 +46,9 @@ function calcSettlements(allParticipants, expenses, splits) {
     const expSplits = unsettled.filter((s) => s.expense_id === exp.id);
     expSplits.forEach((s) => {
       if (s.user_id === exp.paid_by) return;
-      balance[exp.paid_by] = (balance[exp.paid_by] || 0) + Number(s.share);
-      balance[s.user_id] = (balance[s.user_id] || 0) - Number(s.share);
+      const shareEUR = toEUR(Number(s.share), exp.currency || "EUR", rates);
+      balance[exp.paid_by] = (balance[exp.paid_by] || 0) + shareEUR;
+      balance[s.user_id] = (balance[s.user_id] || 0) - shareEUR;
     });
   });
   const creditors = [], debtors = [];
@@ -68,6 +95,14 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const [category, setCategory] = useState("other");
   const [splitWith, setSplitWith] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [currency, setCurrency] = useState("EUR");
+  const [currencyPickerVisible, setCurrencyPickerVisible] = useState(false);
+  const [currencySearch, setCurrencySearch] = useState("");
+
+  const [localCurrency, setLocalCurrency] = useState("EUR");
+  const [rates, setRates] = useState(null);
+  const [ratesDate, setRatesDate] = useState(null);
+  const [currencyNames, setCurrencyNames] = useState({});
 
   const fetchAll = useCallback(async () => {
     if (devMode) return;
@@ -75,6 +110,10 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       const { data: mData } = await supabase
         .from("trip_members").select("user_id, display_name, weight, role").eq("trip_id", tripId);
       const activeMembers = (mData && mData.length > 0) ? mData : DEV_MEMBERS;
+
+      const { data: tripData } = await supabase
+        .from("trips").select("local_currency").eq("id", tripId).maybeSingle();
+      if (tripData?.local_currency) setLocalCurrency(tripData.local_currency);
 
       const { data: eData } = await supabase
         .from("expenses").select("*").eq("trip_id", tripId).order("created_at", { ascending: false });
@@ -110,9 +149,31 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     }
   }, [tripId, devMode]);
 
+  // currency-rates Edge Function чете action през query параметър; functions.invoke
+  // поддържа GET с query string директно в името на функцията.
+  const fetchRatesAndCurrencies = useCallback(async () => {
+    try {
+      const [ratesRes, currenciesRes] = await Promise.all([
+        supabase.functions.invoke("currency-rates?action=rates", { method: "GET" }),
+        supabase.functions.invoke("currency-rates?action=currencies", { method: "GET" }),
+      ]);
+
+      if (!ratesRes.error && ratesRes.data) {
+        setRates(ratesRes.data.rates || null);
+        setRatesDate(ratesRes.data.date || null);
+      }
+      if (!currenciesRes.error && currenciesRes.data) {
+        setCurrencyNames(currenciesRes.data.currencies || {});
+      }
+    } catch (e) {
+      // тихо подминаваме — UI работи и без курсове, просто без EUR/местен ред
+    }
+  }, []);
+
   useEffect(() => {
     setLoading(true);
     fetchAll().finally(() => setLoading(false));
+    fetchRatesAndCurrencies();
     if (devMode) return;
 
     const channel = supabase
@@ -129,7 +190,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [fetchAll, tripId, devMode]);
+  }, [fetchAll, fetchRatesAndCurrencies, tripId, devMode]);
 
   function openModal() {
     setSplitWith(members.map((m) => m.user_id));
@@ -137,6 +198,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     setDesc("");
     setAmount("");
     setCategory("other");
+    setCurrency("EUR");
     setModalVisible(true);
   }
 
@@ -171,10 +233,20 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     }));
   }
 
+  // Преобразува сума в EUR, а после в местната валута на пътуването (ако е различна
+  // от EUR), за двойно показване в "Как да се изравним".
+  function convertAmount(amt, fromCurrency) {
+    const eur = toEUR(amt, fromCurrency, rates);
+    if (localCurrency === "EUR" || !rates) return { eur, local: null };
+    const localRate = rates[localCurrency];
+    if (!localRate) return { eur, local: null };
+    return { eur, local: eur * localRate };
+  }
+
   async function handleMarkSettled(settlement, index, asAdmin = false) {
     const msg = asAdmin
-      ? `Потвърди като организатор, че преводът ${settlement.amount.toFixed(2)} лв. от ${memberName(settlement.from)} към ${memberName(settlement.to)} е уреден?`
-      : `Получи ли ${settlement.amount.toFixed(2)} лв. от ${memberName(settlement.from)}?`;
+      ? `Потвърди като организатор, че преводът ${formatMoney(settlement.amount, "EUR")} от ${memberName(settlement.from)} към ${memberName(settlement.to)} е уреден?`
+      : `Получи ли ${formatMoney(settlement.amount, "EUR")} от ${memberName(settlement.from)}?`;
 
     Alert.alert("Потвърди", msg, [
       { text: "Не", style: "cancel" },
@@ -218,7 +290,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     try {
       const { data: exp, error } = await supabase.from("expenses").insert({
         trip_id: tripId, paid_by: paidBy, amount: amt,
-        description: desc.trim(), category, split_type: "weighted",
+        description: desc.trim(), category, split_type: "weighted", currency,
       }).select().single();
       if (error) throw error;
 
@@ -250,28 +322,34 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     ]);
   }
 
-  const total = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  // Общата сума по подразбиране се показва в EUR, тъй като разходите може да са
+  // в смесени валути — сборуването на суровите числа би било безсмислено.
+  const totalEUR = expenses.reduce((s, e) => s + toEUR(Number(e.amount), e.currency || "EUR", rates), 0);
 
-  const iOwe = expenses.reduce((sum, exp) => {
+  const iOweEUR = expenses.reduce((sum, exp) => {
     if (exp.paid_by === userId) return sum;
     const mySplit = splits.find((s) => s.expense_id === exp.id && s.user_id === userId && !s.is_settled);
-    return sum + (mySplit ? Number(mySplit.share) : 0);
+    if (!mySplit) return sum;
+    return sum + toEUR(Number(mySplit.share), exp.currency || "EUR", rates);
   }, 0);
 
-  const owedToMe = expenses.reduce((sum, exp) => {
+  const owedToMeEUR = expenses.reduce((sum, exp) => {
     if (exp.paid_by !== userId) return sum;
     const unsettled = splits.filter((s) => s.expense_id === exp.id && s.user_id !== userId && !s.is_settled);
-    return sum + unsettled.reduce((s, x) => s + Number(x.share), 0);
+    return sum + unsettled.reduce((s, x) => s + toEUR(Number(x.share), exp.currency || "EUR", rates), 0);
   }, 0);
 
   const spentByMember = Object.entries(allNames).map(([uid, name]) => ({
     user_id: uid,
     display_name: name,
-    spent: expenses.filter((e) => e.paid_by === uid).reduce((s, e) => s + Number(e.amount), 0),
-  })).filter((m) => m.spent > 0);
+    spentEUR: expenses.filter((e) => e.paid_by === uid).reduce((s, e) => s + toEUR(Number(e.amount), e.currency || "EUR", rates), 0),
+  })).filter((m) => m.spentEUR > 0);
 
   const allParticipants = Object.keys(allNames).map((uid) => ({ user_id: uid }));
-  const settlements = calcSettlements(allParticipants, expenses, splits);
+  const settlements = useMemo(
+    () => calcSettlements(allParticipants, expenses, splits, rates),
+    [expenses, splits, rates, JSON.stringify(allParticipants)]
+  );
 
   const catInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[4];
 
@@ -293,6 +371,23 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   const allSettled = settlements.length === 0 && expenses.length > 0;
 
+  // Списък от валути за избирателя: чести (pinned) + всичко от Frankfurter,
+  // филтрирано по търсене (код или име).
+  const allCurrencyCodes = useMemo(() => {
+    const fromApi = Object.keys(currencyNames);
+    const set = new Set([...COMMON_CURRENCIES, "EUR", ...fromApi]);
+    return Array.from(set);
+  }, [currencyNames]);
+
+  const filteredCurrencies = useMemo(() => {
+    const q = currencySearch.trim().toUpperCase();
+    const codes = allCurrencyCodes.filter((c) => !COMMON_CURRENCIES.includes(c));
+    const list = q
+      ? codes.filter((c) => c.includes(q) || (currencyNames[c] || "").toUpperCase().includes(q))
+      : codes;
+    return list.sort();
+  }, [allCurrencyCodes, currencyNames, currencySearch]);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
       <TouchableOpacity onPress={onBack} style={styles.back}>
@@ -303,17 +398,17 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
       <View style={styles.summary}>
         <View style={styles.summaryItem}>
-          <Text style={styles.summaryVal}>{total.toFixed(2)} лв.</Text>
+          <Text style={styles.summaryVal}>{formatMoney(totalEUR, "EUR")}</Text>
           <Text style={styles.summaryLbl}>Общо</Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.summaryItem}>
-          <Text style={[styles.summaryVal, iOwe > 0 && { color: "#FFD580" }]}>{iOwe.toFixed(2)} лв.</Text>
+          <Text style={[styles.summaryVal, iOweEUR > 0 && { color: "#FFD580" }]}>{formatMoney(iOweEUR, "EUR")}</Text>
           <Text style={styles.summaryLbl}>Ти дължиш</Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.summaryItem}>
-          <Text style={[styles.summaryVal, owedToMe > 0 && { color: "#A8F0D4" }]}>{owedToMe.toFixed(2)} лв.</Text>
+          <Text style={[styles.summaryVal, owedToMeEUR > 0 && { color: "#A8F0D4" }]}>{formatMoney(owedToMeEUR, "EUR")}</Text>
           <Text style={styles.summaryLbl}>Дължат ти</Text>
         </View>
       </View>
@@ -326,7 +421,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
               <View key={m.user_id} style={styles.spentChip}>
                 <View style={[styles.spentDot, { backgroundColor: color }]} />
                 <Text style={styles.spentName}>{m.display_name}</Text>
-                <Text style={[styles.spentAmt, { color }]}>{m.spent.toFixed(0)} лв.</Text>
+                <Text style={[styles.spentAmt, { color }]}>{formatMoney(m.spentEUR, "EUR")}</Text>
               </View>
             );
           })}
@@ -360,6 +455,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             const cat = catInfo(exp.category);
             const settled = isExpenseSettled(exp);
             const payerColor = memberColor(exp.paid_by);
+            const expCurrency = exp.currency || "EUR";
             return (
               <View key={exp.id} style={[styles.expRow, settled && styles.expRowSettled]}>
                 <Text style={styles.expEmoji}>{settled ? "✅" : cat.emoji}</Text>
@@ -373,7 +469,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   </View>
                 </View>
                 <View style={styles.expRight}>
-                  <Text style={[styles.expAmount, settled && { color: "#aaa" }]}>{Number(exp.amount).toFixed(2)} лв.</Text>
+                  <Text style={[styles.expAmount, settled && { color: "#aaa" }]}>{formatMoney(Number(exp.amount), expCurrency)}</Text>
                   {exp.paid_by === userId && !settled && (
                     <TouchableOpacity onPress={() => handleDelete(exp.id)}>
                       <Text style={styles.deleteBtn}>🗑</Text>
@@ -400,9 +496,15 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             <TextInput style={styles.input} placeholder="Напр. Хотел Хилтън"
               value={desc} onChangeText={setDesc} placeholderTextColor="#bbb" />
 
-            <Text style={styles.label}>Сума (лв.)</Text>
-            <TextInput style={styles.input} placeholder="0.00" keyboardType="decimal-pad"
-              value={amount} onChangeText={setAmount} placeholderTextColor="#bbb" />
+            <Text style={styles.label}>Сума</Text>
+            <View style={styles.amountRow}>
+              <TextInput style={[styles.input, styles.amountInput]} placeholder="0.00" keyboardType="decimal-pad"
+                value={amount} onChangeText={setAmount} placeholderTextColor="#bbb" />
+              <TouchableOpacity style={styles.currencyBtn} onPress={() => setCurrencyPickerVisible(true)}>
+                <Text style={styles.currencyBtnText}>{currencyLabel(currency)}</Text>
+                <Text style={styles.currencyBtnChevron}>▾</Text>
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.label}>Платил</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
@@ -458,7 +560,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                       {isPayer ? " (платил)" : ""}
                     </Text>
                     {preview && (
-                      <Text style={[styles.checkShare, { color: isPayer ? "#aaa" : color }]}>{preview.share.toFixed(2)} лв.</Text>
+                      <Text style={[styles.checkShare, { color: isPayer ? "#aaa" : color }]}>{formatMoney(preview.share, currency)}</Text>
                     )}
                   </View>
                 </TouchableOpacity>
@@ -469,7 +571,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
               <View style={styles.splitNote}>
                 <Text style={styles.splitNoteText}>
                   {allEqual
-                    ? `✂️ ${nonPayerIds.length} участника · ${previewShares[0].share.toFixed(2)} лв. на човек`
+                    ? `✂️ ${nonPayerIds.length} участника · ${formatMoney(previewShares[0].share, currency)} на човек`
                     : `✂️ Пропорционално по брой хора`}
                 </Text>
               </View>
@@ -487,11 +589,66 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         </View>
       </Modal>
 
+      <Modal visible={currencyPickerVisible} animationType="slide" transparent>
+        <View style={styles.overlay}>
+          <View style={[styles.modalInner, styles.currencyModalInner]}>
+            <Text style={styles.modalTitle}>Избери валута</Text>
+
+            <Text style={styles.currencySectionLabel}>Чести</Text>
+            <View style={styles.currencyCommonRow}>
+              {COMMON_CURRENCIES.map((code) => (
+                <TouchableOpacity
+                  key={code}
+                  style={[styles.currencyCommonChip, currency === code && styles.currencyCommonChipActive]}
+                  onPress={() => { setCurrency(code); setCurrencyPickerVisible(false); setCurrencySearch(""); }}
+                >
+                  <Text style={[styles.currencyCommonChipText, currency === code && styles.currencyCommonChipTextActive]}>
+                    {currencyLabel(code)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.currencySectionLabel}>Всички валути</Text>
+            <TextInput
+              style={styles.currencySearchInput}
+              placeholder="Търси по код или име..."
+              placeholderTextColor="#bbb"
+              value={currencySearch}
+              onChangeText={setCurrencySearch}
+              autoCapitalize="characters"
+            />
+            <FlatList
+              data={filteredCurrencies}
+              keyExtractor={(item) => item}
+              style={styles.currencyList}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.currencyRow, currency === item && styles.currencyRowActive]}
+                  onPress={() => { setCurrency(item); setCurrencyPickerVisible(false); setCurrencySearch(""); }}
+                >
+                  <Text style={[styles.currencyRowCode, currency === item && styles.currencyRowCodeActive]}>{item}</Text>
+                  <Text style={styles.currencyRowName} numberOfLines={1}>{currencyNames[item] || ""}</Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={<Text style={styles.currencyEmpty}>Няма намерени валути</Text>}
+            />
+
+            <TouchableOpacity style={styles.modalClose} onPress={() => { setCurrencyPickerVisible(false); setCurrencySearch(""); }}>
+              <Text style={styles.modalCloseText}>Затвори</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={settleVisible} animationType="fade" transparent>
         <View style={styles.overlay}>
           <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}>
             <Text style={styles.modalTitle}>⚖️ Как да се изравним</Text>
             <Text style={styles.settleSubtitle}>Получателят потвърждава когато са получени парите:</Text>
+            {ratesDate && (
+              <Text style={styles.settleRatesNote}>Курсове от {ratesDate} (ECB)</Text>
+            )}
             {settlements.map((s, i) => {
               const iAmReceiver = s.to === userId;
               const iAmSender = s.from === userId;
@@ -499,6 +656,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
               // Организаторът може да потвърди когато получателят е напуснал
               // — включително когато самият организатор е изпращачът
               const iAmAdminForThis = isOwner && receiverLeft && !iAmReceiver;
+              const converted = convertAmount(s.amount, "EUR");
 
               return (
                 <View key={i} style={styles.settleRow}>
@@ -509,7 +667,12 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                       <Text style={[styles.settleTo, { color: memberColor(s.to) }]}>{memberName(s.to)}</Text>
                       {receiverLeft && <Text style={styles.settleLeftLabel}>напуснал</Text>}
                     </View>
-                    <Text style={styles.settleAmt}>{s.amount.toFixed(2)} лв.</Text>
+                    <View style={styles.settleAmtCol}>
+                      <Text style={styles.settleAmt}>{formatMoney(s.amount, "EUR")}</Text>
+                      {converted.local !== null && (
+                        <Text style={styles.settleAmtLocal}>≈ {formatMoney(converted.local, localCurrency)}</Text>
+                      )}
+                    </View>
                   </View>
                   {iAmReceiver ? (
                     <TouchableOpacity
@@ -533,7 +696,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                     </TouchableOpacity>
                   ) : iAmSender ? (
                     <View style={styles.settlePending}>
-                      <Text style={styles.settlePendingText}>⏳ Изпрати {s.amount.toFixed(2)} лв. на {memberName(s.to)}</Text>
+                      <Text style={styles.settlePendingText}>⏳ Изпрати {formatMoney(s.amount, "EUR")} на {memberName(s.to)}</Text>
                     </View>
                   ) : (
                     <View style={styles.settlePending}>
@@ -601,9 +764,18 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalScroll: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "90%" },
   modalScrollContent: { padding: 24, paddingBottom: 40, gap: 8 },
+  modalInner: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
   label: { fontSize: 13, fontWeight: "600", color: "#555", marginTop: 6 },
   input: { backgroundColor: "#F5F5F5", borderRadius: 10, padding: 12, fontSize: 16, color: "#1a1a1a" },
+  amountRow: { flexDirection: "row", gap: 8, alignItems: "stretch" },
+  amountInput: { flex: 1 },
+  currencyBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "#F5F5F5", borderRadius: 10, paddingHorizontal: 14, justifyContent: "center",
+  },
+  currencyBtnText: { fontSize: 15, fontWeight: "600", color: "#1D9E75" },
+  currencyBtnChevron: { fontSize: 11, color: "#1D9E75" },
   chips: { flexDirection: "row", marginVertical: 6 },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "#F0F0F0", marginRight: 8 },
   chipActive: { backgroundColor: "#1D9E75" },
@@ -624,14 +796,17 @@ const styles = StyleSheet.create({
   btnCancelText: { color: "#888", fontSize: 15 },
   btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#1D9E75", alignItems: "center" },
   btnSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
-  settleSubtitle: { fontSize: 13, color: "#888", marginBottom: 12 },
+  settleSubtitle: { fontSize: 13, color: "#888", marginBottom: 4 },
+  settleRatesNote: { fontSize: 11, color: "#bbb", marginBottom: 10 },
   settleRow: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 12, marginBottom: 10 },
   settleTop: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
   settleFrom: { fontWeight: "700", flex: 1, fontSize: 13 },
   settleArrow: { color: "#888" },
   settleTo: { fontWeight: "700", fontSize: 13 },
   settleLeftLabel: { fontSize: 10, color: "#FF6B6B", fontStyle: "italic" },
+  settleAmtCol: { alignItems: "flex-end" },
   settleAmt: { fontWeight: "bold", color: "#1a1a1a", fontSize: 13 },
+  settleAmtLocal: { fontSize: 11, color: "#888", marginTop: 1 },
   settleBtn: { backgroundColor: "#1D9E75", padding: 12, borderRadius: 10, alignItems: "center" },
   settleBtnText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
   settleBtnAdmin: {
@@ -641,4 +816,21 @@ const styles = StyleSheet.create({
   settleBtnAdminText: { color: "#1D9E75", fontSize: 14, fontWeight: "bold" },
   settlePending: { backgroundColor: "#F0F0F0", padding: 12, borderRadius: 10, alignItems: "center" },
   settlePendingText: { color: "#888", fontSize: 13 },
+  currencyModalInner: { maxHeight: "80%" },
+  currencySectionLabel: { fontSize: 12, fontWeight: "700", color: "#888", marginTop: 12, marginBottom: 8 },
+  currencyCommonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  currencyCommonChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: "#F5F5F5" },
+  currencyCommonChipActive: { backgroundColor: "#1D9E75" },
+  currencyCommonChipText: { fontSize: 14, fontWeight: "600", color: "#555" },
+  currencyCommonChipTextActive: { color: "#fff" },
+  currencySearchInput: { backgroundColor: "#F5F5F5", borderRadius: 10, padding: 12, fontSize: 15, color: "#1a1a1a", marginBottom: 8 },
+  currencyList: { maxHeight: 280 },
+  currencyRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, paddingHorizontal: 4, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
+  currencyRowActive: { backgroundColor: "#F0F9F5" },
+  currencyRowCode: { fontSize: 14, fontWeight: "700", color: "#1a1a1a", width: 48 },
+  currencyRowCodeActive: { color: "#1D9E75" },
+  currencyRowName: { fontSize: 13, color: "#888", flex: 1 },
+  currencyEmpty: { textAlign: "center", color: "#bbb", fontSize: 13, paddingVertical: 20 },
+  modalClose: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center", marginTop: 12 },
+  modalCloseText: { color: "#888", fontSize: 15 },
 });
