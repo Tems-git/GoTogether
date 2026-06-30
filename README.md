@@ -6,7 +6,7 @@
 
 - React Native + Expo SDK 54
 - Supabase (PostgreSQL + Auth + Storage + Realtime)
-- Claude API (Anthropic) — AI Trip Planner
+- Claude API (Anthropic) — AI Trip Planner, изпълняван през Supabase Edge Function (ключът не е в клиента)
 - Resend — SMTP за OTP имейли (домейн: wegotogether.xyz)
 - EAS Update — публикуване без App Store
 - GitHub Actions — автоматичен EAS Update при push към master ✅ Работещ
@@ -30,7 +30,7 @@ GoTogether/
       ├── SignInScreen.js     — OTP вход (6-цифрен код по имейл) + display name стъпка
       ├── TripSetupScreen.js  — създаване или присъединяване към пътуване + blacklist проверка
       ├── DashboardScreen.js  — главен екран, trip card, участници, блокирани, чат badge
-      ├── AIPlannerScreen.js  — AI планиране с Claude API
+      ├── AIPlannerScreen.js  — AI планиране, вика Supabase Edge Function "ai-trip-planner"
       ├── DocumentsScreen.js  — качване и преглед на документи (Supabase Storage)
       ├── ExpensesScreen.js   — разходи, тегловно делене, изравняване, Realtime
       └── ChatScreen.js       — групов чат, редакция/изтриване, read receipts, Realtime
@@ -52,7 +52,7 @@ eas update --branch preview --message "описание на промяната"
 
 ## ✅ GitHub Actions CI/CD — работещ
 
-Workflow-ът `.github/workflows/eas-update.yml` автоматично пуска `eas update --branch preview` при всеки push към `master`.
+Workflow-ът `.github/workflows/eas-update.yml` автоматично пуска `eas update --branch preview` при всеки push към `master` (с изключение на промени само в `.md` файлове, виж `paths-ignore`).
 
 **История на проблема (за справка):** Дълго време workflow-ът гърмеше с `exited with non-zero code: 1` на различни стъпки от `eas update`, въпреки валиден `EXPO_TOKEN` (`eas whoami` минаваше успешно) и идентична `eas-cli` версия (20.4.0) с локалната среда. Причината се оказа поредица от три липсващи конфигурационни елемента в repo-то, които не пречеха на локалното изпълнение, защото локалната среда вече ги имаше извън git:
 
@@ -62,6 +62,17 @@ Workflow-ът `.github/workflows/eas-update.yml` автоматично пуск
 4. **`expo-document-picker`** (използвана в `DocumentsScreen.js`) също липсваше от `package.json` → Metro bundler гърмеше при export фазата на `eas update`.
 
 Поука: при "работи локално, но не в CI" грешки с Expo/EAS — първо проверявай дали **всички** native пакети, реферирани в код или `app.json` plugins, реално присъстват в `package.json`, и дали `eas.json` + `projectId` са комитнати в git, а не само налични локално.
+
+## ✅ AI Trip Planner — ключът е сървърно скрит
+
+Anthropic API ключът никога не достига клиентския JS бъндъл (за разлика от React Native env variables, всеки бъндъл е extractable от инсталирано приложение). Вместо това:
+
+- Supabase Edge Function `ai-trip-planner` (project `neorbblppjpxddldjkwn`) приема параметрите на формата и проксира заявката към `api.anthropic.com`, четейки ключа от `Deno.env.get("ANTHROPIC_API_KEY")` — стойност, която живее само в Supabase Edge Function Secrets, никога в git или клиента.
+- `AIPlannerScreen.js` вика функцията през `supabase.functions.invoke("ai-trip-planner", { body: {...} })`.
+- `verify_jwt: true` на функцията — само логнати потребители на приложението могат да я викат.
+- Тествано и потвърдено работещо (30 юни 2026): заявка през Supabase Dashboard test panel върна `200` с реален генериран план.
+
+Ако някога се пренасочи към друг AI providers или се добавят нови AI функции, същият модел (Edge Function + secret) трябва да се използва — никога директен `fetch` от клиента с ключ.
 
 ## Споделяне за тестване
 
@@ -133,12 +144,16 @@ Workflow-ът `.github/workflows/eas-update.yml` автоматично пуск
 - Realtime разширен: trip_members, removed_members, messages
 - Deep linking: gotogether:// схема (работи в production build, НЕ в Expo Go)
 - GitHub Actions CI/CD — оправен: добавени липсващи `expo-image-picker`, `expo-document-picker`, `eas.json`, `extra.eas.projectId` (виж "GitHub Actions CI/CD" по-горе)
+- CI workflow: добавен `paths-ignore` за `.md` файлове — документационни промени вече не тригерват build
+- AI Trip Planner: преместен зад Supabase Edge Function — Anthropic ключът вече не е в клиентския бъндъл (виж "AI Trip Planner" по-горе)
+- Първи update публикуван и споделен с тестери чрез EAS preview линк + QR код
 
 ### Следващо
+- **Push notifications — известия при нов разход, документ или съобщение в чата (в процес)**
 - Apple Developer акаунт → iOS build → галерия и камера в Documents
-- Push notifications — известия при нов разход или документ
 - Дати на пътуването в trip card
 - Включване на участник в стар разход след повторно присъединяване
+- `Clipboard` от `react-native` е deprecated в SDK 54 — да се смени с `expo-clipboard`
 
 ## Автор
 
