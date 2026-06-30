@@ -19,6 +19,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unblocking, setUnblocking] = useState(null);
 
   const fetchMembers = useCallback(async () => {
     if (!trip?.id) return;
@@ -206,25 +207,92 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     );
   }
 
+  // Проверява дали премахнат участник има неуредени задължения — както
+  // негови дългове към други (той дължи), така и дългове на други към него
+  // (той е платил разход, а някой друг още не е уредил своя дял).
+  // И двете посоки трябва да са изчистени, преди да позволим деблокиране —
+  // иначе старите задължения "оживяват" автоматично в активните изчисления
+  // на ExpensesScreen след повторно присъединяване.
+  async function checkOutstandingBalances(memberUserId) {
+    // Дългове, които ТОЙ дължи (split, в който той е участник, не платец, неуреден)
+    const { data: owesData } = await supabase
+      .from("expense_splits")
+      .select("share, expense_id")
+      .eq("user_id", memberUserId)
+      .eq("is_settled", false);
+
+    // Разходи, които ТОЙ Е ПЛАТИЛ — после намираме неуредени splits на други хора по тях
+    const { data: paidExpenses } = await supabase
+      .from("expenses")
+      .select("id")
+      .eq("trip_id", trip.id)
+      .eq("paid_by", memberUserId);
+
+    const paidExpenseIds = (paidExpenses || []).map((e) => e.id);
+    let owedToHimData = [];
+    if (paidExpenseIds.length > 0) {
+      const { data } = await supabase
+        .from("expense_splits")
+        .select("share, expense_id")
+        .in("expense_id", paidExpenseIds)
+        .neq("user_id", memberUserId)
+        .eq("is_settled", false);
+      owedToHimData = data || [];
+    }
+
+    const owesTotal = (owesData || []).reduce((s, x) => s + Number(x.share), 0);
+    const owedToHimTotal = owedToHimData.reduce((s, x) => s + Number(x.share), 0);
+
+    return {
+      clear: owesTotal < 0.01 && owedToHimTotal < 0.01,
+      owesTotal,
+      owedToHimTotal,
+    };
+  }
+
   async function handleUnblock(removed) {
-    Alert.alert(
-      "Деблокиране",
-      `Разреши на ${removed.display_name} да се присъедини отново?`,
-      [
-        { text: "Отказ", style: "cancel" },
-        {
-          text: "Да, разреши", onPress: async () => {
-            try {
-              await supabase.from("removed_members")
-                .delete()
-                .eq("id", removed.id);
-            } catch (e) {
-              Alert.alert("Грешка", e.message);
+    setUnblocking(removed.id);
+    try {
+      const balance = await checkOutstandingBalances(removed.user_id);
+
+      if (!balance.clear) {
+        const parts = [];
+        if (balance.owesTotal >= 0.01) {
+          parts.push(`дължи ${balance.owesTotal.toFixed(2)} лв.`);
+        }
+        if (balance.owedToHimTotal >= 0.01) {
+          parts.push(`му дължат ${balance.owedToHimTotal.toFixed(2)} лв.`);
+        }
+        Alert.alert(
+          "Има неуредени сметки",
+          `${removed.display_name} не може да бъде деблокиран, докато има неуредени сметки в Разходи (${parts.join(" и ")}).\n\nУреди сметките от организатора в Разходи → Как да се изравним, и опитай пак.`
+        );
+        return;
+      }
+
+      Alert.alert(
+        "Деблокиране",
+        `Разреши на ${removed.display_name} да се присъедини отново?`,
+        [
+          { text: "Отказ", style: "cancel" },
+          {
+            text: "Да, разреши", onPress: async () => {
+              try {
+                await supabase.from("removed_members")
+                  .delete()
+                  .eq("id", removed.id);
+              } catch (e) {
+                Alert.alert("Грешка", e.message);
+              }
             }
           }
-        }
-      ]
-    );
+        ]
+      );
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    } finally {
+      setUnblocking(null);
+    }
   }
 
   const isOwner = members.find((m) => m.user_id === user.id)?.role === "owner";
@@ -410,8 +478,14 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                   removedMembers.map((r) => (
                     <View key={r.id} style={styles.blockedRow}>
                       <Text style={styles.blockedName}>{r.display_name}</Text>
-                      <TouchableOpacity onPress={() => handleUnblock(r)} style={styles.unblockBtn}>
-                        <Text style={styles.unblockBtnText}>Деблокирай</Text>
+                      <TouchableOpacity
+                        onPress={() => handleUnblock(r)}
+                        style={styles.unblockBtn}
+                        disabled={unblocking === r.id}
+                      >
+                        <Text style={styles.unblockBtnText}>
+                          {unblocking === r.id ? "Проверка…" : "Деблокирай"}
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   ))
