@@ -1,7 +1,6 @@
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, ActivityIndicator } from "react-native";
 import { useState } from "react";
-
-const ANTHROPIC_KEY = "ANTHROPIC_KEY_HERE";
+import { supabase } from "../lib/supabase";
 
 export default function AIPlannerScreen({ onBack }) {
   const [loading, setLoading] = useState(false);
@@ -18,38 +17,21 @@ export default function AIPlannerScreen({ onBack }) {
   async function generatePlan() {
     setLoading(true);
     try {
-      const prompt = `Ти си експерт travel planner за семейни пътувания. Създай подробен план за следното пътуване:
-- Дестинация: ${form.destination || "предложи ти"}
-- Период: ${form.dates || "предложи ти"}
-- Семейства: ${form.families}
-- Деца: ${form.children}
-- Бюджет: ${form.budget ? form.budget + " лв." : "предложи ти"}
-- Транспорт: ${form.transport}
-- Тръгваме от София, България
-
-Отговори на български с:
-1. МАРШРУТ — реално време за път от София, спирки, часове
-2. НАСТАНЯВАНЕ — 2-3 варианта подходящи за деца с приблизителни цени
-3. ПРОГРАМА — дневна програма с активности за деца
-4. БЮДЖЕТ — разбивка по категории в лева
-5. СЪВЕТИ — специфични за пътуване с деца`;
-
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": ANTHROPIC_KEY,
-          "anthropic-version": "2023-06-01",
+      const { data, error } = await supabase.functions.invoke("ai-trip-planner", {
+        body: {
+          destination: form.destination,
+          dates: form.dates,
+          families: form.families,
+          children: form.children,
+          budget: form.budget,
+          transport: form.transport,
         },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5",
-          max_tokens: 1500,
-          messages: [{ role: "user", content: prompt }],
-        }),
       });
 
-      const data = await response.json();
-      setPlan(data.content[0].text);
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      setPlan(data.plan);
     } catch (e) {
       alert("Грешка: " + e.message);
     }
