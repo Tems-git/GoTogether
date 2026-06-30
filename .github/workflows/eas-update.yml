@@ -1,41 +1,12 @@
-name: EAS Update
-
-on:
-  push:
-    branches:
-      - master
-
-jobs:
-  update:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Setup Expo and EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: 20.4.0
-          token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Create .env file
-        run: |
-          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
-          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
-
-      - name: Verify EAS auth
-        run: eas whoami
-
-      - name: Publish update
+- name: Publish update
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           CI: true
-        run: eas update --branch preview --platform all --message "$COMMIT_MESSAGE"
+          EXPO_DEBUG: true
+          DEBUG: expo:*
+        run: |
+          eas update --branch preview --platform all --message "$COMMIT_MESSAGE" 2>&1 || true
+          echo "=== Exit code was non-zero, showing eas.json ==="
+          cat eas.json
+          echo "=== Showing app.json ==="
+          cat app.json
