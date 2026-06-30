@@ -9,7 +9,7 @@
 - Claude API (Anthropic) — AI Trip Planner
 - Resend — SMTP за OTP имейли (домейн: wegotogether.xyz)
 - EAS Update — публикуване без App Store
-- GitHub Actions — автоматичен EAS Update при push към master ✅ тестван и работещ
+- GitHub Actions — автоматичен EAS Update при push към master ⚠️ В ПРОЦЕС НА ОТСТРАНЯВАНЕ (виж по-долу)
 
 ## База данни — 7 таблици
 
@@ -21,9 +21,9 @@ profiles, trips, trip_members, expenses, expense_splits, documents, messages, re
 GoTogether/
   ├── App.js                  — навигация, сесийно управление, trip зареждане, invite flow, deep linking
   ├── app.json                — Expo конфигурация + permissions + URL scheme
-  ├── eas.json                — EAS Build/Update конфигурация
+  ├── eas.json                — EAS Build/Update конфигурация (cli.version >= 20.4.0)
   ├── .github/workflows/
-  │   └── eas-update.yml      — автоматичен EAS Update при push към master
+  │   └── eas-update.yml      — автоматичен EAS Update при push към master (НЕРАБОТЕЩ — виж Известни проблеми)
   ├── lib/
   │   └── supabase.js         — връзка с Supabase
   └── screens/
@@ -36,7 +36,7 @@ GoTogether/
       └── ChatScreen.js       — групов чат, редакция/изтриване, read receipts, Realtime
 ```
 
-## Стартиране (локално, по избор — вече не е задължително)
+## Стартиране (локално, работещо)
 
 ```bash
 git clone https://github.com/Tems-git/GoTogether.git
@@ -45,25 +45,53 @@ npm install
 npx expo start
 ```
 
-## CI/CD — автоматичен deploy
+Ръчно публикуване на update (работи перфектно локално):
+```powershell
+eas update --branch preview --message "описание на промяната"
+```
 
-При всеки push към `master`, GitHub Actions автоматично:
-1. Инсталира зависимостите
-2. Създава `.env` от GitHub Secrets (`SUPABASE_ANON_KEY`, `ANTHROPIC_API_KEY`)
-3. Публикува EAS Update на branch `preview`
+## ⚠️ Известни проблеми — GitHub Actions CI/CD
 
-Тестерите получават новата версия автоматично при отваряне на Expo Go — без нов линк, без повторно сканиране.
+**Статус: workflow-ът `.github/workflows/eas-update.yml` НЕ работи, въпреки много опити за поправка.**
 
-GitHub Secrets, настроени в Settings → Secrets and variables → Actions:
-- `EXPO_TOKEN`
-- `SUPABASE_ANON_KEY`
-- `ANTHROPIC_API_KEY`
+Грешка във всички опити: `eas update` командата гърми с `exited with non-zero code: 1` на стъпка `expo/bin/cli config --json --type public`, ВЪПРЕКИ че:
+- `eas whoami` минава успешно в същия workflow (токенът е валиден)
+- Локално (на компютъра на Temelko) `eas update` работи перфектно със същите credentials
+- Версията на `eas-cli` е фиксирана да съвпада с локалната (20.4.0)
+- Премахнат е `--non-interactive` флагът (нов eas-cli го отхвърля, използва се `CI: true` вместо това)
+
+Допълнителен наблюдаван проблем: GitHub Actions показа временни "Failed to save/restore cache" грешки за `expo/expo-github-action@v8`, които може да са свързани или несвързани с основния проблем.
+
+Пробвани и неуспешни промени:
+1. `eas-version: latest` → фиксирано на `20.4.0`
+2. `npm ci` (изискваше `package-lock.json`, който липсва) → сменено на `npm install`
+3. Премахнат `cache: npm` от setup-node стъпката
+4. `--non-interactive` флаг премахнат, заменен с `CI: true` env variable
+5. Добавена `eas whoami` debug стъпка — минава успешно
+6. Опит с пълен debug изход (`set +e`, cat на eas.json/app.json) — не помогна да видим повече детайли, защото грешката идва преди debug извеждането
+7. Пълно пренаписване на workflow файла през GitHub API (push_files) вместо browser editor — за да се избегнат хипотетични скрити encoding проблеми
+8. Замяна на `expo/expo-github-action@v8` с директна `npm install -g eas-cli@20.4.0` инсталация — **последен неизпробван докрай вариант, run-ът не показа резултат преди да приключи сесията**
+
+**ВАЖНО:** GitHub MCP connector-ът (инструментът, чрез който Claude чете/пише файлове в repo-то) имаше повтарящи се проблеми цяла сесия:
+- `get_file_contents` често връщаше `Tool execution failed` без обяснение
+- `create_or_update_file` НЕ успяваше да пише в `.github/workflows/` пътя конкретно (вероятно липсва `workflow` OAuth scope на GitHub App-а), докато проработваше за други пътища
+- `push_files` понякога успяваше за `.github/workflows/`, понякога не — без ясна закономерност
+
+**Следваща стъпка за нова сесия:** Провери последния push ("Replace expo-github-action with direct npm eas-cli install", commit ~257d270) — дали workflow run-ът на него е минал успешно. Ако не, разгледай алтернативен подход: ръчно тригериране на EAS update през `workflow_dispatch` с дебъг extensively, или временно изоставяне на GitHub Actions автоматизацията в полза на ръчно пускане на `eas update` от терминала на Temelko (което работи безотказно).
+
+## Текущ работещ начин за деплой (докато CI/CD не се оправи)
+
+```powershell
+eas update --branch preview --message "описание"
+```
+
+Това публикува update веднага, тестерите го получават автоматично при отваряне на Expo Go — без нов линк, без повторно сканиране.
 
 ## Споделяне за тестване
 
 Изпрати на тестерите еднократно:
 1. Инсталирай **Expo Go** от App Store / Play Store
-2. Отвори линка от EAS Dashboard (виж `eas update:view`) или сканирай QR в Expo Go
+2. Отвори линка от EAS Dashboard (виж `eas update:view <update-id>`) или сканирай QR в Expo Go
 3. Влез с имейл → въведи OTP кода → въведи display name
 4. Присъедини се с invite код на пътуването
 
@@ -127,10 +155,12 @@ GitHub Secrets, настроени в Settings → Secrets and variables → Act
 - Expenses: имената и сумите на премахнати участници се запазват в историята
 - Expenses: settle бутон само за получателя; организатор потвърждава вместо напуснал получател
 - Realtime разширен: trip_members, removed_members, messages
-- Deep linking: gotogether:// схема (работи в production build)
-- GitHub Actions: автоматичен EAS Update при push към master — настроен и потвърден работещ
+- Deep linking: gotogether:// схема (работи в production build, НЕ в Expo Go)
+- Опит за GitHub Actions CI/CD автоматизация — НЕУСПЕШЕН, виж "Известни проблеми" по-горе
+- Ръчен `eas update --branch preview` работи перфектно като временно решение
 
 ### Следващо
+- **Приоритет: оправяне на GitHub Actions CI/CD workflow** (виж Известни проблеми)
 - Apple Developer акаунт → iOS build → галерия и камера в Documents
 - Push notifications — известия при нов разход или документ
 - Дати на пътуването в trip card
