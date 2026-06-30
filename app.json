@@ -31,6 +31,17 @@
           "cameraPermission": "GoTogether използва камерата за снимане на документи."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ce8969c9-88b7-42cb-838f-d3849a88cbcc"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ce8969c9-88b7-42cb-838f-d3849a88cbcc"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }
