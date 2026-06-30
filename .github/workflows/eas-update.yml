@@ -34,4 +34,4 @@ jobs:
       - name: Publish update
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-        run: eas update --branch preview --message "$COMMIT_MESSAGE" --non-interactive
+        run: eas update --branch preview --platform all --message "$COMMIT_MESSAGE" --non-interactive
