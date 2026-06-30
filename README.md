@@ -9,7 +9,7 @@
 - Claude API (Anthropic) — AI Trip Planner
 - Resend — SMTP за OTP имейли (домейн: wegotogether.xyz)
 - EAS Update — публикуване без App Store
-- GitHub Actions — автоматичен EAS Update при push към master
+- GitHub Actions — автоматичен EAS Update при push към master ✅ тестван и работещ
 
 ## База данни — 7 таблици
 
@@ -128,7 +128,7 @@ GitHub Secrets, настроени в Settings → Secrets and variables → Act
 - Expenses: settle бутон само за получателя; организатор потвърждава вместо напуснал получател
 - Realtime разширен: trip_members, removed_members, messages
 - Deep linking: gotogether:// схема (работи в production build)
-- GitHub Actions: автоматичен EAS Update при push към master
+- GitHub Actions: автоматичен EAS Update при push към master — настроен и потвърден работещ
 
 ### Следващо
 - Apple Developer акаунт → iOS build → галерия и камера в Documents
