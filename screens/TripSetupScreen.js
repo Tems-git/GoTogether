@@ -6,10 +6,16 @@ import {
 } from "react-native";
 import { supabase } from "../lib/supabase";
 
+// Местна валута на пътуването — показва се като втори ред до EUR сумите в
+// Разходи → Как да се изравним. EUR по подразбиране, тъй като повечето
+// пътувания тръгват от/в еврозоната.
+const LOCAL_CURRENCY_OPTIONS = ["EUR", "BGN", "USD", "GBP"];
+
 export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }) {
   const [mode, setMode] = useState(null);
   const [name, setName] = useState("");
   const [destination, setDestination] = useState("");
+  const [localCurrency, setLocalCurrency] = useState("EUR");
   const [inviteCode, setInviteCode] = useState(pendingInviteCode || "");
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -49,6 +55,7 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
           owner_id: user.id,
           name: name.trim(),
           destination: destination.trim() || null,
+          local_currency: localCurrency,
         })
         .select()
         .single();
@@ -221,6 +228,21 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
             onChangeText={setDestination}
             placeholderTextColor="#bbb"
           />
+          <Text style={styles.label}>Местна валута</Text>
+          <Text style={styles.hint}>Показва се до EUR сумите при изравняване на разходите</Text>
+          <View style={styles.currencyRow}>
+            {LOCAL_CURRENCY_OPTIONS.map((code) => (
+              <TouchableOpacity
+                key={code}
+                style={[styles.currencyChip, localCurrency === code && styles.currencyChipActive]}
+                onPress={() => setLocalCurrency(code)}
+              >
+                <Text style={[styles.currencyChipText, localCurrency === code && styles.currencyChipTextActive]}>
+                  {code}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           <TouchableOpacity style={styles.btnPrimary} onPress={handleCreate} disabled={loading}>
             {loading ? <ActivityIndicator color="#1D9E75" /> : <Text style={styles.btnPrimaryText}>Създай пътуване</Text>}
           </TouchableOpacity>
@@ -266,11 +288,20 @@ const styles = StyleSheet.create({
   buttons: { width: "100%", gap: 12 },
   form: { width: "100%", gap: 8 },
   label: { fontSize: 13, color: "#E1F5EE", fontWeight: "600", marginTop: 8, marginBottom: 4 },
+  hint: { fontSize: 11, color: "rgba(225,245,238,0.7)", marginBottom: 8 },
   input: {
     backgroundColor: "#fff", borderRadius: 12, padding: 14,
     fontSize: 16, color: "#1a1a1a", marginBottom: 8, width: "100%",
   },
   codeInput: { fontSize: 24, fontWeight: "bold", letterSpacing: 8, textAlign: "center" },
+  currencyRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  currencyChip: {
+    flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  currencyChipActive: { backgroundColor: "#fff" },
+  currencyChipText: { fontSize: 14, fontWeight: "600", color: "#fff" },
+  currencyChipTextActive: { color: "#1D9E75" },
   btnPrimary: {
     backgroundColor: "#fff", padding: 16, borderRadius: 14,
     alignItems: "center", marginTop: 8, width: "100%",
