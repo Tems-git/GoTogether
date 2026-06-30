@@ -7,22 +7,14 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Setup Expo and EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: 20.4.0
-          token: ${{ secrets.EXPO_TOKEN }}
-      - name: Install dependencies
-        run: npm install
-      - name: Create env file
-        run: echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env && echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
-      - name: Publish update
+      - run: npm install -g eas-cli@20.4.0
+      - run: npm install
+      - run: echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+      - run: echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
+      - run: eas update --branch preview --platform all --message "Auto update" --non-interactive
         env:
-          CI: true
-        run: eas update --branch preview --platform all --message "Auto update"
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
