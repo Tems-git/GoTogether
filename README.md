@@ -11,9 +11,9 @@
 - EAS Update — публикуване без App Store
 - GitHub Actions — автоматичен EAS Update при push към master ✅ Работещ
 
-## База данни — 7 таблици
+## База данни — 8 таблици
 
-profiles, trips, trip_members, expenses, expense_splits, documents, messages, removed_members
+profiles, trips, trip_members, expenses, expense_splits, documents, messages, removed_members, push_tokens
 
 ## Структура на проекта
 
@@ -73,6 +73,21 @@ Anthropic API ключът никога не достига клиентския
 - Тествано и потвърдено работещо (30 юни 2026): заявка през Supabase Dashboard test panel върна `200` с реален генериран план.
 
 Ако някога се пренасочи към друг AI providers или се добавят нови AI функции, същият модел (Edge Function + secret) трябва да се използва — никога директен `fetch` от клиента с ключ.
+
+## ⏳ Push notifications — изчаква Apple Developer акаунт
+
+Push notifications (нов разход, документ или съобщение в чата) изискват **development build**, не обикновен Expo Go:
+
+- От Expo SDK 53 нататък push notifications функционалността е премахната от Expo Go изцяло — както за iOS, така и за Android. (По-старо предположение, че iOS работи в Expo Go без build, се отнасяше само за SDK 52 и по-стари версии и вече не важи за този проект на SDK 54.)
+- За Android трябва Firebase проект с FCM credentials (безплатно, ~15 минути сетъп).
+- За iOS физическо устройство трябва APNs ключ, който изисква активен **Apple Developer Program акаунт ($99/година)** — твърдо изискване, не само за App Store release, а дори за push тестване на устройство.
+
+Решение: групираме push notifications с предстоящата стъпка "Apple Developer акаунт → iOS build" по-долу, тъй като и двете изискват преминаване от Expo Go към dev/production build — по-добре един преход за тестерите, отколкото два отделни.
+
+**Вече подготвено, за да не чакаме после:**
+- Таблица `push_tokens` (user_id, token, platform, RLS политики — всеки потребител вижда/управлява само своите токени) — създадена в Supabase, готова за popull когато стигнем до клиентската регистрация.
+
+Дотогава чатът, разходите и документите се обновяват автоматично чрез Supabase Realtime, докато приложението е отворено — няма нужда от push за активни тестери.
 
 ## Споделяне за тестване
 
@@ -147,10 +162,10 @@ Anthropic API ключът никога не достига клиентския
 - CI workflow: добавен `paths-ignore` за `.md` файлове — документационни промени вече не тригерват build
 - AI Trip Planner: преместен зад Supabase Edge Function — Anthropic ключът вече не е в клиентския бъндъл (виж "AI Trip Planner" по-горе)
 - Първи update публикуван и споделен с тестери чрез EAS preview линк + QR код
+- Push notifications: проучени ограничения (Expo Go не поддържа push от SDK 53+, нужен Apple Developer акаунт за iOS) — решено да се групира с iOS build стъпката; таблица `push_tokens` подготвена предварително
 
 ### Следващо
-- **Push notifications — известия при нов разход, документ или съобщение в чата (в процес)**
-- Apple Developer акаунт → iOS build → галерия и камера в Documents
+- **Apple Developer акаунт → iOS build → push notifications + галерия и камера в Documents** (групирани, защото всички изискват development/production build вместо Expo Go)
 - Дати на пътуването в trip card
 - Включване на участник в стар разход след повторно присъединяване
 - `Clipboard` от `react-native` е deprecated в SDK 54 — да се смени с `expo-clipboard`
