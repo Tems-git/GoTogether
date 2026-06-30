@@ -33,4 +33,6 @@ jobs:
           echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
 
       - name: Publish update
-        run: eas update --branch preview --message "Auto-update: ${{ github.event.head_commit.message }}" --non-interactive
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: eas update --branch preview --message "$COMMIT_MESSAGE" --non-interactive
