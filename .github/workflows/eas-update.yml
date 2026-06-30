@@ -34,13 +34,6 @@ jobs:
       - name: Verify EAS auth
         run: eas whoami
 
-        - name: Debug config files
-        run: |
-          echo "--- eas.json ---"
-          cat eas.json || echo "eas.json NOT FOUND"
-          echo "--- app.json extra.eas ---"
-          cat app.json | grep -A 3 '"eas"'
-
       - name: Publish update
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
