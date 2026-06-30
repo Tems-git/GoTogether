@@ -9,7 +9,7 @@
 - Claude API (Anthropic) — AI Trip Planner
 - Resend — SMTP за OTP имейли (домейн: wegotogether.xyz)
 - EAS Update — публикуване без App Store
-- GitHub Actions — автоматичен EAS Update при push към master ⚠️ В ПРОЦЕС НА ОТСТРАНЯВАНЕ (виж по-долу)
+- GitHub Actions — автоматичен EAS Update при push към master ✅ Работещ
 
 ## База данни — 7 таблици
 
@@ -20,10 +20,10 @@ profiles, trips, trip_members, expenses, expense_splits, documents, messages, re
 ```
 GoTogether/
   ├── App.js                  — навигация, сесийно управление, trip зареждане, invite flow, deep linking
-  ├── app.json                — Expo конфигурация + permissions + URL scheme
+  ├── app.json                — Expo конфигурация + permissions + URL scheme + EAS projectId
   ├── eas.json                — EAS Build/Update конфигурация (cli.version >= 20.4.0)
   ├── .github/workflows/
-  │   └── eas-update.yml      — автоматичен EAS Update при push към master (НЕРАБОТЕЩ — виж Известни проблеми)
+  │   └── eas-update.yml      — автоматичен EAS Update при push към master (работещ)
   ├── lib/
   │   └── supabase.js         — връзка с Supabase
   └── screens/
@@ -36,7 +36,7 @@ GoTogether/
       └── ChatScreen.js       — групов чат, редакция/изтриване, read receipts, Realtime
 ```
 
-## Стартиране (локално, работещо)
+## Стартиране (локално)
 
 ```bash
 git clone https://github.com/Tems-git/GoTogether.git
@@ -45,47 +45,23 @@ npm install
 npx expo start
 ```
 
-Ръчно публикуване на update (работи перфектно локално):
+Ръчно публикуване на update (винаги достъпно като резервен вариант):
 ```powershell
 eas update --branch preview --message "описание на промяната"
 ```
 
-## ⚠️ Известни проблеми — GitHub Actions CI/CD
+## ✅ GitHub Actions CI/CD — работещ
 
-**Статус: workflow-ът `.github/workflows/eas-update.yml` НЕ работи, въпреки много опити за поправка.**
+Workflow-ът `.github/workflows/eas-update.yml` автоматично пуска `eas update --branch preview` при всеки push към `master`.
 
-Грешка във всички опити: `eas update` командата гърми с `exited with non-zero code: 1` на стъпка `expo/bin/cli config --json --type public`, ВЪПРЕКИ че:
-- `eas whoami` минава успешно в същия workflow (токенът е валиден)
-- Локално (на компютъра на Temelko) `eas update` работи перфектно със същите credentials
-- Версията на `eas-cli` е фиксирана да съвпада с локалната (20.4.0)
-- Премахнат е `--non-interactive` флагът (нов eas-cli го отхвърля, използва се `CI: true` вместо това)
+**История на проблема (за справка):** Дълго време workflow-ът гърмеше с `exited with non-zero code: 1` на различни стъпки от `eas update`, въпреки валиден `EXPO_TOKEN` (`eas whoami` минаваше успешно) и идентична `eas-cli` версия (20.4.0) с локалната среда. Причината се оказа поредица от три липсващи конфигурационни елемента в repo-то, които не пречеха на локалното изпълнение, защото локалната среда вече ги имаше извън git:
 
-Допълнителен наблюдаван проблем: GitHub Actions показа временни "Failed to save/restore cache" грешки за `expo/expo-github-action@v8`, които може да са свързани или несвързани с основния проблем.
+1. **`expo-image-picker`** беше реферирана в `app.json` plugins, но липсваше от `package.json` dependencies → `expo config --json` гърмеше тихо без полезен stack trace.
+2. **`eas.json`** изобщо не съществуваше в repo-то (само локално, никога некомитнат) → грешка `EAS project not configured`.
+3. **`extra.eas.projectId`** липсваше от `app.json` → същата грешка, докато не се добави (`ce8969c9-88b7-42cb-838f-d3849a88cbcc`).
+4. **`expo-document-picker`** (използвана в `DocumentsScreen.js`) също липсваше от `package.json` → Metro bundler гърмеше при export фазата на `eas update`.
 
-Пробвани и неуспешни промени:
-1. `eas-version: latest` → фиксирано на `20.4.0`
-2. `npm ci` (изискваше `package-lock.json`, който липсва) → сменено на `npm install`
-3. Премахнат `cache: npm` от setup-node стъпката
-4. `--non-interactive` флаг премахнат, заменен с `CI: true` env variable
-5. Добавена `eas whoami` debug стъпка — минава успешно
-6. Опит с пълен debug изход (`set +e`, cat на eas.json/app.json) — не помогна да видим повече детайли, защото грешката идва преди debug извеждането
-7. Пълно пренаписване на workflow файла през GitHub API (push_files) вместо browser editor — за да се избегнат хипотетични скрити encoding проблеми
-8. Замяна на `expo/expo-github-action@v8` с директна `npm install -g eas-cli@20.4.0` инсталация — **последен неизпробван докрай вариант, run-ът не показа резултат преди да приключи сесията**
-
-**ВАЖНО:** GitHub MCP connector-ът (инструментът, чрез който Claude чете/пише файлове в repo-то) имаше повтарящи се проблеми цяла сесия:
-- `get_file_contents` често връщаше `Tool execution failed` без обяснение
-- `create_or_update_file` НЕ успяваше да пише в `.github/workflows/` пътя конкретно (вероятно липсва `workflow` OAuth scope на GitHub App-а), докато проработваше за други пътища
-- `push_files` понякога успяваше за `.github/workflows/`, понякога не — без ясна закономерност
-
-**Следваща стъпка за нова сесия:** Провери последния push ("Replace expo-github-action with direct npm eas-cli install", commit ~257d270) — дали workflow run-ът на него е минал успешно. Ако не, разгледай алтернативен подход: ръчно тригериране на EAS update през `workflow_dispatch` с дебъг extensively, или временно изоставяне на GitHub Actions автоматизацията в полза на ръчно пускане на `eas update` от терминала на Temelko (което работи безотказно).
-
-## Текущ работещ начин за деплой (докато CI/CD не се оправи)
-
-```powershell
-eas update --branch preview --message "описание"
-```
-
-Това публикува update веднага, тестерите го получават автоматично при отваряне на Expo Go — без нов линк, без повторно сканиране.
+Поука: при "работи локално, но не в CI" грешки с Expo/EAS — първо проверявай дали **всички** native пакети, реферирани в код или `app.json` plugins, реално присъстват в `package.json`, и дали `eas.json` + `projectId` са комитнати в git, а не само налични локално.
 
 ## Споделяне за тестване
 
@@ -156,11 +132,9 @@ eas update --branch preview --message "описание"
 - Expenses: settle бутон само за получателя; организатор потвърждава вместо напуснал получател
 - Realtime разширен: trip_members, removed_members, messages
 - Deep linking: gotogether:// схема (работи в production build, НЕ в Expo Go)
-- Опит за GitHub Actions CI/CD автоматизация — НЕУСПЕШЕН, виж "Известни проблеми" по-горе
-- Ръчен `eas update --branch preview` работи перфектно като временно решение
+- GitHub Actions CI/CD — оправен: добавени липсващи `expo-image-picker`, `expo-document-picker`, `eas.json`, `extra.eas.projectId` (виж "GitHub Actions CI/CD" по-горе)
 
 ### Следващо
-- **Приоритет: оправяне на GitHub Actions CI/CD workflow** (виж Известни проблеми)
 - Apple Developer акаунт → iOS build → галерия и камера в Documents
 - Push notifications — известия при нов разход или документ
 - Дати на пътуването в trip card
