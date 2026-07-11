@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, Alert, Share, Modal, TextInput, KeyboardAvoidingView, Platform,
+  ScrollView, Alert, Share, Modal, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { supabase } from "../lib/supabase";
+import DatePicker from "../components/DatePicker";
 
 const MAX_VISIBLE = 4;
+const LOCAL_CURRENCY_OPTIONS = ["EUR", "BGN", "USD", "GBP"];
 
 // Изчислява статус на пътуване спрямо днешна дата.
 // Връща обект с {label, kind, sortOrder}.
@@ -52,7 +54,7 @@ function computeTripStatus(startStr, endStr) {
   return { label, kind: "past", sortOrder: 2000 + daysAfterEnd };
 }
 
-export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onChat, onSwitchTrip, onNewTrip }) {
+export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onChat, onSwitchTrip, onNewTrip, onTripUpdated }) {
   const [copied, setCopied] = useState(false);
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
   const [membersModalVisible, setMembersModalVisible] = useState(false);
@@ -64,6 +66,18 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [savingName, setSavingName] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [unblocking, setUnblocking] = useState(null);
+
+  // Edit trip modal state (само за организатора).
+  // Целта: единно място за корекция на всички основни данни на пътуването,
+  // отворено с тап върху trip info частта на картата — така не задръстваме
+  // визуално картата с допълнителни бутони.
+  const [editTripVisible, setEditTripVisible] = useState(false);
+  const [tripName, setTripName] = useState("");
+  const [tripDestination, setTripDestination] = useState("");
+  const [tripStartDate, setTripStartDate] = useState(null);
+  const [tripEndDate, setTripEndDate] = useState(null);
+  const [tripCurrency, setTripCurrency] = useState("EUR");
+  const [savingTrip, setSavingTrip] = useState(false);
 
   const fetchMembers = useCallback(async () => {
     if (!trip?.id) return;
@@ -341,6 +355,52 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   const isOwner = members.find((m) => m.user_id === user.id)?.role === "owner";
 
+  // Отваря trip edit модала с текущите стойности prefilled
+  function openEditTrip() {
+    if (!isOwner || !trip) return;
+    setTripName(trip.name || "");
+    setTripDestination(trip.destination || "");
+    setTripStartDate(trip.start_date || null);
+    setTripEndDate(trip.end_date || null);
+    setTripCurrency(trip.local_currency || "EUR");
+    setEditTripVisible(true);
+  }
+
+  async function handleSaveTrip() {
+    const nameTrimmed = tripName.trim();
+    if (!nameTrimmed) return Alert.alert("Грешка", "Името не може да е празно");
+    if (tripStartDate && tripEndDate && tripEndDate < tripStartDate) {
+      return Alert.alert("Грешка", "Крайната дата трябва да е след началната");
+    }
+
+    setSavingTrip(true);
+    try {
+      const { data, error } = await supabase
+        .from("trips")
+        .update({
+          name: nameTrimmed,
+          destination: tripDestination.trim() || null,
+          start_date: tripStartDate,
+          end_date: tripEndDate,
+          local_currency: tripCurrency,
+        })
+        .eq("id", trip.id)
+        .select()
+        .single();
+      if (error) throw error;
+
+      setEditTripVisible(false);
+      // Уведомяваме App.js за обновеното пътуване, за да refreshне activeTrip
+      // и allTrips — иначе Dashboard-ът ще продължи да показва старите данни
+      // до следващия cold start.
+      if (onTripUpdated) onTripUpdated(data);
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    } finally {
+      setSavingTrip(false);
+    }
+  }
+
   const cards = [
     { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE", badge: 0 },
     { emoji: "💬", title: "Чат", sub: "Групов чат", onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
@@ -421,8 +481,18 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         {trip && (
           <View style={styles.tripCard}>
             <View style={styles.tripTop}>
-              <View style={styles.tripInfo}>
-                <Text style={styles.tripName}>{trip.name}</Text>
+              {/* Организаторът може да тапне върху trip info за редакция.
+                  Не-организаторите виждат същия layout, но без тап реакция. */}
+              <TouchableOpacity
+                style={styles.tripInfo}
+                onPress={openEditTrip}
+                activeOpacity={isOwner ? 0.7 : 1}
+                disabled={!isOwner}
+              >
+                <View style={styles.tripNameRow}>
+                  <Text style={styles.tripName}>{trip.name}</Text>
+                  {isOwner && <Text style={styles.tripEditIcon}>✏️</Text>}
+                </View>
                 {trip.destination && <Text style={styles.tripDest}>📍 {trip.destination}</Text>}
                 {dateRange && <Text style={styles.tripDates}>📅 {dateRange}</Text>}
                 {currentStatus.label && (
@@ -430,7 +500,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                     <Text style={styles.statusBadgeText}>{currentStatus.label}</Text>
                   </View>
                 )}
-              </View>
+              </TouchableOpacity>
               <View style={styles.inviteBox}>
                 <Text style={styles.inviteLabel}>Код</Text>
                 <TouchableOpacity onPress={handleCopyCode}>
@@ -593,6 +663,77 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         </KeyboardAvoidingView>
       </Modal>
 
+      <Modal visible={editTripVisible} animationType="slide" transparent onRequestClose={() => setEditTripVisible(false)}>
+        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <ScrollView style={[styles.modal, styles.editTripModal]} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.modalTitle}>✏️ Редактирай пътуването</Text>
+            <Text style={styles.modalSubtitle}>Промените се виждат от всички участници</Text>
+
+            <Text style={styles.editLabel}>Име *</Text>
+            <TextInput
+              style={styles.editInput}
+              value={tripName}
+              onChangeText={setTripName}
+              placeholder="Напр. Лято 2025 в Гърция"
+              placeholderTextColor="#bbb"
+            />
+
+            <Text style={styles.editLabel}>Дестинация</Text>
+            <TextInput
+              style={styles.editInput}
+              value={tripDestination}
+              onChangeText={setTripDestination}
+              placeholder="Напр. Солун"
+              placeholderTextColor="#bbb"
+            />
+
+            <Text style={styles.editLabel}>Дати</Text>
+            <View style={styles.editDateRow}>
+              <View style={styles.editDateCol}>
+                <DatePicker
+                  value={tripStartDate}
+                  onChange={setTripStartDate}
+                  placeholder="Начална дата"
+                />
+              </View>
+              <Text style={styles.editDateSep}>→</Text>
+              <View style={styles.editDateCol}>
+                <DatePicker
+                  value={tripEndDate}
+                  onChange={setTripEndDate}
+                  placeholder="Крайна дата"
+                  minDate={tripStartDate}
+                />
+              </View>
+            </View>
+
+            <Text style={styles.editLabel}>Местна валута</Text>
+            <View style={styles.editCurrencyRow}>
+              {LOCAL_CURRENCY_OPTIONS.map((code) => (
+                <TouchableOpacity
+                  key={code}
+                  style={[styles.editCurrencyChip, tripCurrency === code && styles.editCurrencyChipActive]}
+                  onPress={() => setTripCurrency(code)}
+                >
+                  <Text style={[styles.editCurrencyChipText, tripCurrency === code && styles.editCurrencyChipTextActive]}>
+                    {code}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalBtns}>
+              <TouchableOpacity style={styles.btnCancel} onPress={() => setEditTripVisible(false)} disabled={savingTrip}>
+                <Text style={styles.btnCancelText}>Отказ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnSave} onPress={handleSaveTrip} disabled={savingTrip}>
+                {savingTrip ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnSaveText}>Запази</Text>}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <Modal visible={tripPickerVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.modalInner}>
@@ -668,7 +809,9 @@ const styles = StyleSheet.create({
   },
   tripTop: { flexDirection: "row", alignItems: "flex-start" },
   tripInfo: { flex: 1 },
-  tripName: { fontSize: 20, fontWeight: "bold", color: "#fff", marginBottom: 6 },
+  tripNameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
+  tripName: { fontSize: 20, fontWeight: "bold", color: "#fff" },
+  tripEditIcon: { fontSize: 12, opacity: 0.7 },
   tripDest: { fontSize: 13, color: "#E1F5EE", marginBottom: 3 },
   tripDates: { fontSize: 13, color: "#E1F5EE" },
   statusBadge: {
@@ -722,6 +865,23 @@ const styles = StyleSheet.create({
   modalInner: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: "85%" },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 4 },
   modalSubtitle: { fontSize: 12, color: "#888", marginBottom: 16 },
+  editTripModal: { backgroundColor: "#1D9E75" },
+  editLabel: { fontSize: 13, color: "#E1F5EE", fontWeight: "600", marginTop: 12, marginBottom: 6 },
+  editInput: {
+    backgroundColor: "#fff", borderRadius: 12, padding: 14,
+    fontSize: 16, color: "#1a1a1a", marginBottom: 4,
+  },
+  editDateRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  editDateCol: { flex: 1 },
+  editDateSep: { color: "#E1F5EE", fontSize: 16, fontWeight: "600" },
+  editCurrencyRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  editCurrencyChip: {
+    flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  editCurrencyChipActive: { backgroundColor: "#fff" },
+  editCurrencyChipText: { fontSize: 14, fontWeight: "600", color: "#fff" },
+  editCurrencyChipTextActive: { color: "#1D9E75" },
   memberRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
   avatarLg: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   avatarLgText: { fontSize: 14, fontWeight: "bold", color: "#fff" },
@@ -746,11 +906,11 @@ const styles = StyleSheet.create({
   unblockBtnText: { color: "#1D9E75", fontSize: 12, fontWeight: "600" },
   weightHint: { fontSize: 12, color: "#888", marginTop: 16, marginBottom: 8, textAlign: "center" },
   nameInput: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 14, fontSize: 16, color: "#1a1a1a", marginBottom: 16 },
-  modalBtns: { flexDirection: "row", gap: 10 },
-  btnCancel: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
-  btnCancelText: { color: "#888", fontSize: 15 },
-  btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#1D9E75", alignItems: "center" },
-  btnSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
+  modalBtns: { flexDirection: "row", gap: 10, marginTop: 20 },
+  btnCancel: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center", backgroundColor: "rgba(255,255,255,0.15)" },
+  btnCancelText: { color: "#fff", fontSize: 15 },
+  btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#fff", alignItems: "center" },
+  btnSaveText: { color: "#1D9E75", fontSize: 15, fontWeight: "bold" },
   tripList: { maxHeight: 400, marginBottom: 8 },
   tripOption: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: "#F5F5F5" },
   tripOptionActive: { backgroundColor: "#E1F5EE", borderWidth: 1.5, borderColor: "#1D9E75" },
