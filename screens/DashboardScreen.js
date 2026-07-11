@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
   ScrollView, Alert, Share, Modal, TextInput, KeyboardAvoidingView, Platform,
@@ -7,6 +7,50 @@ import * as Clipboard from "expo-clipboard";
 import { supabase } from "../lib/supabase";
 
 const MAX_VISIBLE = 4;
+
+// Изчислява статус на пътуване спрямо днешна дата.
+// Връща обект с {label, kind, sortOrder}.
+//   kind: "upcoming" | "active" | "past" | "undated"
+//   sortOrder: цяло число за подредба (по-малко = по-нагоре в trip picker)
+function computeTripStatus(startStr, endStr) {
+  if (!startStr) {
+    return { label: null, kind: "undated", sortOrder: 3000 };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(startStr + "T00:00:00");
+  const end = endStr ? new Date(endStr + "T00:00:00") : start;
+
+  const msPerDay = 86400000;
+  const daysToStart = Math.round((start - today) / msPerDay);
+  const daysAfterEnd = Math.round((today - end) / msPerDay);
+
+  if (daysToStart > 0) {
+    // Предстоящо
+    let label;
+    if (daysToStart === 1) label = "Утре";
+    else if (daysToStart <= 30) label = `След ${daysToStart} дни`;
+    else if (daysToStart <= 60) label = `След месец`;
+    else label = `След ${Math.round(daysToStart / 30)} месеца`;
+    // Sort: колкото по-скоро започва, толкова по-нагоре (1000 + дни до старт)
+    return { label, kind: "upcoming", sortOrder: 1000 + daysToStart };
+  }
+
+  if (daysAfterEnd <= 0) {
+    // В момента — най-нагоре в trip picker
+    return { label: "🟢 В момента", kind: "active", sortOrder: 0 };
+  }
+
+  // Приключило
+  let label;
+  if (daysAfterEnd === 1) label = "Приключи вчера";
+  else if (daysAfterEnd <= 30) label = `Приключи преди ${daysAfterEnd} дни`;
+  else if (daysAfterEnd <= 60) label = `Приключи преди месец`;
+  else label = `Приключи преди ${Math.round(daysAfterEnd / 30)} месеца`;
+  // Sort: минали накрая, най-скоро приключилите преди по-старите (2000 + дни от край)
+  return { label, kind: "past", sortOrder: 2000 + daysAfterEnd };
+}
 
 export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onChat, onSwitchTrip, onNewTrip }) {
   const [copied, setCopied] = useState(false);
@@ -342,6 +386,23 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const endDate = formatDate(trip?.end_date);
   const dateRange = startDate && endDate ? `${startDate} – ${endDate}` : startDate || null;
 
+  // Статус на текущото пътуване (за trip card badge)
+  const currentStatus = useMemo(
+    () => computeTripStatus(trip?.start_date, trip?.end_date),
+    [trip?.start_date, trip?.end_date]
+  );
+
+  // Сортирани пътувания за trip picker: активни → предстоящи → без дати → минали.
+  // computeTripStatus.sortOrder гарантира тази йерархия.
+  const sortedTrips = useMemo(() => {
+    const list = (allTrips || []).map((t) => ({
+      ...t,
+      _status: computeTripStatus(t.start_date, t.end_date),
+    }));
+    list.sort((a, b) => a._status.sortOrder - b._status.sortOrder);
+    return list;
+  }, [allTrips]);
+
   const showMembersRow = otherMembers.length > 0 || isOwner;
 
   return (
@@ -364,6 +425,11 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                 <Text style={styles.tripName}>{trip.name}</Text>
                 {trip.destination && <Text style={styles.tripDest}>📍 {trip.destination}</Text>}
                 {dateRange && <Text style={styles.tripDates}>📅 {dateRange}</Text>}
+                {currentStatus.label && (
+                  <View style={[styles.statusBadge, styles[`statusBadge_${currentStatus.kind}`]]}>
+                    <Text style={styles.statusBadgeText}>{currentStatus.label}</Text>
+                  </View>
+                )}
               </View>
               <View style={styles.inviteBox}>
                 <Text style={styles.inviteLabel}>Код</Text>
@@ -531,16 +597,48 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         <View style={styles.overlay}>
           <View style={styles.modalInner}>
             <Text style={styles.modalTitle}>Пътувания</Text>
-            {(allTrips || []).map((t) => (
-              <TouchableOpacity key={t.id} style={[styles.tripOption, t.id === trip?.id && styles.tripOptionActive]}
-                onPress={() => { setTripPickerVisible(false); if (t.id !== trip?.id) onSwitchTrip(t); }}>
-                <View style={styles.tripOptionInfo}>
-                  <Text style={[styles.tripOptionName, t.id === trip?.id && styles.tripOptionNameActive]}>{t.name}</Text>
-                  {t.destination && <Text style={styles.tripOptionDest}>📍 {t.destination}</Text>}
-                </View>
-                {t.id === trip?.id && <Text style={styles.tripOptionCheck}>✓</Text>}
-              </TouchableOpacity>
-            ))}
+            <ScrollView style={styles.tripList}>
+              {sortedTrips.map((t) => {
+                const isPast = t._status.kind === "past";
+                const isActive = t._status.kind === "active";
+                return (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[
+                      styles.tripOption,
+                      t.id === trip?.id && styles.tripOptionActive,
+                      isPast && styles.tripOptionPast,
+                    ]}
+                    onPress={() => { setTripPickerVisible(false); if (t.id !== trip?.id) onSwitchTrip(t); }}
+                  >
+                    <View style={styles.tripOptionInfo}>
+                      <Text style={[
+                        styles.tripOptionName,
+                        t.id === trip?.id && styles.tripOptionNameActive,
+                        isPast && styles.tripOptionNamePast,
+                      ]}>
+                        {t.name}
+                      </Text>
+                      {t.destination && (
+                        <Text style={[styles.tripOptionDest, isPast && styles.tripOptionDestPast]}>
+                          📍 {t.destination}
+                        </Text>
+                      )}
+                      {t._status.label && (
+                        <Text style={[
+                          styles.tripOptionStatus,
+                          isActive && styles.tripOptionStatusActive,
+                          isPast && styles.tripOptionStatusPast,
+                        ]}>
+                          {t._status.label}
+                        </Text>
+                      )}
+                    </View>
+                    {t.id === trip?.id && <Text style={styles.tripOptionCheck}>✓</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
             <TouchableOpacity style={styles.newTripBtn} onPress={() => { setTripPickerVisible(false); onNewTrip(); }}>
               <Text style={styles.newTripBtnText}>+ Ново пътуване</Text>
             </TouchableOpacity>
@@ -573,6 +671,19 @@ const styles = StyleSheet.create({
   tripName: { fontSize: 20, fontWeight: "bold", color: "#fff", marginBottom: 6 },
   tripDest: { fontSize: 13, color: "#E1F5EE", marginBottom: 3 },
   tripDates: { fontSize: 13, color: "#E1F5EE" },
+  statusBadge: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  statusBadge_active: { backgroundColor: "rgba(255,255,255,0.35)" },
+  statusBadge_upcoming: { backgroundColor: "rgba(255,255,255,0.2)" },
+  statusBadge_past: { backgroundColor: "rgba(0,0,0,0.2)" },
+  statusBadge_undated: { display: "none" },
+  statusBadgeText: { fontSize: 12, color: "#fff", fontWeight: "600" },
   inviteBox: { alignItems: "center", marginLeft: 12 },
   inviteLabel: { fontSize: 10, color: "#E1F5EE", marginBottom: 4, letterSpacing: 1 },
   inviteCode: {
@@ -608,7 +719,7 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%" },
   modalContent: { padding: 24, paddingBottom: 40 },
-  modalInner: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  modalInner: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: "85%" },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 4 },
   modalSubtitle: { fontSize: 12, color: "#888", marginBottom: 16 },
   memberRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
@@ -640,12 +751,19 @@ const styles = StyleSheet.create({
   btnCancelText: { color: "#888", fontSize: 15 },
   btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#1D9E75", alignItems: "center" },
   btnSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
+  tripList: { maxHeight: 400, marginBottom: 8 },
   tripOption: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: "#F5F5F5" },
   tripOptionActive: { backgroundColor: "#E1F5EE", borderWidth: 1.5, borderColor: "#1D9E75" },
+  tripOptionPast: { backgroundColor: "#FAFAFA", opacity: 0.75 },
   tripOptionInfo: { flex: 1 },
   tripOptionName: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
   tripOptionNameActive: { color: "#1D9E75" },
+  tripOptionNamePast: { color: "#888" },
   tripOptionDest: { fontSize: 12, color: "#888", marginTop: 2 },
+  tripOptionDestPast: { color: "#aaa" },
+  tripOptionStatus: { fontSize: 11, color: "#888", marginTop: 4, fontWeight: "600" },
+  tripOptionStatusActive: { color: "#1D9E75" },
+  tripOptionStatusPast: { color: "#aaa", fontWeight: "500" },
   tripOptionCheck: { fontSize: 18, color: "#1D9E75", fontWeight: "bold" },
   newTripBtn: { backgroundColor: "#1D9E75", padding: 14, borderRadius: 12, alignItems: "center", marginTop: 4, marginBottom: 8 },
   newTripBtnText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
