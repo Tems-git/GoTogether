@@ -1,6 +1,7 @@
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, Linking } from "react-native";
-import { useState, useEffect } from "react";
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, Linking, AppState } from "react-native";
+import { useState, useEffect, useRef } from "react";
+import * as Updates from "expo-updates";
 import { supabase } from "./lib/supabase";
 import SignInScreen from "./screens/SignInScreen";
 import DashboardScreen from "./screens/DashboardScreen";
@@ -17,6 +18,25 @@ function parseInviteCode(url) {
   return match ? match[1].toUpperCase() : null;
 }
 
+// Проверява за нов EAS update и го прилага, ако има.
+// Тихо гърми без грешки (не искаме production потребители да виждат error-и,
+// ако мрежата е бавна или Expo Go не поддържа updates).
+async function checkAndApplyUpdate() {
+  // В Expo Go, Updates.checkForUpdateAsync() винаги връща isAvailable: false
+  // (Expo Go има собствен update механизъм), затова тази функция е полезна
+  // главно в production builds. Но включваме и Expo Go path-a, за да сме готови.
+  if (!Updates.isEnabled) return;
+  try {
+    const update = await Updates.checkForUpdateAsync();
+    if (update.isAvailable) {
+      await Updates.fetchUpdateAsync();
+      await Updates.reloadAsync();
+    }
+  } catch (e) {
+    // Тихо игнорираме — мрежов проблем или Expo Go
+  }
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -27,6 +47,22 @@ export default function App() {
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [inviteInput, setInviteInput] = useState("");
   const [showInviteInput, setShowInviteInput] = useState(false);
+  const appState = useRef(AppState.currentState);
+
+  // Auto-update при cold start и при връщане от background.
+  // Целта: тестерите не трябва да рестартират ръчно приложението, за да
+  // видят нова версия — просто отваряне от app switcher е достатъчно.
+  useEffect(() => {
+    checkAndApplyUpdate();
+
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (appState.current.match(/inactive|background/) && nextState === "active") {
+        checkAndApplyUpdate();
+      }
+      appState.current = nextState;
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     // App отворена чрез deep link докато е затворена
