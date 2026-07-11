@@ -5,34 +5,20 @@ import {
   KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard,
 } from "react-native";
 import { supabase } from "../lib/supabase";
+import DatePicker from "../components/DatePicker";
 
 // Местна валута на пътуването — показва се като втори ред до EUR сумите в
 // Разходи → Как да се изравним. EUR по подразбиране, тъй като повечето
 // пътувания тръгват от/в еврозоната.
 const LOCAL_CURRENCY_OPTIONS = ["EUR", "BGN", "USD", "GBP"];
 
-// Валидира дата във формат ГГГГ-ММ-ДД (избрахме текстово поле вместо
-// native date picker, за да не добавяме нов native dependency — виж
-// README "GitHub Actions CI/CD" за поуката с липсващи native пакети в CI).
-function parseDateInput(str) {
-  const trimmed = str.trim();
-  if (!trimmed) return { value: null, error: null };
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
-  if (!match) return { value: null, error: "Форматът трябва да е ГГГГ-ММ-ДД, напр. 2026-07-15" };
-  const d = new Date(trimmed + "T00:00:00");
-  if (isNaN(d.getTime()) || d.getFullYear() !== Number(match[1])) {
-    return { value: null, error: "Невалидна дата" };
-  }
-  return { value: trimmed, error: null };
-}
-
 export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }) {
   const [mode, setMode] = useState(null);
   const [name, setName] = useState("");
   const [destination, setDestination] = useState("");
   const [localCurrency, setLocalCurrency] = useState("EUR");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
   const [inviteCode, setInviteCode] = useState(pendingInviteCode || "");
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -57,11 +43,9 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
   async function handleCreate() {
     if (!name.trim()) return Alert.alert("Грешка", "Въведи име на пътуването");
 
-    const startResult = parseDateInput(startDate);
-    if (startResult.error) return Alert.alert("Грешка", `Начална дата: ${startResult.error}`);
-    const endResult = parseDateInput(endDate);
-    if (endResult.error) return Alert.alert("Грешка", `Крайна дата: ${endResult.error}`);
-    if (startResult.value && endResult.value && endResult.value < startResult.value) {
+    // Валидацията на формат/валидност вече е гарантирана от DatePicker —
+    // тук проверяваме само крос-полева зависимост (край след начало).
+    if (startDate && endDate && endDate < startDate) {
       return Alert.alert("Грешка", "Крайната дата трябва да е след началната");
     }
 
@@ -82,8 +66,8 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
           name: name.trim(),
           destination: destination.trim() || null,
           local_currency: localCurrency,
-          start_date: startResult.value,
-          end_date: endResult.value,
+          start_date: startDate,
+          end_date: endDate,
         })
         .select()
         .single();
@@ -257,29 +241,24 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
             placeholderTextColor="#bbb"
           />
           <Text style={styles.label}>Дати на пътуването</Text>
-          <Text style={styles.hint}>Формат ГГГГ-ММ-ДД, по желание</Text>
+          <Text style={styles.hint}>По желание</Text>
           <View style={styles.dateRow}>
-            <TextInput
-              style={[styles.input, styles.dateInput]}
-              placeholder="2026-07-15"
-              value={startDate}
-              onChangeText={setStartDate}
-              placeholderTextColor="#bbb"
-              autoCorrect={false}
-              keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
-              maxLength={10}
-            />
+            <View style={styles.dateCol}>
+              <DatePicker
+                value={startDate}
+                onChange={setStartDate}
+                placeholder="Начална дата"
+              />
+            </View>
             <Text style={styles.dateSep}>→</Text>
-            <TextInput
-              style={[styles.input, styles.dateInput]}
-              placeholder="2026-07-22"
-              value={endDate}
-              onChangeText={setEndDate}
-              placeholderTextColor="#bbb"
-              autoCorrect={false}
-              keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
-              maxLength={10}
-            />
+            <View style={styles.dateCol}>
+              <DatePicker
+                value={endDate}
+                onChange={setEndDate}
+                placeholder="Крайна дата"
+                minDate={startDate}
+              />
+            </View>
           </View>
           <Text style={styles.label}>Местна валута</Text>
           <Text style={styles.hint}>Показва се до EUR сумите при изравняване на разходите</Text>
@@ -348,7 +327,7 @@ const styles = StyleSheet.create({
   },
   codeInput: { fontSize: 24, fontWeight: "bold", letterSpacing: 8, textAlign: "center" },
   dateRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  dateInput: { flex: 1, marginBottom: 0, textAlign: "center", fontSize: 14 },
+  dateCol: { flex: 1 },
   dateSep: { color: "#E1F5EE", fontSize: 16, fontWeight: "600" },
   currencyRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   currencyChip: {
