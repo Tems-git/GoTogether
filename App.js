@@ -215,6 +215,10 @@ export default function App() {
         onChat={() => setScreen("chat")}
         onSwitchTrip={(trip) => setActiveTrip(trip)}
         onNewTrip={() => setScreen("newtrip")}
+        onTripUpdated={(updated) => {
+          setActiveTrip(updated);
+          setAllTrips((prev) => prev.map((t) => t.id === updated.id ? updated : t));
+        }}
       />
     );
   }
