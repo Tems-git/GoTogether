@@ -96,7 +96,8 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const [splitWith, setSplitWith] = useState([]);
   const [saving, setSaving] = useState(false);
   const [currency, setCurrency] = useState("EUR");
-  const [currencyPickerVisible, setCurrencyPickerVisible] = useState(false);
+  // Inline currency picker вместо отделен Modal — nested модали забиват на iOS.
+  const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
 
   const [localCurrency, setLocalCurrency] = useState("EUR");
@@ -199,6 +200,8 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     setAmount("");
     setCategory("other");
     setCurrency("EUR");
+    setCurrencyPickerOpen(false);
+    setCurrencySearch("");
     setModalVisible(true);
   }
 
@@ -388,6 +391,12 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     return list.sort();
   }, [allCurrencyCodes, currencyNames, currencySearch]);
 
+  function selectCurrency(code) {
+    setCurrency(code);
+    setCurrencyPickerOpen(false);
+    setCurrencySearch("");
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
       <TouchableOpacity onPress={onBack} style={styles.back}>
@@ -492,152 +501,155 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
             keyboardShouldPersistTaps="handled">
             <Text style={styles.modalTitle}>Нов разход</Text>
 
-            <Text style={styles.label}>Описание</Text>
-            <TextInput style={styles.input} placeholder="Напр. Хотел Хилтън"
-              value={desc} onChangeText={setDesc} placeholderTextColor="#bbb" />
+            {/* Ако валутният picker е отворен, показваме само него — без останалите полета.
+                Така елиминираме nested модали (два Modal-а един върху друг забиваха на iOS). */}
+            {currencyPickerOpen ? (
+              <View>
+                <Text style={styles.label}>Избери валута</Text>
 
-            <Text style={styles.label}>Сума</Text>
-            <View style={styles.amountRow}>
-              <TextInput style={[styles.input, styles.amountInput]} placeholder="0.00" keyboardType="decimal-pad"
-                value={amount} onChangeText={setAmount} placeholderTextColor="#bbb" />
-              <TouchableOpacity style={styles.currencyBtn} onPress={() => setCurrencyPickerVisible(true)}>
-                <Text style={styles.currencyBtnText}>{currencyLabel(currency)}</Text>
-                <Text style={styles.currencyBtnChevron}>▾</Text>
-              </TouchableOpacity>
-            </View>
+                <Text style={styles.currencySectionLabel}>Чести</Text>
+                <View style={styles.currencyCommonRow}>
+                  {COMMON_CURRENCIES.map((code) => (
+                    <TouchableOpacity
+                      key={code}
+                      style={[styles.currencyCommonChip, currency === code && styles.currencyCommonChipActive]}
+                      onPress={() => selectCurrency(code)}
+                    >
+                      <Text style={[styles.currencyCommonChipText, currency === code && styles.currencyCommonChipTextActive]}>
+                        {currencyLabel(code)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-            <Text style={styles.label}>Платил</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
-              {members.map((m, i) => (
-                <TouchableOpacity key={m.user_id}
-                  style={[styles.chip, paidBy === m.user_id && { backgroundColor: MEMBER_COLORS[i % MEMBER_COLORS.length] }]}
-                  onPress={() => setPaidBy(m.user_id)}>
-                  <Text style={[styles.chipText, paidBy === m.user_id && styles.chipTextActive]}>{m.display_name}</Text>
+                <Text style={styles.currencySectionLabel}>Всички валути</Text>
+                <TextInput
+                  style={styles.currencySearchInput}
+                  placeholder="Търси по код или име..."
+                  placeholderTextColor="#bbb"
+                  value={currencySearch}
+                  onChangeText={setCurrencySearch}
+                  autoCapitalize="characters"
+                  autoFocus
+                />
+                <View style={styles.currencyListInline}>
+                  {filteredCurrencies.slice(0, 50).map((item) => (
+                    <TouchableOpacity
+                      key={item}
+                      style={[styles.currencyRow, currency === item && styles.currencyRowActive]}
+                      onPress={() => selectCurrency(item)}
+                    >
+                      <Text style={[styles.currencyRowCode, currency === item && styles.currencyRowCodeActive]}>{item}</Text>
+                      <Text style={styles.currencyRowName} numberOfLines={1}>{currencyNames[item] || ""}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {filteredCurrencies.length === 0 && (
+                    <Text style={styles.currencyEmpty}>Няма намерени валути</Text>
+                  )}
+                </View>
+
+                <TouchableOpacity style={styles.btnCancel} onPress={() => { setCurrencyPickerOpen(false); setCurrencySearch(""); }}>
+                  <Text style={styles.btnCancelText}>← Назад към разхода</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.label}>Описание</Text>
+                <TextInput style={styles.input} placeholder="Напр. Хотел Хилтън"
+                  value={desc} onChangeText={setDesc} placeholderTextColor="#bbb" />
 
-            <Text style={styles.label}>Категория</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
-              {CATEGORIES.map((c) => (
-                <TouchableOpacity key={c.key}
-                  style={[styles.chip, category === c.key && styles.chipActive]}
-                  onPress={() => setCategory(c.key)}>
-                  <Text style={[styles.chipText, category === c.key && styles.chipTextActive]}>{c.emoji} {c.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                <Text style={styles.label}>Сума</Text>
+                <View style={styles.amountRow}>
+                  <TextInput style={[styles.input, styles.amountInput]} placeholder="0.00" keyboardType="decimal-pad"
+                    value={amount} onChangeText={setAmount} placeholderTextColor="#bbb" />
+                  <TouchableOpacity style={styles.currencyBtn} onPress={() => setCurrencyPickerOpen(true)}>
+                    <Text style={styles.currencyBtnText}>{currencyLabel(currency)}</Text>
+                    <Text style={styles.currencyBtnChevron}>▾</Text>
+                  </TouchableOpacity>
+                </View>
 
-            <Text style={styles.label}>Дели между</Text>
-            {members.map((m, i) => {
-              const isPayer = m.user_id === paidBy;
-              const checked = splitWith.includes(m.user_id);
-              const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
-              const weight = m.weight || 1;
-              const preview = previewShares.find((s) => s.uid === m.user_id);
-              return (
-                <TouchableOpacity
-                  key={m.user_id}
-                  style={styles.checkRow}
-                  onPress={() => !isPayer && toggleSplitWith(m.user_id)}
-                  disabled={isPayer}
-                >
-                  <View style={[
-                    styles.checkbox,
-                    isPayer && styles.checkboxDisabled,
-                    !isPayer && checked && { backgroundColor: color, borderColor: color }
-                  ]}>
-                    {isPayer ? <Text style={styles.checkmarkDisabled}>–</Text> : checked && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <View style={styles.checkInfo}>
-                    <Text style={[
-                      styles.checkLabel,
-                      isPayer && { color: "#aaa" },
-                      !isPayer && checked && { color }
-                    ]}>
-                      {m.display_name}
-                      {weight > 1 ? ` ×${weight}` : ""}
-                      {isPayer ? " (платил)" : ""}
+                <Text style={styles.label}>Платил</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
+                  {members.map((m, i) => (
+                    <TouchableOpacity key={m.user_id}
+                      style={[styles.chip, paidBy === m.user_id && { backgroundColor: MEMBER_COLORS[i % MEMBER_COLORS.length] }]}
+                      onPress={() => setPaidBy(m.user_id)}>
+                      <Text style={[styles.chipText, paidBy === m.user_id && styles.chipTextActive]}>{m.display_name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <Text style={styles.label}>Категория</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
+                  {CATEGORIES.map((c) => (
+                    <TouchableOpacity key={c.key}
+                      style={[styles.chip, category === c.key && styles.chipActive]}
+                      onPress={() => setCategory(c.key)}>
+                      <Text style={[styles.chipText, category === c.key && styles.chipTextActive]}>{c.emoji} {c.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <Text style={styles.label}>Дели между</Text>
+                {members.map((m, i) => {
+                  const isPayer = m.user_id === paidBy;
+                  const checked = splitWith.includes(m.user_id);
+                  const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
+                  const weight = m.weight || 1;
+                  const preview = previewShares.find((s) => s.uid === m.user_id);
+                  return (
+                    <TouchableOpacity
+                      key={m.user_id}
+                      style={styles.checkRow}
+                      onPress={() => !isPayer && toggleSplitWith(m.user_id)}
+                      disabled={isPayer}
+                    >
+                      <View style={[
+                        styles.checkbox,
+                        isPayer && styles.checkboxDisabled,
+                        !isPayer && checked && { backgroundColor: color, borderColor: color }
+                      ]}>
+                        {isPayer ? <Text style={styles.checkmarkDisabled}>–</Text> : checked && <Text style={styles.checkmark}>✓</Text>}
+                      </View>
+                      <View style={styles.checkInfo}>
+                        <Text style={[
+                          styles.checkLabel,
+                          isPayer && { color: "#aaa" },
+                          !isPayer && checked && { color }
+                        ]}>
+                          {m.display_name}
+                          {weight > 1 ? ` ×${weight}` : ""}
+                          {isPayer ? " (платил)" : ""}
+                        </Text>
+                        {preview && (
+                          <Text style={[styles.checkShare, { color: isPayer ? "#aaa" : color }]}>{formatMoney(preview.share, currency)}</Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+
+                {previewShares.length > 0 && (
+                  <View style={styles.splitNote}>
+                    <Text style={styles.splitNoteText}>
+                      {allEqual
+                        ? `✂️ ${nonPayerIds.length} участника · ${formatMoney(previewShares[0].share, currency)} на човек`
+                        : `✂️ Пропорционално по брой хора`}
                     </Text>
-                    {preview && (
-                      <Text style={[styles.checkShare, { color: isPayer ? "#aaa" : color }]}>{formatMoney(preview.share, currency)}</Text>
-                    )}
                   </View>
-                </TouchableOpacity>
-              );
-            })}
+                )}
 
-            {previewShares.length > 0 && (
-              <View style={styles.splitNote}>
-                <Text style={styles.splitNoteText}>
-                  {allEqual
-                    ? `✂️ ${nonPayerIds.length} участника · ${formatMoney(previewShares[0].share, currency)} на човек`
-                    : `✂️ Пропорционално по брой хора`}
-                </Text>
+                <View style={styles.modalBtns}>
+                  <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}>
+                    <Text style={styles.btnCancelText}>Отказ</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.btnSave} onPress={handleSave} disabled={saving}>
+                    {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnSaveText}>Запази</Text>}
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
-
-            <View style={styles.modalBtns}>
-              <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}>
-                <Text style={styles.btnCancelText}>Отказ</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.btnSave} onPress={handleSave} disabled={saving}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnSaveText}>Запази</Text>}
-              </TouchableOpacity>
-            </View>
           </ScrollView>
-        </View>
-      </Modal>
-
-      <Modal visible={currencyPickerVisible} animationType="slide" transparent>
-        <View style={styles.overlay}>
-          <View style={[styles.modalInner, styles.currencyModalInner]}>
-            <Text style={styles.modalTitle}>Избери валута</Text>
-
-            <Text style={styles.currencySectionLabel}>Чести</Text>
-            <View style={styles.currencyCommonRow}>
-              {COMMON_CURRENCIES.map((code) => (
-                <TouchableOpacity
-                  key={code}
-                  style={[styles.currencyCommonChip, currency === code && styles.currencyCommonChipActive]}
-                  onPress={() => { setCurrency(code); setCurrencyPickerVisible(false); setCurrencySearch(""); }}
-                >
-                  <Text style={[styles.currencyCommonChipText, currency === code && styles.currencyCommonChipTextActive]}>
-                    {currencyLabel(code)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.currencySectionLabel}>Всички валути</Text>
-            <TextInput
-              style={styles.currencySearchInput}
-              placeholder="Търси по код или име..."
-              placeholderTextColor="#bbb"
-              value={currencySearch}
-              onChangeText={setCurrencySearch}
-              autoCapitalize="characters"
-            />
-            <FlatList
-              data={filteredCurrencies}
-              keyExtractor={(item) => item}
-              style={styles.currencyList}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.currencyRow, currency === item && styles.currencyRowActive]}
-                  onPress={() => { setCurrency(item); setCurrencyPickerVisible(false); setCurrencySearch(""); }}
-                >
-                  <Text style={[styles.currencyRowCode, currency === item && styles.currencyRowCodeActive]}>{item}</Text>
-                  <Text style={styles.currencyRowName} numberOfLines={1}>{currencyNames[item] || ""}</Text>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={<Text style={styles.currencyEmpty}>Няма намерени валути</Text>}
-            />
-
-            <TouchableOpacity style={styles.modalClose} onPress={() => { setCurrencyPickerVisible(false); setCurrencySearch(""); }}>
-              <Text style={styles.modalCloseText}>Затвори</Text>
-            </TouchableOpacity>
-          </View>
         </View>
       </Modal>
 
@@ -764,7 +776,6 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalScroll: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "90%" },
   modalScrollContent: { padding: 24, paddingBottom: 40, gap: 8 },
-  modalInner: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
   label: { fontSize: 13, fontWeight: "600", color: "#555", marginTop: 6 },
   input: { backgroundColor: "#F5F5F5", borderRadius: 10, padding: 12, fontSize: 16, color: "#1a1a1a" },
@@ -816,7 +827,6 @@ const styles = StyleSheet.create({
   settleBtnAdminText: { color: "#1D9E75", fontSize: 14, fontWeight: "bold" },
   settlePending: { backgroundColor: "#F0F0F0", padding: 12, borderRadius: 10, alignItems: "center" },
   settlePendingText: { color: "#888", fontSize: 13 },
-  currencyModalInner: { maxHeight: "80%" },
   currencySectionLabel: { fontSize: 12, fontWeight: "700", color: "#888", marginTop: 12, marginBottom: 8 },
   currencyCommonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   currencyCommonChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: "#F5F5F5" },
@@ -824,13 +834,11 @@ const styles = StyleSheet.create({
   currencyCommonChipText: { fontSize: 14, fontWeight: "600", color: "#555" },
   currencyCommonChipTextActive: { color: "#fff" },
   currencySearchInput: { backgroundColor: "#F5F5F5", borderRadius: 10, padding: 12, fontSize: 15, color: "#1a1a1a", marginBottom: 8 },
-  currencyList: { maxHeight: 280 },
+  currencyListInline: { maxHeight: 280 },
   currencyRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, paddingHorizontal: 4, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
   currencyRowActive: { backgroundColor: "#F0F9F5" },
   currencyRowCode: { fontSize: 14, fontWeight: "700", color: "#1a1a1a", width: 48 },
   currencyRowCodeActive: { color: "#1D9E75" },
   currencyRowName: { fontSize: 13, color: "#888", flex: 1 },
   currencyEmpty: { textAlign: "center", color: "#bbb", fontSize: 13, paddingVertical: 20 },
-  modalClose: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center", marginTop: 12 },
-  modalCloseText: { color: "#888", fontSize: 15 },
 });
