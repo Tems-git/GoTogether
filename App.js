@@ -131,7 +131,7 @@ export default function App() {
     );
   }
 
-  if (screen === "ai") return <AIPlannerScreen onBack={() => setScreen(user ? "dashboard" : "home")} />;
+  if (screen === "ai") return <AIPlannerScreen onBack={() => setScreen(user ? "dashboard" : "home")} trip={activeTrip} />;
 
   if (screen === "documents") {
     return (

@@ -2,12 +2,12 @@ import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, Activi
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
 
-export default function AIPlannerScreen({ onBack }) {
+export default function AIPlannerScreen({ onBack, trip }) {
   const [loading, setLoading] = useState(false);
   const [plan, setPlan] = useState(null);
   const [form, setForm] = useState({
     destination: "",
-    dates: "",
+    dates: (trip?.start_date && trip?.end_date) ? `${trip.start_date} - ${trip.end_date}` : "",
     families: "2",
     children: "3",
     budget: "",
