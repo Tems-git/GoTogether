@@ -548,9 +548,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   )}
                 </View>
 
-                <TouchableOpacity style={styles.btnCancel} onPress={() => { setCurrencyPickerOpen(false); setCurrencySearch(""); }}>
-                  <Text style={styles.btnCancelText}>← Назад към разхода</Text>
-                </TouchableOpacity>
+
               </View>
             ) : (
               <View>
