@@ -12,7 +12,7 @@ import DatePicker from "../components/DatePicker";
 // пътувания тръгват от/в еврозоната.
 const LOCAL_CURRENCY_OPTIONS = ["EUR", "BGN", "USD", "GBP"];
 
-export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }) {
+export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, onBack }) {
   const [mode, setMode] = useState(null);
   const [name, setName] = useState("");
   const [destination, setDestination] = useState("");
@@ -207,6 +207,11 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+	{onBack && (
+        <TouchableOpacity style={styles.back} onPress={onBack}>
+          <Text style={styles.backText}>← Назад</Text>
+        </TouchableOpacity>
+      )}
       <Text style={styles.emoji}>🧳</Text>
       <Text style={styles.title}>Добре дошъл!</Text>
       <Text style={styles.subtitle}>Създай ново пътуване или се присъедини към съществуващо</Text>

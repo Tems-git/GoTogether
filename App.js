@@ -179,6 +179,7 @@ export default function App() {
       <TripSetupScreen
         user={user}
         pendingInviteCode={null}
+	onBack={() => setScreen("dashboard")}
         onTripReady={(trip) => {
           setActiveTrip(trip);
           setAllTrips((prev) => [trip, ...prev.filter((t) => t.id !== trip.id)]);
