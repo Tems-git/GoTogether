@@ -532,7 +532,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   autoCapitalize="characters"
                   autoFocus
                 />
-                <View style={styles.currencyListInline}>
+                <ScrollView style={styles.currencyListInline} nestedScrollEnabled>
                   {filteredCurrencies.slice(0, 50).map((item) => (
                     <TouchableOpacity
                       key={item}
@@ -546,7 +546,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   {filteredCurrencies.length === 0 && (
                     <Text style={styles.currencyEmpty}>Няма намерени валути</Text>
                   )}
-                </View>
+                </ScrollView>
 
 
               </View>
