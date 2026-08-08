@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, ScrollView,
   Modal, TextInput, ActivityIndicator, Alert, FlatList,
-} from "react-native";
+} from "react-native";import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 
 const DEV_MEMBERS = [
@@ -80,6 +80,7 @@ const CATEGORIES = [
 ];
 
 export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
+  const insets = useSafeAreaInsets();
   const [expenses, setExpenses] = useState([]);
   const [splits, setSplits] = useState([]);
   const [members, setMembers] = useState(devMode ? DEV_MEMBERS : []);
@@ -398,7 +399,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40 }]}>
       <TouchableOpacity onPress={onBack} style={styles.back}>
         <Text style={styles.backText}>← Назад</Text>
       </TouchableOpacity>
@@ -728,7 +729,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F5F5" },
-  scroll: { padding: 24, paddingTop: 60, paddingBottom: 40 },
+  scroll: { padding: 24 },
   back: { marginBottom: 16 },
   backText: { color: "#1D9E75", fontSize: 16 },
   title: { fontSize: 26, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
@@ -773,7 +774,7 @@ const styles = StyleSheet.create({
   btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalScroll: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "90%" },
-  modalScrollContent: { padding: 24, paddingBottom: 40, gap: 8 },
+  modalScrollContent: { padding: 24, paddingBottom: 60, gap: 8 },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
   label: { fontSize: 13, fontWeight: "600", color: "#555", marginTop: 6 },
   input: { backgroundColor: "#F5F5F5", borderRadius: 10, padding: 12, fontSize: 16, color: "#1a1a1a" },

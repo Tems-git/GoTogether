@@ -4,11 +4,11 @@ import {
   ScrollView, Alert, Share, Modal, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../lib/supabase";import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DatePicker from "../components/DatePicker";
 
 const MAX_VISIBLE = 4;
-const LOCAL_CURRENCY_OPTIONS = ["EUR", "BGN", "USD", "GBP"];
+const LOCAL_CURRENCY_OPTIONS = ["EUR", "USD", "GBP", "CHF"];
 
 // Изчислява статус на пътуване спрямо днешна дата.
 // Връща обект с {label, kind, sortOrder}.
@@ -54,7 +54,7 @@ function computeTripStatus(startStr, endStr) {
   return { label, kind: "past", sortOrder: 2000 + daysAfterEnd };
 }
 
-export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onChat, onSwitchTrip, onNewTrip, onTripUpdated }) {
+export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onChat, onSwitchTrip, onNewTrip, onTripUpdated }) {	const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
   const [membersModalVisible, setMembersModalVisible] = useState(false);
@@ -467,7 +467,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   return (
     <View style={styles.flex}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+      <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40 }]}>
 
         <View style={styles.header}>
           <Text style={styles.headerEmoji}>🧳</Text>
@@ -796,7 +796,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   container: { flex: 1, backgroundColor: "#F5F5F5" },
-  scroll: { padding: 24, paddingTop: 60, paddingBottom: 40 },
+  scroll: { padding: 24 },
   header: { alignItems: "center", marginBottom: 20 },
   headerEmoji: { fontSize: 44, marginBottom: 6 },
   appName: { fontSize: 22, fontWeight: "bold", color: "#1D9E75" },
