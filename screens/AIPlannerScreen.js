@@ -1,8 +1,12 @@
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, ActivityIndicator } from "react-native";
 import { useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 
 export default function AIPlannerScreen({ onBack, trip }) {
+  // Реални safe area отстояния — без тях Android навигационната лента
+  // застъпва бутона "Генерирай план", а status bar-ът закрива "← Назад".
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [plan, setPlan] = useState(null);
   const [form, setForm] = useState({
@@ -13,6 +17,8 @@ export default function AIPlannerScreen({ onBack, trip }) {
     budget: "",
     transport: "коли",
   });
+
+  const scrollPadding = { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40 };
 
   async function generatePlan() {
     setLoading(true);
@@ -40,7 +46,7 @@ export default function AIPlannerScreen({ onBack, trip }) {
 
   if (plan) {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+      <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, scrollPadding]}>
         <TouchableOpacity onPress={onBack} style={styles.back}>
           <Text style={styles.backText}>← Назад</Text>
         </TouchableOpacity>
@@ -56,7 +62,7 @@ export default function AIPlannerScreen({ onBack, trip }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, scrollPadding]}>
       <TouchableOpacity onPress={onBack} style={styles.back}>
         <Text style={styles.backText}>← Назад</Text>
       </TouchableOpacity>
@@ -101,7 +107,7 @@ export default function AIPlannerScreen({ onBack, trip }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F5F5" },
-  scroll: { padding: 24, paddingTop: 60 },
+  scroll: { padding: 24 },
   back: { marginBottom: 16 },
   backText: { color: "#1D9E75", fontSize: 16 },
   title: { fontSize: 26, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
