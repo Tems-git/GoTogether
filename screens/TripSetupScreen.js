@@ -4,15 +4,19 @@ import {
   TouchableOpacity, ScrollView, ActivityIndicator, Alert,
   KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 import DatePicker from "../components/DatePicker";
 
 // Местна валута на пътуването — показва се като втори ред до EUR сумите в
-// Разходи → Как да се изравним. EUR по подразбиране, тъй като повечето
-// пътувания тръгват от/в еврозоната.
-const LOCAL_CURRENCY_OPTIONS = ["EUR", "BGN", "USD", "GBP"];
+// Разходи → Как да се изравним. EUR по подразбиране.
+// Не включваме валути, които вече не съществуват в ECB feed-а (напр. BGN
+// след влизането на България в еврозоната) — иначе toEUR() не намира курс
+// и третира сумата като EUR, което дава грешни изравнявания.
+const LOCAL_CURRENCY_OPTIONS = ["EUR", "USD", "GBP", "CHF"];
 
 export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, onBack }) {
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState(null);
   const [name, setName] = useState("");
   const [destination, setDestination] = useState("");
@@ -180,7 +184,7 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
     return (
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.container}>
+          <View style={[styles.container, styles.namePad, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 24 }]}>
             <Text style={styles.emoji}>👋</Text>
             <Text style={styles.title}>Как се казваш?</Text>
             <Text style={styles.subtitle}>
@@ -206,9 +210,12 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
-	{onBack && (
-        <TouchableOpacity style={styles.back} onPress={onBack}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 40 }]}
+    >
+      {onBack && (
+        <TouchableOpacity style={styles.backTop} onPress={onBack}>
           <Text style={styles.backText}>← Назад</Text>
         </TouchableOpacity>
       )}
@@ -318,7 +325,8 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: "#1D9E75" },
   container: { flex: 1, backgroundColor: "#1D9E75" },
-  scroll: { padding: 24, paddingTop: 80, alignItems: "center", minHeight: "100%" },
+  namePad: { paddingHorizontal: 24 },
+  scroll: { paddingHorizontal: 24, alignItems: "center", minHeight: "100%" },
   emoji: { fontSize: 64, marginBottom: 16, textAlign: "center" },
   title: { fontSize: 28, fontWeight: "bold", color: "#fff", marginBottom: 8, textAlign: "center" },
   subtitle: { fontSize: 15, color: "#E1F5EE", textAlign: "center", marginBottom: 40, lineHeight: 22, paddingHorizontal: 24 },
@@ -353,5 +361,6 @@ const styles = StyleSheet.create({
   },
   btnSecondaryText: { color: "#fff", fontSize: 16, fontWeight: "500" },
   back: { marginTop: 12, alignItems: "center" },
+  backTop: { alignSelf: "flex-start", marginBottom: 8 },
   backText: { color: "#E1F5EE", fontSize: 15 },
 });
