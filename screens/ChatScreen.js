@@ -3,9 +3,14 @@ import {
   StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback,
   FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 
 export default function ChatScreen({ onBack, tripId, userId, tripName }) {
+  // insets дава реалните височини на status bar (top) и navigation bar (bottom)
+  // за конкретното устройство. Без тях Android навигационната лента застъпва
+  // полето за писане — тапването задейства системните бутони вместо input-а.
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -227,7 +232,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={0}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
           <Text style={styles.backText}>← Назад</Text>
         </TouchableOpacity>
@@ -302,7 +307,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
       )}
 
       {editingMsg ? (
-        <View style={styles.editBar}>
+        <View style={[styles.editBar, { paddingBottom: insets.bottom + 10 }]}>
           <View style={styles.editBarTop}>
             <Text style={styles.editBarLabel}>✏️ Редактиране</Text>
             <TouchableOpacity onPress={cancelEdit}>
@@ -329,7 +334,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
           </View>
         </View>
       ) : (
-        <View style={styles.inputRow}>
+        <View style={[styles.inputRow, { paddingBottom: insets.bottom + 10 }]}>
           <TextInput
             style={styles.input}
             placeholder="Напиши съобщение..."
@@ -357,7 +362,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: "#F5F5F5" },
   header: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: "#fff", paddingTop: 56, paddingBottom: 12,
+    backgroundColor: "#fff", paddingBottom: 12,
     paddingHorizontal: 16, borderBottomWidth: 0.5, borderBottomColor: "#e0e0e0",
   },
   backBtn: { marginRight: 12 },
@@ -407,7 +412,7 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: "#aaa", textAlign: "center", lineHeight: 22 },
   inputRow: {
     flexDirection: "row", alignItems: "flex-end",
-    backgroundColor: "#fff", padding: 10, paddingHorizontal: 16,
+    backgroundColor: "#fff", paddingTop: 10, paddingHorizontal: 16,
     borderTopWidth: 0.5, borderTopColor: "#e0e0e0",
   },
   input: {
@@ -423,7 +428,7 @@ const styles = StyleSheet.create({
   sendIcon: { color: "#fff", fontSize: 16, marginLeft: 2 },
   editBar: {
     backgroundColor: "#fff", borderTopWidth: 0.5, borderTopColor: "#e0e0e0",
-    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10,
+    paddingHorizontal: 16, paddingTop: 8,
   },
   editBarTop: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
