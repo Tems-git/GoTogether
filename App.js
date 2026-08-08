@@ -1,6 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, Linking, AppState } from "react-native";
 import { useState, useEffect, useRef } from "react";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Updates from "expo-updates";
 import { supabase } from "./lib/supabase";
 import SignInScreen from "./screens/SignInScreen";
@@ -37,7 +38,21 @@ async function checkAndApplyUpdate() {
   }
 }
 
+// SafeAreaProvider трябва да обвива цялото приложение, за да могат екраните
+// да четат insets през useSafeAreaInsets(). Без него Android navigation bar-ът
+// застъпва долните елементи (напр. полето за писане в чата), а status bar-ът
+// застъпва header-ите — хардкоднатите paddingTop стойности са калибрирани за
+// iPhone и не важат за Android.
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}
+
+function AppContent() {
+  const insets = useSafeAreaInsets();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState("home");
@@ -179,7 +194,7 @@ export default function App() {
       <TripSetupScreen
         user={user}
         pendingInviteCode={null}
-	onBack={() => setScreen("dashboard")}
+        onBack={() => setScreen("dashboard")}
         onTripReady={(trip) => {
           setActiveTrip(trip);
           setAllTrips((prev) => [trip, ...prev.filter((t) => t.id !== trip.id)]);
@@ -225,7 +240,7 @@ export default function App() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
       <Text style={styles.emoji}>🧳</Text>
       <Text style={styles.title}>GoTogether</Text>
       <Text style={styles.subtitle}>Семейни пътувания без главоболие</Text>
@@ -272,7 +287,7 @@ const styles = StyleSheet.create({
   loading: { flex: 1, backgroundColor: "#1D9E75", alignItems: "center", justifyContent: "center" },
   loadingEmoji: { fontSize: 64 },
   loadingText: { fontSize: 24, fontWeight: "bold", color: "#fff", marginTop: 12 },
-  container: { flex: 1, backgroundColor: "#1D9E75", alignItems: "center", justifyContent: "center", padding: 24 },
+  container: { flex: 1, backgroundColor: "#1D9E75", alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
   emoji: { fontSize: 72, marginBottom: 16 },
   title: { fontSize: 36, fontWeight: "bold", color: "#fff", marginBottom: 8 },
   subtitle: { fontSize: 16, color: "#E1F5EE", textAlign: "center", marginBottom: 48 },
