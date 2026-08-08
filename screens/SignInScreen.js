@@ -4,11 +4,15 @@ import {
   KeyboardAvoidingView, Platform, ScrollView, TouchableWithoutFeedback, Keyboard,
 } from "react-native";
 import { useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 
 const OTP_LENGTH = 6;
 
 export default function SignInScreen({ onSignIn, pendingInviteCode }) {
+  // Съдържанието е центрирано, но при отворена клавиатура на Android може да
+  // опре в status/navigation bar — insets гарантират минимално отстояние.
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -174,7 +178,10 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <ScrollView
-          contentContainerStyle={styles.container}
+          contentContainerStyle={[
+            styles.container,
+            { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           {renderContent()}
@@ -188,7 +195,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: "#1D9E75" },
   container: {
     flexGrow: 1, backgroundColor: "#1D9E75",
-    alignItems: "center", justifyContent: "center", padding: 24,
+    alignItems: "center", justifyContent: "center", paddingHorizontal: 24,
   },
   emoji: { fontSize: 64, marginBottom: 16 },
   title: { fontSize: 28, fontWeight: "bold", color: "#fff", marginBottom: 8, textAlign: "center" },
