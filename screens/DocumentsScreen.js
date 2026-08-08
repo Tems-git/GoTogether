@@ -3,6 +3,7 @@ import {
   StyleSheet, Text, View, TouchableOpacity,
   ScrollView, ActivityIndicator, Alert, Linking,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import { supabase } from "../lib/supabase";
 
@@ -24,6 +25,9 @@ function guessDocType(name = "") {
 }
 
 export default function DocumentsScreen({ onBack, tripId, userId }) {
+  // Реални safe area отстояния — status bar отгоре, navigation bar отдолу.
+  // Без тях Android навигационната лента застъпва бутона "Качи документ".
+  const insets = useSafeAreaInsets();
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -102,7 +106,10 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40 }]}
+    >
       <TouchableOpacity onPress={onBack} style={styles.back}>
         <Text style={styles.backText}>← Назад</Text>
       </TouchableOpacity>
@@ -158,7 +165,7 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F5F5" },
-  scroll: { padding: 24, paddingTop: 60, paddingBottom: 40 },
+  scroll: { padding: 24 },
   back: { marginBottom: 16 },
   backText: { color: "#1D9E75", fontSize: 16 },
   title: { fontSize: 26, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
