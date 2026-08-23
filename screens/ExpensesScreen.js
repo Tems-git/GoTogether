@@ -4,6 +4,7 @@ import {
   Modal, TextInput, ActivityIndicator, Alert, FlatList,
 } from "react-native";import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
+import { colors } from "../theme/tokens";
 
 const DEV_MEMBERS = [
   { user_id: "00000000-0000-0000-0000-000000000002", display_name: "Теmelko", weight: 2 },
@@ -452,7 +453,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       )}
 
       {loading ? (
-        <ActivityIndicator color="#1D9E75" style={{ marginTop: 30 }} />
+        <ActivityIndicator color={colors.brand600} style={{ marginTop: 30 }} />
       ) : expenses.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyEmoji}>💰</Text>
@@ -473,13 +474,13 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                   <Text style={[styles.expDesc, settled && styles.expDescSettled]}>{exp.description}</Text>
                   <View style={styles.expMetaRow}>
                     <Text style={styles.expMetaText}>{cat.label} · {formatDate(exp.created_at)} · </Text>
-                    <Text style={[styles.expMetaPayer, { color: settled ? "#aaa" : payerColor }]}>
+                    <Text style={[styles.expMetaPayer, { color: settled ? colors.text400 : payerColor }]}>
                       {memberName(exp.paid_by)}
                     </Text>
                   </View>
                 </View>
                 <View style={styles.expRight}>
-                  <Text style={[styles.expAmount, settled && { color: "#aaa" }]}>{formatMoney(Number(exp.amount), expCurrency)}</Text>
+                  <Text style={[styles.expAmount, settled && { color: colors.text400 }]}>{formatMoney(Number(exp.amount), expCurrency)}</Text>
                   {exp.paid_by === userId && !settled && (
                     <TouchableOpacity onPress={() => handleDelete(exp.id)}>
                       <Text style={styles.deleteBtn}>🗑</Text>
@@ -527,7 +528,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                 <TextInput
                   style={styles.currencySearchInput}
                   placeholder="Търси по код или име..."
-                  placeholderTextColor="#bbb"
+                  placeholderTextColor={colors.text400}
                   value={currencySearch}
                   onChangeText={setCurrencySearch}
                   autoCapitalize="characters"
@@ -555,12 +556,12 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
               <View>
                 <Text style={styles.label}>Описание</Text>
                 <TextInput style={styles.input} placeholder="Напр. Хотел Хилтън"
-                  value={desc} onChangeText={setDesc} placeholderTextColor="#bbb" />
+                  value={desc} onChangeText={setDesc} placeholderTextColor={colors.text400} />
 
                 <Text style={styles.label}>Сума</Text>
                 <View style={styles.amountRow}>
                   <TextInput style={[styles.input, styles.amountInput]} placeholder="0.00" keyboardType="decimal-pad"
-                    value={amount} onChangeText={setAmount} placeholderTextColor="#bbb" />
+                    value={amount} onChangeText={setAmount} placeholderTextColor={colors.text400} />
                   <TouchableOpacity style={styles.currencyBtn} onPress={() => setCurrencyPickerOpen(true)}>
                     <Text style={styles.currencyBtnText}>{currencyLabel(currency)}</Text>
                     <Text style={styles.currencyBtnChevron}>▾</Text>
@@ -613,7 +614,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                       <View style={styles.checkInfo}>
                         <Text style={[
                           styles.checkLabel,
-                          isPayer && { color: "#aaa" },
+                          isPayer && { color: colors.text400 },
                           !isPayer && checked && { color }
                         ]}>
                           {m.display_name}
@@ -621,7 +622,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                           {isPayer ? " (платил)" : ""}
                         </Text>
                         {preview && (
-                          <Text style={[styles.checkShare, { color: isPayer ? "#aaa" : color }]}>{formatMoney(preview.share, currency)}</Text>
+                          <Text style={[styles.checkShare, { color: isPayer ? colors.text400 : color }]}>{formatMoney(preview.share, currency)}</Text>
                         )}
                       </View>
                     </TouchableOpacity>
@@ -643,7 +644,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                     <Text style={styles.btnCancelText}>Отказ</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.btnSave} onPress={handleSave} disabled={saving}>
-                    {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnSaveText}>Запази</Text>}
+                    {saving ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.btnSaveText}>Запази</Text>}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -692,7 +693,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                       disabled={settling === i}
                     >
                       {settling === i
-                        ? <ActivityIndicator size="small" color="#fff" />
+                        ? <ActivityIndicator size="small" color={colors.onBrand} />
                         : <Text style={styles.settleBtnText}>✓ Получих парите</Text>}
                     </TouchableOpacity>
                   ) : iAmAdminForThis ? (
@@ -702,7 +703,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                       disabled={settling === i}
                     >
                       {settling === i
-                        ? <ActivityIndicator size="small" color="#1D9E75" />
+                        ? <ActivityIndicator size="small" color={colors.brand600} />
                         : <Text style={styles.settleBtnAdminText}>✓ Потвърди като организатор</Text>}
                     </TouchableOpacity>
                   ) : iAmSender ? (
@@ -728,116 +729,116 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F5F5F5" },
+  container: { flex: 1, backgroundColor: colors.bg },
   scroll: { padding: 24 },
   back: { marginBottom: 16 },
-  backText: { color: "#1D9E75", fontSize: 16 },
-  title: { fontSize: 26, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
-  subtitle: { fontSize: 14, color: "#888", marginBottom: 24 },
-  summary: { backgroundColor: "#1D9E75", borderRadius: 16, padding: 20, flexDirection: "row", marginBottom: 10 },
+  backText: { color: colors.brand600, fontSize: 16 },
+  title: { fontSize: 26, fontWeight: "bold", color: colors.text900, marginBottom: 8 },
+  subtitle: { fontSize: 14, color: colors.text600, marginBottom: 24 },
+  summary: { backgroundColor: colors.brand600, borderRadius: 16, padding: 20, flexDirection: "row", marginBottom: 10 },
   summaryItem: { flex: 1, alignItems: "center" },
-  summaryVal: { fontSize: 16, fontWeight: "bold", color: "#fff" },
-  summaryLbl: { fontSize: 11, color: "#E1F5EE", marginTop: 4 },
+  summaryVal: { fontSize: 16, fontWeight: "bold", color: colors.onBrand },
+  summaryLbl: { fontSize: 11, color: colors.onBrandMuted, marginTop: 4 },
   divider: { width: 0.5, backgroundColor: "rgba(255,255,255,0.3)" },
   spentRow: { flexDirection: "row", marginBottom: 14 },
   spentChip: {
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: "#fff", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+    backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
     marginRight: 8,
   },
   spentDot: { width: 8, height: 8, borderRadius: 4 },
-  spentName: { fontSize: 12, color: "#555", fontWeight: "500" },
+  spentName: { fontSize: 12, color: colors.text600, fontWeight: "500" },
   spentAmt: { fontSize: 12, fontWeight: "700" },
-  settledBanner: { backgroundColor: "#E8F8F0", borderRadius: 12, padding: 14, marginBottom: 16, alignItems: "center" },
-  settledBannerText: { color: "#1D9E75", fontWeight: "bold", fontSize: 15 },
-  settleCard: { backgroundColor: "#fff", borderRadius: 14, padding: 16, marginBottom: 16, borderLeftWidth: 4, borderLeftColor: "#1D9E75" },
-  settleTitle: { fontSize: 15, fontWeight: "bold", color: "#1a1a1a" },
-  settleHint: { fontSize: 12, color: "#888", marginTop: 4 },
-  empty: { alignItems: "center", padding: 40, backgroundColor: "#fff", borderRadius: 16, marginBottom: 20 },
+  settledBanner: { backgroundColor: colors.brand50, borderRadius: 12, padding: 14, marginBottom: 16, alignItems: "center" },
+  settledBannerText: { color: colors.brand600, fontWeight: "bold", fontSize: 15 },
+  settleCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 16, marginBottom: 16, borderLeftWidth: 4, borderLeftColor: colors.brand600 },
+  settleTitle: { fontSize: 15, fontWeight: "bold", color: colors.text900 },
+  settleHint: { fontSize: 12, color: colors.text600, marginTop: 4 },
+  empty: { alignItems: "center", padding: 40, backgroundColor: colors.surface, borderRadius: 16, marginBottom: 20 },
   emptyEmoji: { fontSize: 48, marginBottom: 12 },
-  emptyTitle: { fontSize: 16, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
-  emptyText: { fontSize: 14, color: "#888", textAlign: "center", lineHeight: 20 },
+  emptyTitle: { fontSize: 16, fontWeight: "bold", color: colors.text900, marginBottom: 8 },
+  emptyText: { fontSize: 14, color: colors.text600, textAlign: "center", lineHeight: 20 },
   list: { gap: 10, marginBottom: 20 },
-  expRow: { backgroundColor: "#fff", borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
-  expRowSettled: { backgroundColor: "#F9F9F9", opacity: 0.7 },
+  expRow: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  expRowSettled: { backgroundColor: colors.bg, opacity: 0.7 },
   expEmoji: { fontSize: 26 },
   expInfo: { flex: 1 },
-  expDesc: { fontSize: 14, fontWeight: "600", color: "#1a1a1a" },
-  expDescSettled: { textDecorationLine: "line-through", color: "#aaa" },
+  expDesc: { fontSize: 14, fontWeight: "600", color: colors.text900 },
+  expDescSettled: { textDecorationLine: "line-through", color: colors.text400 },
   expMetaRow: { flexDirection: "row", alignItems: "center", marginTop: 2, flexWrap: "wrap" },
-  expMetaText: { fontSize: 11, color: "#888" },
+  expMetaText: { fontSize: 11, color: colors.text600 },
   expMetaPayer: { fontSize: 11, fontWeight: "700" },
   expRight: { alignItems: "flex-end", gap: 4 },
-  expAmount: { fontSize: 15, fontWeight: "bold", color: "#1D9E75" },
+  expAmount: { fontSize: 15, fontWeight: "bold", color: colors.brand600 },
   deleteBtn: { fontSize: 16 },
-  btn: { backgroundColor: "#1D9E75", padding: 16, borderRadius: 14, alignItems: "center" },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  btn: { backgroundColor: colors.brand600, padding: 16, borderRadius: 14, alignItems: "center" },
+  btnText: { color: colors.onBrand, fontSize: 16, fontWeight: "bold" },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modalScroll: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "90%" },
+  modalScroll: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "90%" },
   modalScrollContent: { padding: 24, paddingBottom: 60, gap: 8 },
-  modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
-  label: { fontSize: 13, fontWeight: "600", color: "#555", marginTop: 6 },
-  input: { backgroundColor: "#F5F5F5", borderRadius: 10, padding: 12, fontSize: 16, color: "#1a1a1a" },
+  modalTitle: { fontSize: 20, fontWeight: "bold", color: colors.text900, marginBottom: 8 },
+  label: { fontSize: 13, fontWeight: "600", color: colors.text600, marginTop: 6 },
+  input: { backgroundColor: colors.bg, borderRadius: 10, padding: 12, fontSize: 16, color: colors.text900 },
   amountRow: { flexDirection: "row", gap: 8, alignItems: "stretch" },
   amountInput: { flex: 1 },
   currencyBtn: {
     flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: "#F5F5F5", borderRadius: 10, paddingHorizontal: 14, justifyContent: "center",
+    backgroundColor: colors.bg, borderRadius: 10, paddingHorizontal: 14, justifyContent: "center",
   },
-  currencyBtnText: { fontSize: 15, fontWeight: "600", color: "#1D9E75" },
-  currencyBtnChevron: { fontSize: 11, color: "#1D9E75" },
+  currencyBtnText: { fontSize: 15, fontWeight: "600", color: colors.brand600 },
+  currencyBtnChevron: { fontSize: 11, color: colors.brand600 },
   chips: { flexDirection: "row", marginVertical: 6 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "#F0F0F0", marginRight: 8 },
-  chipActive: { backgroundColor: "#1D9E75" },
-  chipText: { fontSize: 13, color: "#555" },
-  chipTextActive: { color: "#fff", fontWeight: "600" },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.border, marginRight: 8 },
+  chipActive: { backgroundColor: colors.brand600 },
+  chipText: { fontSize: 13, color: colors.text600 },
+  chipTextActive: { color: colors.onBrand, fontWeight: "600" },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8, paddingHorizontal: 4 },
   checkInfo: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: "#ddd", alignItems: "center", justifyContent: "center" },
-  checkboxDisabled: { backgroundColor: "#f0f0f0", borderColor: "#e0e0e0" },
-  checkmark: { color: "#fff", fontSize: 14, fontWeight: "bold" },
-  checkmarkDisabled: { color: "#ccc", fontSize: 14 },
+  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  checkboxDisabled: { backgroundColor: colors.border, borderColor: colors.border },
+  checkmark: { color: colors.onBrand, fontSize: 14, fontWeight: "bold" },
+  checkmarkDisabled: { color: colors.text400, fontSize: 14 },
   checkLabel: { fontSize: 14, fontWeight: "500" },
   checkShare: { fontSize: 12, fontWeight: "700" },
-  splitNote: { backgroundColor: "#F0F9F5", borderRadius: 10, padding: 10, marginTop: 4 },
-  splitNoteText: { fontSize: 12, color: "#1D9E75", fontWeight: "600" },
+  splitNote: { backgroundColor: colors.brand50, borderRadius: 10, padding: 10, marginTop: 4 },
+  splitNoteText: { fontSize: 12, color: colors.brand600, fontWeight: "600" },
   modalBtns: { flexDirection: "row", gap: 10, marginTop: 16 },
-  btnCancel: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
-  btnCancelText: { color: "#888", fontSize: 15 },
-  btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#1D9E75", alignItems: "center" },
-  btnSaveText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
-  settleSubtitle: { fontSize: 13, color: "#888", marginBottom: 4 },
-  settleRatesNote: { fontSize: 11, color: "#bbb", marginBottom: 10 },
-  settleRow: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 12, marginBottom: 10 },
+  btnCancel: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
+  btnCancelText: { color: colors.text600, fontSize: 15 },
+  btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: colors.brand600, alignItems: "center" },
+  btnSaveText: { color: colors.onBrand, fontSize: 15, fontWeight: "bold" },
+  settleSubtitle: { fontSize: 13, color: colors.text600, marginBottom: 4 },
+  settleRatesNote: { fontSize: 11, color: colors.text400, marginBottom: 10 },
+  settleRow: { backgroundColor: colors.bg, borderRadius: 12, padding: 12, marginBottom: 10 },
   settleTop: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
   settleFrom: { fontWeight: "700", flex: 1, fontSize: 13 },
-  settleArrow: { color: "#888" },
+  settleArrow: { color: colors.text600 },
   settleTo: { fontWeight: "700", fontSize: 13 },
   settleLeftLabel: { fontSize: 10, color: "#FF6B6B", fontStyle: "italic" },
   settleAmtCol: { alignItems: "flex-end" },
-  settleAmt: { fontWeight: "bold", color: "#1a1a1a", fontSize: 13 },
-  settleAmtLocal: { fontSize: 11, color: "#888", marginTop: 1 },
-  settleBtn: { backgroundColor: "#1D9E75", padding: 12, borderRadius: 10, alignItems: "center" },
-  settleBtnText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
+  settleAmt: { fontWeight: "bold", color: colors.text900, fontSize: 13 },
+  settleAmtLocal: { fontSize: 11, color: colors.text600, marginTop: 1 },
+  settleBtn: { backgroundColor: colors.brand600, padding: 12, borderRadius: 10, alignItems: "center" },
+  settleBtnText: { color: colors.onBrand, fontSize: 14, fontWeight: "bold" },
   settleBtnAdmin: {
-    backgroundColor: "#fff", padding: 12, borderRadius: 10, alignItems: "center",
-    borderWidth: 1.5, borderColor: "#1D9E75",
+    backgroundColor: colors.surface, padding: 12, borderRadius: 10, alignItems: "center",
+    borderWidth: 1.5, borderColor: colors.brand600,
   },
-  settleBtnAdminText: { color: "#1D9E75", fontSize: 14, fontWeight: "bold" },
-  settlePending: { backgroundColor: "#F0F0F0", padding: 12, borderRadius: 10, alignItems: "center" },
-  settlePendingText: { color: "#888", fontSize: 13 },
-  currencySectionLabel: { fontSize: 12, fontWeight: "700", color: "#888", marginTop: 12, marginBottom: 8 },
+  settleBtnAdminText: { color: colors.brand600, fontSize: 14, fontWeight: "bold" },
+  settlePending: { backgroundColor: colors.border, padding: 12, borderRadius: 10, alignItems: "center" },
+  settlePendingText: { color: colors.text600, fontSize: 13 },
+  currencySectionLabel: { fontSize: 12, fontWeight: "700", color: colors.text600, marginTop: 12, marginBottom: 8 },
   currencyCommonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  currencyCommonChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: "#F5F5F5" },
-  currencyCommonChipActive: { backgroundColor: "#1D9E75" },
-  currencyCommonChipText: { fontSize: 14, fontWeight: "600", color: "#555" },
-  currencyCommonChipTextActive: { color: "#fff" },
-  currencySearchInput: { backgroundColor: "#F5F5F5", borderRadius: 10, padding: 12, fontSize: 15, color: "#1a1a1a", marginBottom: 8 },
+  currencyCommonChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.bg },
+  currencyCommonChipActive: { backgroundColor: colors.brand600 },
+  currencyCommonChipText: { fontSize: 14, fontWeight: "600", color: colors.text600 },
+  currencyCommonChipTextActive: { color: colors.onBrand },
+  currencySearchInput: { backgroundColor: colors.bg, borderRadius: 10, padding: 12, fontSize: 15, color: colors.text900, marginBottom: 8 },
   currencyListInline: { maxHeight: 280 },
-  currencyRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, paddingHorizontal: 4, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
-  currencyRowActive: { backgroundColor: "#F0F9F5" },
-  currencyRowCode: { fontSize: 14, fontWeight: "700", color: "#1a1a1a", width: 48 },
-  currencyRowCodeActive: { color: "#1D9E75" },
-  currencyRowName: { fontSize: 13, color: "#888", flex: 1 },
-  currencyEmpty: { textAlign: "center", color: "#bbb", fontSize: 13, paddingVertical: 20 },
+  currencyRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, paddingHorizontal: 4, borderBottomWidth: 0.5, borderBottomColor: colors.border },
+  currencyRowActive: { backgroundColor: colors.brand50 },
+  currencyRowCode: { fontSize: 14, fontWeight: "700", color: colors.text900, width: 48 },
+  currencyRowCodeActive: { color: colors.brand600 },
+  currencyRowName: { fontSize: 13, color: colors.text600, flex: 1 },
+  currencyEmpty: { textAlign: "center", color: colors.text400, fontSize: 13, paddingVertical: 20 },
 });

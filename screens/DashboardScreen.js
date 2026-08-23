@@ -6,6 +6,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { supabase } from "../lib/supabase";import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DatePicker from "../components/DatePicker";
+import { colors } from "../theme/tokens";
 
 const MAX_VISIBLE = 4;
 const LOCAL_CURRENCY_OPTIONS = ["EUR", "USD", "GBP", "CHF"];
@@ -402,7 +403,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   }
 
   const cards = [
-    { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: "#E1F5EE", badge: 0 },
+    { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: colors.brand50, badge: 0 },
     { emoji: "💬", title: "Чат", sub: "Групов чат", onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
     { emoji: "📁", title: "Документи", sub: "Резервации и билети", onPress: onDocuments, color: "#E6F1FB", badge: 0 },
     { emoji: "💸", title: "Разходи", sub: "Кой колко дължи", onPress: onExpenses, color: "#FAEEDA", badge: 0 },
@@ -575,7 +576,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               const canRemove = isOwner && !isMe;
               return (
                 <View key={m.user_id} style={styles.memberRow}>
-                  <View style={[styles.avatarLg, { backgroundColor: isMe ? "#1D9E75" : COLORS[i % COLORS.length] }]}>
+                  <View style={[styles.avatarLg, { backgroundColor: isMe ? colors.brand600 : COLORS[i % COLORS.length] }]}>
                     <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
                   </View>
                   <View style={styles.memberInfo}>
@@ -588,7 +589,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                   <View style={styles.memberRight}>
                     <View style={styles.weightControl}>
                       <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={weight <= 1}>
-                        <Text style={[styles.weightBtnText, weight <= 1 && { color: "#ccc" }]}>−</Text>
+                        <Text style={[styles.weightBtnText, weight <= 1 && { color: colors.text400 }]}>−</Text>
                       </TouchableOpacity>
                       <Text style={styles.weightVal}>{weight}</Text>
                       <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)}>
@@ -646,7 +647,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               value={newName}
               onChangeText={setNewName}
               placeholder="Новото ти име"
-              placeholderTextColor="#bbb"
+              placeholderTextColor={colors.text400}
               autoFocus
               returnKeyType="done"
               onSubmitEditing={handleSaveName}
@@ -675,7 +676,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               value={tripName}
               onChangeText={setTripName}
               placeholder="Напр. Лято 2025 в Гърция"
-              placeholderTextColor="#bbb"
+              placeholderTextColor={colors.text400}
             />
 
             <Text style={styles.editLabel}>Дестинация</Text>
@@ -684,7 +685,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               value={tripDestination}
               onChangeText={setTripDestination}
               placeholder="Напр. Солун"
-              placeholderTextColor="#bbb"
+              placeholderTextColor={colors.text400}
             />
 
             <Text style={styles.editLabel}>Дати</Text>
@@ -727,7 +728,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                 <Text style={styles.btnCancelText}>Отказ</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.btnSave} onPress={handleSaveTrip} disabled={savingTrip}>
-                {savingTrip ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnSaveText}>Запази</Text>}
+                {savingTrip ? <ActivityIndicator color={colors.brand600} /> : <Text style={styles.btnSaveText}>Запази</Text>}
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -795,25 +796,25 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  container: { flex: 1, backgroundColor: "#F5F5F5" },
+  container: { flex: 1, backgroundColor: colors.bg },
   scroll: { padding: 24 },
   header: { alignItems: "center", marginBottom: 20 },
   headerEmoji: { fontSize: 44, marginBottom: 6 },
-  appName: { fontSize: 22, fontWeight: "bold", color: "#1D9E75" },
+  appName: { fontSize: 22, fontWeight: "bold", color: colors.brand600 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
-  displayName: { fontSize: 14, color: "#555", fontWeight: "500" },
+  displayName: { fontSize: 14, color: colors.text600, fontWeight: "500" },
   editIcon: { fontSize: 12 },
   tripCard: {
-    backgroundColor: "#1D9E75", borderRadius: 20, padding: 20, marginBottom: 24,
-    shadowColor: "#1D9E75", shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+    backgroundColor: colors.brand600, borderRadius: 20, padding: 20, marginBottom: 24,
+    shadowColor: colors.brand600, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
   },
   tripTop: { flexDirection: "row", alignItems: "flex-start" },
   tripInfo: { flex: 1 },
   tripNameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
-  tripName: { fontSize: 20, fontWeight: "bold", color: "#fff" },
+  tripName: { fontSize: 20, fontWeight: "bold", color: colors.onBrand },
   tripEditIcon: { fontSize: 12, opacity: 0.7 },
-  tripDest: { fontSize: 13, color: "#E1F5EE", marginBottom: 3 },
-  tripDates: { fontSize: 13, color: "#E1F5EE" },
+  tripDest: { fontSize: 13, color: colors.onBrandMuted, marginBottom: 3 },
+  tripDates: { fontSize: 13, color: colors.onBrandMuted },
   statusBadge: {
     alignSelf: "flex-start",
     marginTop: 8,
@@ -826,107 +827,107 @@ const styles = StyleSheet.create({
   statusBadge_upcoming: { backgroundColor: "rgba(255,255,255,0.2)" },
   statusBadge_past: { backgroundColor: "rgba(0,0,0,0.2)" },
   statusBadge_undated: { display: "none" },
-  statusBadgeText: { fontSize: 12, color: "#fff", fontWeight: "600" },
+  statusBadgeText: { fontSize: 12, color: colors.onBrand, fontWeight: "600" },
   inviteBox: { alignItems: "center", marginLeft: 12 },
-  inviteLabel: { fontSize: 10, color: "#E1F5EE", marginBottom: 4, letterSpacing: 1 },
+  inviteLabel: { fontSize: 10, color: colors.onBrandMuted, marginBottom: 4, letterSpacing: 1 },
   inviteCode: {
-    fontSize: 22, fontWeight: "bold", color: "#fff", letterSpacing: 4, textAlign: "center",
+    fontSize: 22, fontWeight: "bold", color: colors.onBrand, letterSpacing: 4, textAlign: "center",
     backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
   },
-  inviteCopy: { fontSize: 10, color: "#E1F5EE", textAlign: "center", marginTop: 4 },
+  inviteCopy: { fontSize: 10, color: colors.onBrandMuted, textAlign: "center", marginTop: 4 },
   membersRow: { flexDirection: "row", alignItems: "center", marginTop: 14 },
-  avatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#1D9E75" },
-  avatarText: { fontSize: 11, fontWeight: "bold", color: "#fff" },
+  avatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.brand600 },
+  avatarText: { fontSize: 11, fontWeight: "bold", color: colors.onBrand },
   avatarExtra: { backgroundColor: "rgba(255,255,255,0.3)" },
-  avatarExtraText: { fontSize: 10, fontWeight: "bold", color: "#fff" },
-  membersLabel: { fontSize: 12, color: "#E1F5EE", marginLeft: 10 },
+  avatarExtraText: { fontSize: 10, fontWeight: "bold", color: colors.onBrand },
+  membersLabel: { fontSize: 12, color: colors.onBrandMuted, marginLeft: 10 },
   switchBtn: { marginTop: 14, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 10, padding: 10, alignItems: "center" },
-  switchBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  switchBtnText: { color: colors.onBrand, fontSize: 13, fontWeight: "600" },
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 12 },
   card: { width: "47%", borderRadius: 16, padding: 20, alignItems: "center" },
   cardEmojiWrap: { position: "relative", marginBottom: 8 },
   cardEmoji: { fontSize: 32 },
   badge: {
     position: "absolute", top: -4, right: -8,
-    backgroundColor: "#FF3B30", borderRadius: 10,
+    backgroundColor: colors.owe600, borderRadius: 10,
     minWidth: 18, height: 18, alignItems: "center", justifyContent: "center",
     paddingHorizontal: 4,
   },
-  badgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
-  cardTitle: { fontSize: 15, fontWeight: "bold", color: "#1a1a1a" },
-  cardSub: { fontSize: 12, color: "#666", marginTop: 4, textAlign: "center", fontWeight: "600" },
-  shareBtn: { backgroundColor: "#fff", padding: 14, borderRadius: 12, alignItems: "center", marginBottom: 10, borderWidth: 1, borderColor: "#e0e0e0" },
-  shareBtnText: { color: "#1D9E75", fontSize: 14, fontWeight: "600" },
-  signOut: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center" },
-  signOutText: { color: "#aaa", fontSize: 14 },
+  badgeText: { color: colors.onBrand, fontSize: 10, fontWeight: "bold" },
+  cardTitle: { fontSize: 15, fontWeight: "bold", color: colors.text900 },
+  cardSub: { fontSize: 12, color: colors.text600, marginTop: 4, textAlign: "center", fontWeight: "600" },
+  shareBtn: { backgroundColor: colors.surface, padding: 14, borderRadius: 12, alignItems: "center", marginBottom: 10, borderWidth: 1, borderColor: colors.border },
+  shareBtnText: { color: colors.brand600, fontSize: 14, fontWeight: "600" },
+  signOut: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
+  signOutText: { color: colors.text400, fontSize: 14 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%" },
+  modal: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%" },
   modalContent: { padding: 24, paddingBottom: 40 },
-  modalInner: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: "85%" },
-  modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a1a", marginBottom: 4 },
-  modalSubtitle: { fontSize: 12, color: "#888", marginBottom: 16 },
-  editTripModal: { backgroundColor: "#1D9E75" },
-  editLabel: { fontSize: 13, color: "#E1F5EE", fontWeight: "600", marginTop: 12, marginBottom: 6 },
+  modalInner: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: "85%" },
+  modalTitle: { fontSize: 20, fontWeight: "bold", color: colors.text900, marginBottom: 4 },
+  modalSubtitle: { fontSize: 12, color: colors.text600, marginBottom: 16 },
+  editTripModal: { backgroundColor: colors.brand600 },
+  editLabel: { fontSize: 13, color: colors.onBrandMuted, fontWeight: "600", marginTop: 12, marginBottom: 6 },
   editInput: {
-    backgroundColor: "#fff", borderRadius: 12, padding: 14,
-    fontSize: 16, color: "#1a1a1a", marginBottom: 4,
+    backgroundColor: colors.surface, borderRadius: 12, padding: 14,
+    fontSize: 16, color: colors.text900, marginBottom: 4,
   },
   editDateRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   editDateCol: { flex: 1 },
-  editDateSep: { color: "#E1F5EE", fontSize: 16, fontWeight: "600" },
+  editDateSep: { color: colors.onBrandMuted, fontSize: 16, fontWeight: "600" },
   editCurrencyRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   editCurrencyChip: {
     flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.15)",
   },
-  editCurrencyChipActive: { backgroundColor: "#fff" },
-  editCurrencyChipText: { fontSize: 14, fontWeight: "600", color: "#fff" },
-  editCurrencyChipTextActive: { color: "#1D9E75" },
-  memberRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
+  editCurrencyChipActive: { backgroundColor: colors.surface },
+  editCurrencyChipText: { fontSize: 14, fontWeight: "600", color: colors.onBrand },
+  editCurrencyChipTextActive: { color: colors.brand600 },
+  memberRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: colors.border },
   avatarLg: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  avatarLgText: { fontSize: 14, fontWeight: "bold", color: "#fff" },
+  avatarLgText: { fontSize: 14, fontWeight: "bold", color: colors.onBrand },
   memberInfo: { flex: 1 },
-  memberRowName: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
+  memberRowName: { fontSize: 15, fontWeight: "600", color: colors.text900 },
   memberBadges: { flexDirection: "row", gap: 6, marginTop: 2 },
-  memberYou: { fontSize: 11, color: "#1D9E75", backgroundColor: "#E1F5EE", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  memberOwner: { fontSize: 11, color: "#888", backgroundColor: "#F5F5F5", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  memberYou: { fontSize: 11, color: colors.brand600, backgroundColor: colors.brand50, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  memberOwner: { fontSize: 11, color: colors.text600, backgroundColor: colors.bg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   memberRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   weightControl: { flexDirection: "row", alignItems: "center", gap: 6 },
-  weightBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#F0F0F0", alignItems: "center", justifyContent: "center" },
-  weightBtnText: { fontSize: 18, fontWeight: "bold", color: "#1D9E75", lineHeight: 22 },
-  weightVal: { fontSize: 16, fontWeight: "bold", color: "#1a1a1a", minWidth: 20, textAlign: "center" },
+  weightBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.border, alignItems: "center", justifyContent: "center" },
+  weightBtnText: { fontSize: 18, fontWeight: "bold", color: colors.brand600, lineHeight: 22 },
+  weightVal: { fontSize: 16, fontWeight: "bold", color: colors.text900, minWidth: 20, textAlign: "center" },
   removeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#FFE8E8", alignItems: "center", justifyContent: "center" },
-  removeBtnText: { fontSize: 13, color: "#FF3B30", fontWeight: "bold" },
-  blockedSection: { marginTop: 20, borderTopWidth: 0.5, borderTopColor: "#f0f0f0", paddingTop: 16 },
-  blockedTitle: { fontSize: 13, fontWeight: "700", color: "#888", marginBottom: 10 },
-  blockedEmpty: { fontSize: 13, color: "#ccc", fontStyle: "italic" },
-  blockedRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: "#f0f0f0" },
-  blockedName: { fontSize: 14, color: "#aaa", flex: 1 },
-  unblockBtn: { backgroundColor: "#E1F5EE", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  unblockBtnText: { color: "#1D9E75", fontSize: 12, fontWeight: "600" },
-  weightHint: { fontSize: 12, color: "#888", marginTop: 16, marginBottom: 8, textAlign: "center" },
-  nameInput: { backgroundColor: "#F5F5F5", borderRadius: 12, padding: 14, fontSize: 16, color: "#1a1a1a", marginBottom: 16 },
+  removeBtnText: { fontSize: 13, color: colors.owe600, fontWeight: "bold" },
+  blockedSection: { marginTop: 20, borderTopWidth: 0.5, borderTopColor: colors.border, paddingTop: 16 },
+  blockedTitle: { fontSize: 13, fontWeight: "700", color: colors.text600, marginBottom: 10 },
+  blockedEmpty: { fontSize: 13, color: colors.text400, fontStyle: "italic" },
+  blockedRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: colors.border },
+  blockedName: { fontSize: 14, color: colors.text400, flex: 1 },
+  unblockBtn: { backgroundColor: colors.brand50, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  unblockBtnText: { color: colors.brand600, fontSize: 12, fontWeight: "600" },
+  weightHint: { fontSize: 12, color: colors.text600, marginTop: 16, marginBottom: 8, textAlign: "center" },
+  nameInput: { backgroundColor: colors.bg, borderRadius: 12, padding: 14, fontSize: 16, color: colors.text900, marginBottom: 16 },
   modalBtns: { flexDirection: "row", gap: 10, marginTop: 20 },
-  btnCancel: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center", backgroundColor: "rgba(255,255,255,0.15)" },
-  btnCancelText: { color: "#fff", fontSize: 15 },
-  btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: "#fff", alignItems: "center" },
-  btnSaveText: { color: "#1D9E75", fontSize: 15, fontWeight: "bold" },
+  btnCancel: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: "center", backgroundColor: "rgba(255,255,255,0.15)" },
+  btnCancelText: { color: colors.onBrand, fontSize: 15 },
+  btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: colors.surface, alignItems: "center" },
+  btnSaveText: { color: colors.brand600, fontSize: 15, fontWeight: "bold" },
   tripList: { maxHeight: 400, marginBottom: 8 },
-  tripOption: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: "#F5F5F5" },
-  tripOptionActive: { backgroundColor: "#E1F5EE", borderWidth: 1.5, borderColor: "#1D9E75" },
+  tripOption: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: colors.bg },
+  tripOptionActive: { backgroundColor: colors.brand50, borderWidth: 1.5, borderColor: colors.brand600 },
   tripOptionPast: { backgroundColor: "#FAFAFA", opacity: 0.75 },
   tripOptionInfo: { flex: 1 },
-  tripOptionName: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
-  tripOptionNameActive: { color: "#1D9E75" },
-  tripOptionNamePast: { color: "#888" },
-  tripOptionDest: { fontSize: 12, color: "#888", marginTop: 2 },
-  tripOptionDestPast: { color: "#aaa" },
-  tripOptionStatus: { fontSize: 11, color: "#888", marginTop: 4, fontWeight: "600" },
-  tripOptionStatusActive: { color: "#1D9E75" },
-  tripOptionStatusPast: { color: "#aaa", fontWeight: "500" },
-  tripOptionCheck: { fontSize: 18, color: "#1D9E75", fontWeight: "bold" },
-  newTripBtn: { backgroundColor: "#1D9E75", padding: 14, borderRadius: 12, alignItems: "center", marginTop: 4, marginBottom: 8 },
-  newTripBtnText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
-  modalClose: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", alignItems: "center", marginTop: 8 },
-  modalCloseText: { color: "#888", fontSize: 15 },
+  tripOptionName: { fontSize: 15, fontWeight: "600", color: colors.text900 },
+  tripOptionNameActive: { color: colors.brand600 },
+  tripOptionNamePast: { color: colors.text600 },
+  tripOptionDest: { fontSize: 12, color: colors.text600, marginTop: 2 },
+  tripOptionDestPast: { color: colors.text400 },
+  tripOptionStatus: { fontSize: 11, color: colors.text600, marginTop: 4, fontWeight: "600" },
+  tripOptionStatusActive: { color: colors.brand600 },
+  tripOptionStatusPast: { color: colors.text400, fontWeight: "500" },
+  tripOptionCheck: { fontSize: 18, color: colors.brand600, fontWeight: "bold" },
+  newTripBtn: { backgroundColor: colors.brand600, padding: 14, borderRadius: 12, alignItems: "center", marginTop: 4, marginBottom: 8 },
+  newTripBtnText: { color: colors.onBrand, fontSize: 15, fontWeight: "bold" },
+  modalClose: { padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: "center", marginTop: 8 },
+  modalCloseText: { color: colors.text600, fontSize: 15 },
 });
