@@ -7,6 +7,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 import DatePicker from "../components/DatePicker";
+import { colors } from "../theme/tokens";
 
 // Местна валута на пътуването — показва се като втори ред до EUR сумите в
 // Разходи → Как да се изравним. EUR по подразбиране.
@@ -193,7 +194,7 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
             <TextInput
               style={styles.input}
               placeholder="Напр. Спас"
-              placeholderTextColor="#bbb"
+              placeholderTextColor={colors.text400}
               value={displayName}
               onChangeText={setDisplayName}
               autoCorrect={false}
@@ -201,7 +202,7 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
               onSubmitEditing={handleConfirmName}
             />
             <TouchableOpacity style={styles.btnPrimary} onPress={handleConfirmName} disabled={loading}>
-              {loading ? <ActivityIndicator color="#1D9E75" /> : <Text style={styles.btnPrimaryText}>Присъедини се →</Text>}
+              {loading ? <ActivityIndicator color={colors.brand600} /> : <Text style={styles.btnPrimaryText}>Присъедини се →</Text>}
             </TouchableOpacity>
           </View>
         </TouchableWithoutFeedback>
@@ -242,7 +243,7 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
             placeholder="Напр. Лято 2025 в Гърция"
             value={name}
             onChangeText={setName}
-            placeholderTextColor="#bbb"
+            placeholderTextColor={colors.text400}
           />
           <Text style={styles.label}>Дестинация</Text>
           <TextInput
@@ -250,7 +251,7 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
             placeholder="Напр. Солун"
             value={destination}
             onChangeText={setDestination}
-            placeholderTextColor="#bbb"
+            placeholderTextColor={colors.text400}
           />
           <Text style={styles.label}>Дати на пътуването</Text>
           <Text style={styles.hint}>По желание</Text>
@@ -288,7 +289,7 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
             ))}
           </View>
           <TouchableOpacity style={styles.btnPrimary} onPress={handleCreate} disabled={loading}>
-            {loading ? <ActivityIndicator color="#1D9E75" /> : <Text style={styles.btnPrimaryText}>Създай пътуване</Text>}
+            {loading ? <ActivityIndicator color={colors.brand600} /> : <Text style={styles.btnPrimaryText}>Създай пътуване</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.back} onPress={() => setMode(null)}>
             <Text style={styles.backText}>← Назад</Text>
@@ -306,10 +307,10 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
             onChangeText={setInviteCode}
             autoCapitalize="characters"
             maxLength={6}
-            placeholderTextColor="#bbb"
+            placeholderTextColor={colors.text400}
           />
           <TouchableOpacity style={styles.btnPrimary} onPress={handleJoin} disabled={loading}>
-            {loading ? <ActivityIndicator color="#1D9E75" /> : <Text style={styles.btnPrimaryText}>Присъедини се</Text>}
+            {loading ? <ActivityIndicator color={colors.brand600} /> : <Text style={styles.btnPrimaryText}>Присъедини се</Text>}
           </TouchableOpacity>
           {!pendingInviteCode && (
             <TouchableOpacity style={styles.back} onPress={() => setMode(null)}>
@@ -323,44 +324,44 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: "#1D9E75" },
-  container: { flex: 1, backgroundColor: "#1D9E75" },
+  flex: { flex: 1, backgroundColor: colors.brand600 },
+  container: { flex: 1, backgroundColor: colors.brand600 },
   namePad: { paddingHorizontal: 24 },
   scroll: { paddingHorizontal: 24, alignItems: "center", minHeight: "100%" },
   emoji: { fontSize: 64, marginBottom: 16, textAlign: "center" },
-  title: { fontSize: 28, fontWeight: "bold", color: "#fff", marginBottom: 8, textAlign: "center" },
-  subtitle: { fontSize: 15, color: "#E1F5EE", textAlign: "center", marginBottom: 40, lineHeight: 22, paddingHorizontal: 24 },
+  title: { fontSize: 28, fontWeight: "bold", color: colors.onBrand, marginBottom: 8, textAlign: "center" },
+  subtitle: { fontSize: 15, color: colors.onBrandMuted, textAlign: "center", marginBottom: 40, lineHeight: 22, paddingHorizontal: 24 },
   buttons: { width: "100%", gap: 12 },
   form: { width: "100%", gap: 8 },
-  label: { fontSize: 13, color: "#E1F5EE", fontWeight: "600", marginTop: 8, marginBottom: 4 },
+  label: { fontSize: 13, color: colors.onBrandMuted, fontWeight: "600", marginTop: 8, marginBottom: 4 },
   hint: { fontSize: 11, color: "rgba(225,245,238,0.7)", marginBottom: 8 },
   input: {
-    backgroundColor: "#fff", borderRadius: 12, padding: 14,
-    fontSize: 16, color: "#1a1a1a", marginBottom: 8, width: "100%",
+    backgroundColor: colors.surface, borderRadius: 12, padding: 14,
+    fontSize: 16, color: colors.text900, marginBottom: 8, width: "100%",
   },
   codeInput: { fontSize: 24, fontWeight: "bold", letterSpacing: 8, textAlign: "center" },
   dateRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
   dateCol: { flex: 1 },
-  dateSep: { color: "#E1F5EE", fontSize: 16, fontWeight: "600" },
+  dateSep: { color: colors.onBrandMuted, fontSize: 16, fontWeight: "600" },
   currencyRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   currencyChip: {
     flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.15)",
   },
-  currencyChipActive: { backgroundColor: "#fff" },
-  currencyChipText: { fontSize: 14, fontWeight: "600", color: "#fff" },
-  currencyChipTextActive: { color: "#1D9E75" },
+  currencyChipActive: { backgroundColor: colors.surface },
+  currencyChipText: { fontSize: 14, fontWeight: "600", color: colors.onBrand },
+  currencyChipTextActive: { color: colors.brand600 },
   btnPrimary: {
-    backgroundColor: "#fff", padding: 16, borderRadius: 14,
+    backgroundColor: colors.surface, padding: 16, borderRadius: 14,
     alignItems: "center", marginTop: 8, width: "100%",
   },
-  btnPrimaryText: { color: "#1D9E75", fontSize: 16, fontWeight: "bold" },
+  btnPrimaryText: { color: colors.brand600, fontSize: 16, fontWeight: "bold" },
   btnSecondary: {
     backgroundColor: "transparent", padding: 16, borderRadius: 14,
-    alignItems: "center", borderWidth: 1.5, borderColor: "#fff",
+    alignItems: "center", borderWidth: 1.5, borderColor: colors.onBrand,
   },
-  btnSecondaryText: { color: "#fff", fontSize: 16, fontWeight: "500" },
+  btnSecondaryText: { color: colors.onBrand, fontSize: 16, fontWeight: "500" },
   back: { marginTop: 12, alignItems: "center" },
   backTop: { alignSelf: "flex-start", marginBottom: 8 },
-  backText: { color: "#E1F5EE", fontSize: 15 },
+  backText: { color: colors.onBrandMuted, fontSize: 15 },
 });
