@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
+import { colors } from "../theme/tokens";
 
 export default function ChatScreen({ onBack, tripId, userId, tripName }) {
   // insets дава реалните височини на status bar (top) и navigation bar (bottom)
@@ -244,7 +245,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator color="#1D9E75" />
+          <ActivityIndicator color={colors.brand600} />
         </View>
       ) : (
         <FlatList
@@ -322,7 +323,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
               onChangeText={setEditText}
               multiline
               maxLength={500}
-              placeholderTextColor="#aaa"
+              placeholderTextColor={colors.text400}
             />
             <TouchableOpacity
               style={[styles.sendBtn, !editText.trim() && styles.sendBtnDisabled]}
@@ -338,7 +339,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
           <TextInput
             style={styles.input}
             placeholder="Напиши съобщение..."
-            placeholderTextColor="#aaa"
+            placeholderTextColor={colors.text400}
             value={text}
             onChangeText={setText}
             multiline
@@ -359,22 +360,22 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: "#F5F5F5" },
+  flex: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: "#fff", paddingBottom: 12,
-    paddingHorizontal: 16, borderBottomWidth: 0.5, borderBottomColor: "#e0e0e0",
+    backgroundColor: colors.surface, paddingBottom: 12,
+    paddingHorizontal: 16, borderBottomWidth: 0.5, borderBottomColor: colors.border,
   },
   backBtn: { marginRight: 12 },
-  backText: { color: "#1D9E75", fontSize: 16 },
+  backText: { color: colors.brand600, fontSize: 16 },
   headerInfo: { flex: 1 },
-  headerTitle: { fontSize: 17, fontWeight: "bold", color: "#1a1a1a" },
-  headerSub: { fontSize: 12, color: "#888", marginTop: 1 },
+  headerTitle: { fontSize: 17, fontWeight: "bold", color: colors.text900 },
+  headerSub: { fontSize: 12, color: colors.text600, marginTop: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   list: { padding: 16, paddingBottom: 8 },
   dateSep: { alignItems: "center", marginVertical: 12 },
   dateText: {
-    fontSize: 11, color: "#888", backgroundColor: "#e8e8e8",
+    fontSize: 11, color: colors.text600, backgroundColor: colors.border,
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
   },
   msgWrapper: { marginBottom: 8 },
@@ -386,61 +387,61 @@ const styles = StyleSheet.create({
     backgroundColor: "#4ECDC4", alignItems: "center", justifyContent: "center",
     marginRight: 8,
   },
-  avatarText: { fontSize: 13, fontWeight: "bold", color: "#fff" },
+  avatarText: { fontSize: 13, fontWeight: "bold", color: colors.onBrand },
   bubble: {
-    maxWidth: "75%", backgroundColor: "#fff",
+    maxWidth: "75%", backgroundColor: colors.surface,
     borderRadius: 16, borderBottomLeftRadius: 4,
     padding: 10, paddingBottom: 8,
     shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
   },
   bubbleMe: {
-    backgroundColor: "#1D9E75",
+    backgroundColor: colors.brand600,
     borderBottomLeftRadius: 16, borderBottomRightRadius: 4,
     marginLeft: 8,
   },
-  senderName: { fontSize: 11, fontWeight: "700", color: "#1D9E75", marginBottom: 3 },
-  msgText: { fontSize: 15, color: "#1a1a1a", lineHeight: 20 },
-  msgTextMe: { color: "#fff" },
+  senderName: { fontSize: 11, fontWeight: "700", color: colors.brand600, marginBottom: 3 },
+  msgText: { fontSize: 15, color: colors.text900, lineHeight: 20 },
+  msgTextMe: { color: colors.onBrand },
   timeLine: { flexDirection: "row", justifyContent: "flex-end", marginTop: 3 },
-  msgTime: { fontSize: 10, color: "#bbb" },
-  msgTimeMe: { color: "rgba(255,255,255,0.6)" },
+  msgTime: { fontSize: 10, color: colors.text400 },
+  msgTimeMe: { color: colors.onBrandMuted },
   tickRow: { marginTop: 2, marginRight: 4 },
-  tickRead: { fontSize: 10, color: "#1D9E75", fontWeight: "600" },
-  tickDelivered: { fontSize: 10, color: "#aaa", fontWeight: "600" },
+  tickRead: { fontSize: 10, color: colors.brand600, fontWeight: "600" },
+  tickDelivered: { fontSize: 10, color: colors.text400, fontWeight: "600" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 80 },
   emptyEmoji: { fontSize: 48, marginBottom: 12 },
-  emptyText: { fontSize: 14, color: "#aaa", textAlign: "center", lineHeight: 22 },
+  emptyText: { fontSize: 14, color: colors.text400, textAlign: "center", lineHeight: 22 },
   inputRow: {
     flexDirection: "row", alignItems: "flex-end",
-    backgroundColor: "#fff", paddingTop: 10, paddingHorizontal: 16,
-    borderTopWidth: 0.5, borderTopColor: "#e0e0e0",
+    backgroundColor: colors.surface, paddingTop: 10, paddingHorizontal: 16,
+    borderTopWidth: 0.5, borderTopColor: colors.border,
   },
   input: {
-    flex: 1, backgroundColor: "#F5F5F5", borderRadius: 20,
+    flex: 1, backgroundColor: colors.bg, borderRadius: 20,
     paddingHorizontal: 14, paddingVertical: 8, fontSize: 15,
-    color: "#1a1a1a", maxHeight: 100, marginRight: 10,
+    color: colors.text900, maxHeight: 100, marginRight: 10,
   },
   sendBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#1D9E75", alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.brand600, alignItems: "center", justifyContent: "center",
   },
   sendBtnDisabled: { backgroundColor: "#ccc" },
-  sendIcon: { color: "#fff", fontSize: 16, marginLeft: 2 },
+  sendIcon: { color: colors.onBrand, fontSize: 16, marginLeft: 2 },
   editBar: {
-    backgroundColor: "#fff", borderTopWidth: 0.5, borderTopColor: "#e0e0e0",
+    backgroundColor: colors.surface, borderTopWidth: 0.5, borderTopColor: colors.border,
     paddingHorizontal: 16, paddingTop: 8,
   },
   editBarTop: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     marginBottom: 6,
   },
-  editBarLabel: { fontSize: 12, color: "#1D9E75", fontWeight: "600" },
-  editBarCancel: { fontSize: 18, color: "#aaa", padding: 4 },
+  editBarLabel: { fontSize: 12, color: colors.brand600, fontWeight: "600" },
+  editBarCancel: { fontSize: 18, color: colors.text400, padding: 4 },
   editBarRow: { flexDirection: "row", alignItems: "flex-end" },
   editBarInput: {
-    flex: 1, backgroundColor: "#F5F5F5", borderRadius: 20,
+    flex: 1, backgroundColor: colors.bg, borderRadius: 20,
     paddingHorizontal: 14, paddingVertical: 8, fontSize: 15,
-    color: "#1a1a1a", maxHeight: 100, marginRight: 10,
-    borderWidth: 1.5, borderColor: "#1D9E75",
+    color: colors.text900, maxHeight: 100, marginRight: 10,
+    borderWidth: 1.5, borderColor: colors.brand600,
   },
 });

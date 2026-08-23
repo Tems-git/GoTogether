@@ -6,6 +6,7 @@ import {
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
+import { colors } from "../theme/tokens";
 
 const OTP_LENGTH = 6;
 
@@ -92,7 +93,7 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
           <TextInput
             style={styles.input}
             placeholder="Напр. Темелко"
-            placeholderTextColor="#aaa"
+            placeholderTextColor={colors.text400}
             value={displayName}
             onChangeText={setDisplayName}
             autoCorrect={false}
@@ -100,7 +101,7 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
             onSubmitEditing={handleSetName}
           />
           <TouchableOpacity style={styles.btn} onPress={handleSetName} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Продължи →</Text>}
+            {loading ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.btnText}>Продължи →</Text>}
           </TouchableOpacity>
         </>
       );
@@ -117,7 +118,7 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
           <TextInput
             style={[styles.input, styles.otpInput]}
             placeholder={"0".repeat(OTP_LENGTH)}
-            placeholderTextColor="#aaa"
+            placeholderTextColor={colors.text400}
             value={otp}
             onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, ""))}
             keyboardType="number-pad"
@@ -126,7 +127,7 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
             onSubmitEditing={handleVerifyOtp}
           />
           <TouchableOpacity style={styles.btn} onPress={handleVerifyOtp} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Потвърди</Text>}
+            {loading ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.btnText}>Потвърди</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.back} onPress={() => { setStep("email"); setOtp(""); }}>
             <Text style={styles.backText}>← Смени имейл</Text>
@@ -155,7 +156,7 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
         <TextInput
           style={styles.input}
           placeholder="твоя@имейл.com"
-          placeholderTextColor="#aaa"
+          placeholderTextColor={colors.text400}
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
@@ -165,7 +166,7 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
           onSubmitEditing={handleSendOtp}
         />
         <TouchableOpacity style={styles.btn} onPress={handleSendOtp} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Изпрати код</Text>}
+          {loading ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.btnText}>Изпрати код</Text>}
         </TouchableOpacity>
       </>
     );
@@ -192,34 +193,34 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: "#1D9E75" },
+  flex: { flex: 1, backgroundColor: colors.brand600 },
   container: {
-    flexGrow: 1, backgroundColor: "#1D9E75",
+    flexGrow: 1, backgroundColor: colors.brand600,
     alignItems: "center", justifyContent: "center", paddingHorizontal: 24,
   },
   emoji: { fontSize: 64, marginBottom: 16 },
-  title: { fontSize: 28, fontWeight: "bold", color: "#fff", marginBottom: 8, textAlign: "center" },
-  subtitle: { fontSize: 15, color: "#E1F5EE", textAlign: "center", marginBottom: 32, lineHeight: 22 },
+  title: { fontSize: 28, fontWeight: "bold", color: colors.onBrand, marginBottom: 8, textAlign: "center" },
+  subtitle: { fontSize: 15, color: colors.onBrandMuted, textAlign: "center", marginBottom: 32, lineHeight: 22 },
   inviteBadge: {
     backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 12,
     paddingHorizontal: 16, paddingVertical: 8, marginBottom: 16,
   },
-  inviteBadgeText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
+  inviteBadgeText: { color: colors.onBrand, fontSize: 15, fontWeight: "bold" },
   input: {
-    width: "100%", backgroundColor: "#fff", padding: 16,
-    borderRadius: 14, fontSize: 16, marginBottom: 12, color: "#1a1a1a",
+    width: "100%", backgroundColor: colors.surface, padding: 16,
+    borderRadius: 14, fontSize: 16, marginBottom: 12, color: colors.text900,
   },
   otpInput: {
     fontSize: 28, fontWeight: "bold", letterSpacing: 8,
     textAlign: "center", paddingVertical: 20,
   },
   btn: {
-    width: "100%", backgroundColor: "#085041",
+    width: "100%", backgroundColor: colors.brand700,
     padding: 16, borderRadius: 14, alignItems: "center", marginBottom: 12,
   },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  btnText: { color: colors.onBrand, fontSize: 16, fontWeight: "bold" },
   back: { marginTop: 8 },
-  backText: { color: "#E1F5EE", fontSize: 15 },
+  backText: { color: colors.onBrandMuted, fontSize: 15 },
   resend: { marginTop: 16 },
-  resendText: { color: "#E1F5EE", fontSize: 14, textDecorationLine: "underline" },
+  resendText: { color: colors.onBrandMuted, fontSize: 14, textDecorationLine: "underline" },
 });

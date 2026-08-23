@@ -6,6 +6,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import { supabase } from "../lib/supabase";
+import { colors } from "../theme/tokens";
 
 const DOC_TYPES = {
   reservation: { emoji: "🏨", label: "Резервация" },
@@ -117,7 +118,7 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
       <Text style={styles.subtitle}>Резервации, билети и застраховки</Text>
 
       {loading ? (
-        <ActivityIndicator color="#1D9E75" style={{ marginTop: 40 }} />
+        <ActivityIndicator color={colors.brand600} style={{ marginTop: 40 }} />
       ) : docs.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyEmoji}>📄</Text>
@@ -156,7 +157,7 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
 
       <TouchableOpacity style={styles.btn} onPress={handleUpload} disabled={uploading}>
         {uploading
-          ? <ActivityIndicator color="#fff" />
+          ? <ActivityIndicator color={colors.onBrand} />
           : <Text style={styles.btnText}>+ Качи документ</Text>}
       </TouchableOpacity>
     </ScrollView>
@@ -164,29 +165,29 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F5F5F5" },
+  container: { flex: 1, backgroundColor: colors.bg },
   scroll: { padding: 24 },
   back: { marginBottom: 16 },
-  backText: { color: "#1D9E75", fontSize: 16 },
-  title: { fontSize: 26, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
-  subtitle: { fontSize: 14, color: "#888", marginBottom: 24 },
-  empty: { alignItems: "center", padding: 40, backgroundColor: "#fff", borderRadius: 16, marginBottom: 20 },
+  backText: { color: colors.brand600, fontSize: 16 },
+  title: { fontSize: 26, fontWeight: "bold", color: colors.text900, marginBottom: 8 },
+  subtitle: { fontSize: 14, color: colors.text600, marginBottom: 24 },
+  empty: { alignItems: "center", padding: 40, backgroundColor: colors.surface, borderRadius: 16, marginBottom: 20 },
   emptyEmoji: { fontSize: 48, marginBottom: 12 },
-  emptyTitle: { fontSize: 16, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
-  emptyText: { fontSize: 14, color: "#888", textAlign: "center", lineHeight: 20 },
+  emptyTitle: { fontSize: 16, fontWeight: "bold", color: colors.text900, marginBottom: 8 },
+  emptyText: { fontSize: 14, color: colors.text600, textAlign: "center", lineHeight: 20 },
   list: { gap: 10, marginBottom: 20 },
   docRow: {
-    backgroundColor: "#fff", borderRadius: 14, padding: 14,
+    backgroundColor: colors.surface, borderRadius: 14, padding: 14,
     flexDirection: "row", alignItems: "center", gap: 12,
   },
   docEmoji: { fontSize: 28 },
   docInfo: { flex: 1 },
-  docName: { fontSize: 14, fontWeight: "600", color: "#1a1a1a" },
-  docMeta: { fontSize: 12, color: "#888", marginTop: 2 },
-  docUploader: { fontSize: 11, color: "#aaa", marginTop: 1 },
+  docName: { fontSize: 14, fontWeight: "600", color: colors.text900 },
+  docMeta: { fontSize: 12, color: colors.text600, marginTop: 2 },
+  docUploader: { fontSize: 11, color: colors.text400, marginTop: 1 },
   docActions: { flexDirection: "row", gap: 6 },
   iconBtn: { padding: 6 },
   iconBtnText: { fontSize: 18 },
-  btn: { backgroundColor: "#1D9E75", padding: 16, borderRadius: 14, alignItems: "center" },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  btn: { backgroundColor: colors.brand600, padding: 16, borderRadius: 14, alignItems: "center" },
+  btnText: { color: colors.onBrand, fontSize: 16, fontWeight: "bold" },
 });

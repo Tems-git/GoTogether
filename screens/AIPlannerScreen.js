@@ -2,6 +2,7 @@ import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, Activi
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
+import { colors } from "../theme/tokens";
 
 export default function AIPlannerScreen({ onBack, trip }) {
   // Реални safe area отстояния — без тях Android навигационната лента
@@ -99,31 +100,31 @@ export default function AIPlannerScreen({ onBack, trip }) {
       </View>
 
       <TouchableOpacity style={styles.btn} onPress={generatePlan} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Генерирай план с AI ✨</Text>}
+        {loading ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.btnText}>Генерирай план с AI ✨</Text>}
       </TouchableOpacity>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F5F5F5" },
+  container: { flex: 1, backgroundColor: colors.bg },
   scroll: { padding: 24 },
   back: { marginBottom: 16 },
-  backText: { color: "#1D9E75", fontSize: 16 },
-  title: { fontSize: 26, fontWeight: "bold", color: "#1a1a1a", marginBottom: 8 },
-  subtitle: { fontSize: 14, color: "#888", marginBottom: 24 },
-  label: { fontSize: 13, fontWeight: "500", color: "#555", marginBottom: 6, marginTop: 12 },
-  input: { backgroundColor: "#fff", padding: 14, borderRadius: 12, fontSize: 15, borderWidth: 0.5, borderColor: "#ddd" },
+  backText: { color: colors.brand600, fontSize: 16 },
+  title: { fontSize: 26, fontWeight: "bold", color: colors.text900, marginBottom: 8 },
+  subtitle: { fontSize: 14, color: colors.text600, marginBottom: 24 },
+  label: { fontSize: 13, fontWeight: "500", color: colors.text600, marginBottom: 6, marginTop: 12 },
+  input: { backgroundColor: colors.surface, padding: 14, borderRadius: 12, fontSize: 15, borderWidth: 0.5, borderColor: colors.border },
   row: { flexDirection: "row", gap: 12 },
   half: { flex: 1 },
   transportRow: { flexDirection: "row", gap: 8, marginTop: 4 },
-  transportBtn: { flex: 1, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#ddd", alignItems: "center", backgroundColor: "#fff" },
-  transportActive: { backgroundColor: "#1D9E75", borderColor: "#1D9E75" },
-  transportText: { fontSize: 13, color: "#555" },
-  transportTextActive: { color: "#fff", fontWeight: "500" },
-  btn: { backgroundColor: "#1D9E75", padding: 16, borderRadius: 14, alignItems: "center", marginTop: 24 },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  planTitle: { fontSize: 22, fontWeight: "bold", color: "#1a1a1a", marginBottom: 16 },
-  planBox: { backgroundColor: "#fff", borderRadius: 16, padding: 20, marginBottom: 20 },
-  planText: { fontSize: 14, color: "#333", lineHeight: 22 },
+  transportBtn: { flex: 1, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: "center", backgroundColor: colors.surface },
+  transportActive: { backgroundColor: colors.brand600, borderColor: colors.brand600 },
+  transportText: { fontSize: 13, color: colors.text600 },
+  transportTextActive: { color: colors.onBrand, fontWeight: "500" },
+  btn: { backgroundColor: colors.brand600, padding: 16, borderRadius: 14, alignItems: "center", marginTop: 24 },
+  btnText: { color: colors.onBrand, fontSize: 16, fontWeight: "bold" },
+  planTitle: { fontSize: 22, fontWeight: "bold", color: colors.text900, marginBottom: 16 },
+  planBox: { backgroundColor: colors.surface, borderRadius: 16, padding: 20, marginBottom: 20 },
+  planText: { fontSize: 14, color: colors.text900, lineHeight: 22 },
 });
