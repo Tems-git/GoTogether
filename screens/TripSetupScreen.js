@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Plus } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import DatePicker from "../components/DatePicker";
 import { colors } from "../theme/tokens";
@@ -227,7 +228,10 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
       {!mode && (
         <View style={styles.buttons}>
           <TouchableOpacity style={styles.btnPrimary} onPress={() => setMode("create")}>
-            <Text style={styles.btnPrimaryText}>+ Ново пътуване</Text>
+            <View style={styles.btnRow}>
+              <Plus size={20} color={colors.brand600} strokeWidth={1.75} />
+              <Text style={styles.btnPrimaryText}>Ново пътуване</Text>
+            </View>
           </TouchableOpacity>
           <TouchableOpacity style={styles.btnSecondary} onPress={() => setMode("join")}>
             <Text style={styles.btnSecondaryText}>Присъедини се с код</Text>
@@ -355,6 +359,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, padding: 16, borderRadius: 14,
     alignItems: "center", marginTop: 8, width: "100%",
   },
+  btnRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   btnPrimaryText: { color: colors.brand600, fontSize: 16, fontWeight: "bold" },
   btnSecondary: {
     backgroundColor: "transparent", padding: 16, borderRadius: 14,
