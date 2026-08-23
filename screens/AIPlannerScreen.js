@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, ActivityIndicator } from "react-native";
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Sparkles } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/tokens";
 
@@ -67,7 +68,10 @@ export default function AIPlannerScreen({ onBack, trip }) {
       <TouchableOpacity onPress={onBack} style={styles.back}>
         <Text style={styles.backText}>← Назад</Text>
       </TouchableOpacity>
-      <Text style={styles.title}>🤖 AI Планиране</Text>
+      <View style={styles.titleRow}>
+        <Sparkles size={24} color={colors.brand600} strokeWidth={1.75} />
+        <Text style={styles.title}>AI Планиране</Text>
+      </View>
       <Text style={styles.subtitle}>Разкажи ни за пътуването и ще получиш готов план</Text>
 
       <Text style={styles.label}>Дестинация (или остави празно за предложение)</Text>
@@ -100,7 +104,12 @@ export default function AIPlannerScreen({ onBack, trip }) {
       </View>
 
       <TouchableOpacity style={styles.btn} onPress={generatePlan} disabled={loading}>
-        {loading ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.btnText}>Генерирай план с AI ✨</Text>}
+        {loading ? <ActivityIndicator color={colors.onBrand} /> : (
+          <View style={styles.btnRow}>
+            <Sparkles size={20} color={colors.onBrand} strokeWidth={1.75} />
+            <Text style={styles.btnText}>Генерирай план с AI</Text>
+          </View>
+        )}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -111,7 +120,8 @@ const styles = StyleSheet.create({
   scroll: { padding: 24 },
   back: { marginBottom: 16 },
   backText: { color: colors.brand600, fontSize: 16 },
-  title: { fontSize: 26, fontWeight: "bold", color: colors.text900, marginBottom: 8 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  title: { fontSize: 26, fontWeight: "bold", color: colors.text900 },
   subtitle: { fontSize: 14, color: colors.text600, marginBottom: 24 },
   label: { fontSize: 13, fontWeight: "500", color: colors.text600, marginBottom: 6, marginTop: 12 },
   input: { backgroundColor: colors.surface, padding: 14, borderRadius: 12, fontSize: 15, borderWidth: 0.5, borderColor: colors.border },
@@ -123,6 +133,7 @@ const styles = StyleSheet.create({
   transportText: { fontSize: 13, color: colors.text600 },
   transportTextActive: { color: colors.onBrand, fontWeight: "500" },
   btn: { backgroundColor: colors.brand600, padding: 16, borderRadius: 14, alignItems: "center", marginTop: 24 },
+  btnRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   btnText: { color: colors.onBrand, fontSize: 16, fontWeight: "bold" },
   planTitle: { fontSize: 22, fontWeight: "bold", color: colors.text900, marginBottom: 16 },
   planBox: { backgroundColor: colors.surface, borderRadius: 16, padding: 20, marginBottom: 20 },
