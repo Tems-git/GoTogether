@@ -3,6 +3,7 @@ import {
   StyleSheet, Text, View, TouchableOpacity, ScrollView,
   Modal, TextInput, ActivityIndicator, Alert, FlatList,
 } from "react-native";import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CreditCard, Plus } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/tokens";
 
@@ -404,7 +405,10 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       <TouchableOpacity onPress={onBack} style={styles.back}>
         <Text style={styles.backText}>← Назад</Text>
       </TouchableOpacity>
-      <Text style={styles.title}>💸 Разходи</Text>
+      <View style={styles.titleRow}>
+        <CreditCard size={24} color={colors.brand600} strokeWidth={1.75} />
+        <Text style={styles.title}>Разходи</Text>
+      </View>
       <Text style={styles.subtitle}>Кой колко дължи</Text>
 
       <View style={styles.summary}>
@@ -494,7 +498,10 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       )}
 
       <TouchableOpacity style={styles.btn} onPress={openModal}>
-        <Text style={styles.btnText}>+ Добави разход</Text>
+        <View style={styles.btnRow}>
+          <Plus size={20} color={colors.onBrand} strokeWidth={1.75} />
+          <Text style={styles.btnText}>Добави разход</Text>
+        </View>
       </TouchableOpacity>
 
       <Modal visible={modalVisible} animationType="slide" transparent>
@@ -733,7 +740,9 @@ const styles = StyleSheet.create({
   scroll: { padding: 24 },
   back: { marginBottom: 16 },
   backText: { color: colors.brand600, fontSize: 16 },
-  title: { fontSize: 26, fontWeight: "bold", color: colors.text900, marginBottom: 8 },
+  title: { fontSize: 26, fontWeight: "bold", color: colors.text900 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  btnRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   subtitle: { fontSize: 14, color: colors.text600, marginBottom: 24 },
   summary: { backgroundColor: colors.brand600, borderRadius: 16, padding: 20, flexDirection: "row", marginBottom: 10 },
   summaryItem: { flex: 1, alignItems: "center" },
