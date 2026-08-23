@@ -4,6 +4,7 @@ import {
   FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { MessageSquare } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/tokens";
 
@@ -238,7 +239,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
           <Text style={styles.backText}>← Назад</Text>
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>💬 Чат</Text>
+          <View style={styles.headerTitleRow}>
+            <MessageSquare size={24} color={colors.brand600} strokeWidth={1.75} />
+            <Text style={styles.headerTitle}>Чат</Text>
+          </View>
           <Text style={styles.headerSub}>{tripName}</Text>
         </View>
       </View>
@@ -369,6 +373,7 @@ const styles = StyleSheet.create({
   backBtn: { marginRight: 12 },
   backText: { color: colors.brand600, fontSize: 16 },
   headerInfo: { flex: 1 },
+  headerTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   headerTitle: { fontSize: 17, fontWeight: "bold", color: colors.text900 },
   headerSub: { fontSize: 12, color: colors.text600, marginTop: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
