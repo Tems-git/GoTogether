@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
+import { FileText, Plus } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/tokens";
 
@@ -114,7 +115,10 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
       <TouchableOpacity onPress={onBack} style={styles.back}>
         <Text style={styles.backText}>← Назад</Text>
       </TouchableOpacity>
-      <Text style={styles.title}>📁 Документи</Text>
+      <View style={styles.titleRow}>
+        <FileText size={24} color={colors.brand600} strokeWidth={1.75} />
+        <Text style={styles.title}>Документи</Text>
+      </View>
       <Text style={styles.subtitle}>Резервации, билети и застраховки</Text>
 
       {loading ? (
@@ -158,7 +162,12 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
       <TouchableOpacity style={styles.btn} onPress={handleUpload} disabled={uploading}>
         {uploading
           ? <ActivityIndicator color={colors.onBrand} />
-          : <Text style={styles.btnText}>+ Качи документ</Text>}
+          : (
+            <View style={styles.btnRow}>
+              <Plus size={20} color={colors.onBrand} strokeWidth={1.75} />
+              <Text style={styles.btnText}>Качи документ</Text>
+            </View>
+          )}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -169,7 +178,8 @@ const styles = StyleSheet.create({
   scroll: { padding: 24 },
   back: { marginBottom: 16 },
   backText: { color: colors.brand600, fontSize: 16 },
-  title: { fontSize: 26, fontWeight: "bold", color: colors.text900, marginBottom: 8 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  title: { fontSize: 26, fontWeight: "bold", color: colors.text900 },
   subtitle: { fontSize: 14, color: colors.text600, marginBottom: 24 },
   empty: { alignItems: "center", padding: 40, backgroundColor: colors.surface, borderRadius: 16, marginBottom: 20 },
   emptyEmoji: { fontSize: 48, marginBottom: 12 },
@@ -189,5 +199,6 @@ const styles = StyleSheet.create({
   iconBtn: { padding: 6 },
   iconBtnText: { fontSize: 18 },
   btn: { backgroundColor: colors.brand600, padding: 16, borderRadius: 14, alignItems: "center" },
+  btnRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   btnText: { color: colors.onBrand, fontSize: 16, fontWeight: "bold" },
 });
