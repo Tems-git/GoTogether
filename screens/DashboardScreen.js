@@ -6,6 +6,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { supabase } from "../lib/supabase";import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DatePicker from "../components/DatePicker";
+import { Sparkles, MessageSquare, FileText, CreditCard, MapPin, Users, Plus } from "lucide-react-native";
 import { colors } from "../theme/tokens";
 
 const MAX_VISIBLE = 4;
@@ -403,10 +404,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   }
 
   const cards = [
-    { emoji: "🤖", title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: colors.brand50, badge: 0 },
-    { emoji: "💬", title: "Чат", sub: "Групов чат", onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
-    { emoji: "📁", title: "Документи", sub: "Резервации и билети", onPress: onDocuments, color: "#E6F1FB", badge: 0 },
-    { emoji: "💸", title: "Разходи", sub: "Кой колко дължи", onPress: onExpenses, color: "#FAEEDA", badge: 0 },
+    { Icon: Sparkles, title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: colors.brand50, badge: 0 },
+    { Icon: MessageSquare, title: "Чат", sub: "Групов чат", onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
+    { Icon: FileText, title: "Документи", sub: "Резервации и билети", onPress: onDocuments, color: "#E6F1FB", badge: 0 },
+    { Icon: CreditCard, title: "Разходи", sub: "Кой колко дължи", onPress: onExpenses, color: "#FAEEDA", badge: 0 },
   ];
 
   async function handleShare() {
@@ -494,7 +495,12 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                   <Text style={styles.tripName}>{trip.name}</Text>
                   {isOwner && <Text style={styles.tripEditIcon}>✏️</Text>}
                 </View>
-                {trip.destination && <Text style={styles.tripDest}>📍 {trip.destination}</Text>}
+                {trip.destination && (
+                  <View style={styles.tripDestRow}>
+                    <MapPin size={14} color={colors.onBrandMuted} strokeWidth={1.75} />
+                    <Text style={styles.tripDest}>{trip.destination}</Text>
+                  </View>
+                )}
                 {dateRange && <Text style={styles.tripDates}>📅 {dateRange}</Text>}
                 {currentStatus.label && (
                   <View style={[styles.statusBadge, styles[`statusBadge_${currentStatus.kind}`]]}>
@@ -523,11 +529,16 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                     <Text style={styles.avatarExtraText}>+{extraCount}</Text>
                   </View>
                 )}
-                <Text style={styles.membersLabel}>
-                  {otherMembers.length > 0
-                    ? `${members.length} ${members.length === 1 ? "участник" : "участника"}${hasWeights ? " · с тегла" : ""}`
-                    : "👥 Управление на участници"}
-                </Text>
+                {otherMembers.length > 0 ? (
+                  <Text style={styles.membersLabel}>
+                    {`${members.length} ${members.length === 1 ? "участник" : "участника"}${hasWeights ? " · с тегла" : ""}`}
+                  </Text>
+                ) : (
+                  <View style={styles.membersLabelRow}>
+                    <Users size={16} color={colors.onBrandMuted} strokeWidth={1.75} />
+                    <Text style={styles.membersLabelInline}>Управление на участници</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             )}
 
@@ -541,7 +552,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
           {cards.map((card, i) => (
             <TouchableOpacity key={i} style={[styles.card, { backgroundColor: card.color }]} onPress={card.onPress}>
               <View style={styles.cardEmojiWrap}>
-                <Text style={styles.cardEmoji}>{card.emoji}</Text>
+                <card.Icon size={24} color={colors.brand600} strokeWidth={1.75} />
                 {card.badge > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>{card.badge > 99 ? "99+" : card.badge}</Text>
@@ -567,7 +578,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       <Modal visible={membersModalVisible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <ScrollView style={styles.modal} contentContainerStyle={styles.modalContent}>
-            <Text style={styles.modalTitle}>👥 Участници</Text>
+            <View style={styles.modalTitleRow}>
+              <Users size={22} color={colors.text900} strokeWidth={1.75} />
+              <Text style={[styles.modalTitle, styles.modalTitleInline]}>Участници</Text>
+            </View>
             <Text style={styles.modalSubtitle}>Брой хора определя дела от разходите</Text>
 
             {members.map((m, i) => {
@@ -762,9 +776,12 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                         {t.name}
                       </Text>
                       {t.destination && (
-                        <Text style={[styles.tripOptionDest, isPast && styles.tripOptionDestPast]}>
-                          📍 {t.destination}
-                        </Text>
+                        <View style={styles.tripOptionDestRow}>
+                          <MapPin size={12} color={isPast ? colors.text400 : colors.text600} strokeWidth={1.75} />
+                          <Text style={[styles.tripOptionDest, isPast && styles.tripOptionDestPast]}>
+                            {t.destination}
+                          </Text>
+                        </View>
                       )}
                       {t._status.label && (
                         <Text style={[
@@ -782,7 +799,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               })}
             </ScrollView>
             <TouchableOpacity style={styles.newTripBtn} onPress={() => { setTripPickerVisible(false); onNewTrip(); }}>
-              <Text style={styles.newTripBtnText}>+ Ново пътуване</Text>
+              <View style={styles.btnRow}>
+                <Plus size={20} color={colors.onBrand} strokeWidth={1.75} />
+                <Text style={styles.newTripBtnText}>Ново пътуване</Text>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity style={styles.modalClose} onPress={() => setTripPickerVisible(false)}>
               <Text style={styles.modalCloseText}>Затвори</Text>
@@ -813,7 +833,8 @@ const styles = StyleSheet.create({
   tripNameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
   tripName: { fontSize: 20, fontWeight: "bold", color: colors.onBrand },
   tripEditIcon: { fontSize: 12, opacity: 0.7 },
-  tripDest: { fontSize: 13, color: colors.onBrandMuted, marginBottom: 3 },
+  tripDestRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 3 },
+  tripDest: { fontSize: 13, color: colors.onBrandMuted },
   tripDates: { fontSize: 13, color: colors.onBrandMuted },
   statusBadge: {
     alignSelf: "flex-start",
@@ -841,6 +862,8 @@ const styles = StyleSheet.create({
   avatarExtra: { backgroundColor: "rgba(255,255,255,0.3)" },
   avatarExtraText: { fontSize: 10, fontWeight: "bold", color: colors.onBrand },
   membersLabel: { fontSize: 12, color: colors.onBrandMuted, marginLeft: 10 },
+  membersLabelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 10 },
+  membersLabelInline: { fontSize: 12, color: colors.onBrandMuted },
   switchBtn: { marginTop: 14, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 10, padding: 10, alignItems: "center" },
   switchBtnText: { color: colors.onBrand, fontSize: 13, fontWeight: "600" },
   cards: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 12 },
@@ -865,6 +888,8 @@ const styles = StyleSheet.create({
   modalContent: { padding: 24, paddingBottom: 40 },
   modalInner: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: "85%" },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: colors.text900, marginBottom: 4 },
+  modalTitleRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
+  modalTitleInline: { marginBottom: 0 },
   modalSubtitle: { fontSize: 12, color: colors.text600, marginBottom: 16 },
   editTripModal: { backgroundColor: colors.brand600 },
   editLabel: { fontSize: 13, color: colors.onBrandMuted, fontWeight: "600", marginTop: 12, marginBottom: 6 },
@@ -912,6 +937,7 @@ const styles = StyleSheet.create({
   btnCancelText: { color: colors.onBrand, fontSize: 15 },
   btnSave: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: colors.surface, alignItems: "center" },
   btnSaveText: { color: colors.brand600, fontSize: 15, fontWeight: "bold" },
+  btnRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   tripList: { maxHeight: 400, marginBottom: 8 },
   tripOption: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: colors.bg },
   tripOptionActive: { backgroundColor: colors.brand50, borderWidth: 1.5, borderColor: colors.brand600 },
@@ -920,7 +946,8 @@ const styles = StyleSheet.create({
   tripOptionName: { fontSize: 15, fontWeight: "600", color: colors.text900 },
   tripOptionNameActive: { color: colors.brand600 },
   tripOptionNamePast: { color: colors.text600 },
-  tripOptionDest: { fontSize: 12, color: colors.text600, marginTop: 2 },
+  tripOptionDestRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  tripOptionDest: { fontSize: 12, color: colors.text600 },
   tripOptionDestPast: { color: colors.text400 },
   tripOptionStatus: { fontSize: 11, color: colors.text600, marginTop: 4, fontWeight: "600" },
   tripOptionStatusActive: { color: colors.brand600 },
