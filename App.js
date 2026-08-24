@@ -3,6 +3,14 @@ import { StyleSheet, Text, View, TouchableOpacity, TextInput, Linking, AppState 
 import { useState, useEffect, useRef } from "react";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Updates from "expo-updates";
+import {
+  useFonts,
+  GolosText_400Regular,
+  GolosText_500Medium,
+  GolosText_600SemiBold,
+  GolosText_700Bold,
+  GolosText_800ExtraBold,
+} from "@expo-google-fonts/golos-text";
 import { supabase } from "./lib/supabase";
 import SignInScreen from "./screens/SignInScreen";
 import DashboardScreen from "./screens/DashboardScreen";
@@ -53,6 +61,13 @@ export default function App() {
 
 function AppContent() {
   const insets = useSafeAreaInsets();
+  const [fontsLoaded] = useFonts({
+    GolosText_400Regular,
+    GolosText_500Medium,
+    GolosText_600SemiBold,
+    GolosText_700Bold,
+    GolosText_800ExtraBold,
+  });
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState("home");
@@ -137,7 +152,7 @@ function AppContent() {
     setScreen("signin");
   }
 
-  if (loading || tripLoading) {
+  if (!fontsLoaded || loading || tripLoading) {
     return (
       <View style={styles.loading}>
         <Text style={styles.loadingEmoji}>🧳</Text>
@@ -286,23 +301,23 @@ function AppContent() {
 const styles = StyleSheet.create({
   loading: { flex: 1, backgroundColor: "#1D9E75", alignItems: "center", justifyContent: "center" },
   loadingEmoji: { fontSize: 64 },
-  loadingText: { fontSize: 24, fontWeight: "bold", color: "#fff", marginTop: 12 },
+  loadingText: { fontSize: 24, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: "#fff", marginTop: 12 },
   container: { flex: 1, backgroundColor: "#1D9E75", alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
   emoji: { fontSize: 72, marginBottom: 16 },
-  title: { fontSize: 36, fontWeight: "bold", color: "#fff", marginBottom: 8 },
-  subtitle: { fontSize: 16, color: "#E1F5EE", textAlign: "center", marginBottom: 48 },
+  title: { fontSize: 36, fontWeight: "bold", fontFamily: "GolosText_800ExtraBold", color: "#fff", marginBottom: 8 },
+  subtitle: { fontSize: 16, fontFamily: "GolosText_400Regular", color: "#E1F5EE", textAlign: "center", marginBottom: 48 },
   buttons: { width: "100%", gap: 12 },
   btnPrimary: { backgroundColor: "#fff", padding: 16, borderRadius: 14, alignItems: "center" },
-  btnPrimaryText: { color: "#1D9E75", fontSize: 16, fontWeight: "bold" },
+  btnPrimaryText: { color: "#1D9E75", fontSize: 16, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
   btnSecondary: { backgroundColor: "transparent", padding: 16, borderRadius: 14, alignItems: "center", borderWidth: 1.5, borderColor: "#fff" },
-  btnSecondaryText: { color: "#fff", fontSize: 16, fontWeight: "500" },
+  btnSecondaryText: { color: "#fff", fontSize: 16, fontWeight: "500", fontFamily: "GolosText_500Medium" },
   inviteBox: { width: "100%", gap: 10 },
-  inviteLabel: { color: "#E1F5EE", fontSize: 14, fontWeight: "600", textAlign: "center", marginBottom: 4 },
+  inviteLabel: { color: "#E1F5EE", fontSize: 14, fontWeight: "600", fontFamily: "GolosText_600SemiBold", textAlign: "center", marginBottom: 4 },
   inviteInput: {
     backgroundColor: "#fff", borderRadius: 14, padding: 16,
-    fontSize: 28, fontWeight: "bold", letterSpacing: 8,
+    fontSize: 28, fontWeight: "bold", fontFamily: "GolosText_700Bold", letterSpacing: 8,
     textAlign: "center", color: "#1a1a1a",
   },
   back: { alignItems: "center", marginTop: 4 },
-  backText: { color: "#E1F5EE", fontSize: 15 },
+  backText: { color: "#E1F5EE", fontSize: 15, fontFamily: "GolosText_400Regular" },
 });
