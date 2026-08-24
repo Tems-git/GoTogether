@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sparkles } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
-import { colors } from "../theme/tokens";
+import { colors, space, radius, type } from "../theme/tokens";
 
 export default function AIPlannerScreen({ onBack, trip }) {
   // Реални safe area отстояния — без тях Android навигационната лента
@@ -117,25 +117,25 @@ export default function AIPlannerScreen({ onBack, trip }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  scroll: { padding: 24 },
-  back: { marginBottom: 16 },
-  backText: { color: colors.brand600, fontSize: 16 },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  title: { fontSize: 26, fontWeight: "bold", color: colors.text900 },
-  subtitle: { fontSize: 14, color: colors.text600, marginBottom: 24 },
-  label: { fontSize: 13, fontWeight: "500", color: colors.text600, marginBottom: 6, marginTop: 12 },
-  input: { backgroundColor: colors.surface, padding: 14, borderRadius: 12, fontSize: 15, borderWidth: 0.5, borderColor: colors.border },
-  row: { flexDirection: "row", gap: 12 },
+  scroll: { padding: space.xl },
+  back: { marginBottom: space.lg },
+  backText: { ...type.body, color: colors.brand600 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginBottom: space.sm },
+  title: { ...type.title, color: colors.text900 },
+  subtitle: { ...type.label, color: colors.text600, marginBottom: space.xl },
+  label: { ...type.label, color: colors.text600, marginBottom: space.sm, marginTop: space.md },
+  input: { ...type.body, backgroundColor: colors.surface, padding: space.lg, borderRadius: radius.control, borderWidth: 0.5, borderColor: colors.border },
+  row: { flexDirection: "row", gap: space.md },
   half: { flex: 1 },
-  transportRow: { flexDirection: "row", gap: 8, marginTop: 4 },
-  transportBtn: { flex: 1, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: "center", backgroundColor: colors.surface },
+  transportRow: { flexDirection: "row", gap: space.sm, marginTop: space.xs },
+  transportBtn: { flex: 1, padding: space.md, borderRadius: radius.control, borderWidth: 1, borderColor: colors.border, alignItems: "center", backgroundColor: colors.surface },
   transportActive: { backgroundColor: colors.brand600, borderColor: colors.brand600 },
-  transportText: { fontSize: 13, color: colors.text600 },
-  transportTextActive: { color: colors.onBrand, fontWeight: "500" },
-  btn: { backgroundColor: colors.brand600, padding: 16, borderRadius: 14, alignItems: "center", marginTop: 24 },
-  btnRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  btnText: { color: colors.onBrand, fontSize: 16, fontWeight: "bold" },
-  planTitle: { fontSize: 22, fontWeight: "bold", color: colors.text900, marginBottom: 16 },
-  planBox: { backgroundColor: colors.surface, borderRadius: 16, padding: 20, marginBottom: 20 },
-  planText: { fontSize: 14, color: colors.text900, lineHeight: 22 },
+  transportText: { ...type.label, color: colors.text600 },
+  transportTextActive: { color: colors.onBrand },
+  btn: { backgroundColor: colors.brand600, padding: space.lg, borderRadius: radius.card, alignItems: "center", marginTop: space.xl },
+  btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold" },
+  planTitle: { ...type.title, color: colors.text900, marginBottom: space.lg },
+  planBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.xl, marginBottom: space.xl },
+  planText: { ...type.body, color: colors.text900 },
 });
