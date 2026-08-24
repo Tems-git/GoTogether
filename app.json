@@ -35,6 +35,14 @@
           "photosPermission": "GoTogether използва галерията за качване на документи и снимки.",
           "cameraPermission": "GoTogether използва камерата за снимане на документи."
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "backgroundColor": "#0A6B57"
+        }
       ]
     ],
     "extra": {
