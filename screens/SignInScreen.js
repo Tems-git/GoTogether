@@ -6,7 +6,7 @@ import {
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
-import { colors } from "../theme/tokens";
+import { colors, space, radius, type } from "../theme/tokens";
 
 const OTP_LENGTH = 6;
 
@@ -181,7 +181,7 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
         <ScrollView
           contentContainerStyle={[
             styles.container,
-            { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 },
+            { paddingTop: insets.top + space.xl, paddingBottom: insets.bottom + space.xl },
           ]}
           keyboardShouldPersistTaps="handled"
         >
@@ -196,31 +196,31 @@ const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.brand600 },
   container: {
     flexGrow: 1, backgroundColor: colors.brand600,
-    alignItems: "center", justifyContent: "center", paddingHorizontal: 24,
+    alignItems: "center", justifyContent: "center", paddingHorizontal: space.xl,
   },
-  emoji: { fontSize: 64, marginBottom: 16 },
-  title: { fontSize: 28, fontWeight: "bold", color: colors.onBrand, marginBottom: 8, textAlign: "center" },
-  subtitle: { fontSize: 15, color: colors.onBrandMuted, textAlign: "center", marginBottom: 32, lineHeight: 22 },
+  emoji: { fontSize: 64, marginBottom: space.lg },
+  title: { ...type.title, color: colors.onBrand, marginBottom: space.sm, textAlign: "center" },
+  subtitle: { ...type.label, color: colors.onBrandMuted, textAlign: "center", marginBottom: space.xxxl },
   inviteBadge: {
-    backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 12,
-    paddingHorizontal: 16, paddingVertical: 8, marginBottom: 16,
+    backgroundColor: "rgba(255,255,255,0.2)", borderRadius: radius.control,
+    paddingHorizontal: space.lg, paddingVertical: space.sm, marginBottom: space.lg,
   },
-  inviteBadgeText: { color: colors.onBrand, fontSize: 15, fontWeight: "bold" },
+  inviteBadgeText: { ...type.label, fontWeight: "bold", color: colors.onBrand },
   input: {
-    width: "100%", backgroundColor: colors.surface, padding: 16,
-    borderRadius: 14, fontSize: 16, marginBottom: 12, color: colors.text900,
+    width: "100%", backgroundColor: colors.surface, padding: space.lg,
+    borderRadius: radius.control, ...type.body, marginBottom: space.sm, color: colors.text900,
   },
   otpInput: {
     fontSize: 28, fontWeight: "bold", letterSpacing: 8,
-    textAlign: "center", paddingVertical: 20,
+    textAlign: "center", paddingVertical: space.xl,
   },
   btn: {
     width: "100%", backgroundColor: colors.brand700,
-    padding: 16, borderRadius: 14, alignItems: "center", marginBottom: 12,
+    padding: space.lg, borderRadius: radius.card, alignItems: "center", marginBottom: space.sm,
   },
-  btnText: { color: colors.onBrand, fontSize: 16, fontWeight: "bold" },
-  back: { marginTop: 8 },
-  backText: { color: colors.onBrandMuted, fontSize: 15 },
-  resend: { marginTop: 16 },
-  resendText: { color: colors.onBrandMuted, fontSize: 14, textDecorationLine: "underline" },
+  btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold" },
+  back: { marginTop: space.sm },
+  backText: { ...type.body, color: colors.onBrandMuted },
+  resend: { marginTop: space.lg },
+  resendText: { ...type.label, color: colors.onBrandMuted, textDecorationLine: "underline" },
 });
