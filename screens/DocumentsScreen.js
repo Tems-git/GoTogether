@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import { FileText, Plus } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
-import { colors } from "../theme/tokens";
+import { colors, space, radius, type } from "../theme/tokens";
 
 const DOC_TYPES = {
   reservation: { emoji: "🏨", label: "Резервация" },
@@ -175,30 +175,30 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  scroll: { padding: 24 },
-  back: { marginBottom: 16 },
-  backText: { color: colors.brand600, fontSize: 16 },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  title: { fontSize: 26, fontWeight: "bold", color: colors.text900 },
-  subtitle: { fontSize: 14, color: colors.text600, marginBottom: 24 },
-  empty: { alignItems: "center", padding: 40, backgroundColor: colors.surface, borderRadius: 16, marginBottom: 20 },
-  emptyEmoji: { fontSize: 48, marginBottom: 12 },
-  emptyTitle: { fontSize: 16, fontWeight: "bold", color: colors.text900, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: colors.text600, textAlign: "center", lineHeight: 20 },
-  list: { gap: 10, marginBottom: 20 },
+  scroll: { padding: space.xl },
+  back: { marginBottom: space.lg },
+  backText: { ...type.body, color: colors.brand600 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginBottom: space.sm },
+  title: { ...type.title, color: colors.text900 },
+  subtitle: { ...type.label, color: colors.text600, marginBottom: space.xl },
+  empty: { alignItems: "center", padding: space.xxxl, backgroundColor: colors.surface, borderRadius: radius.card, marginBottom: space.xl },
+  emptyEmoji: { fontSize: 48, marginBottom: space.md },
+  emptyTitle: { ...type.subhead, color: colors.text900, marginBottom: space.sm },
+  emptyText: { ...type.label, color: colors.text600, textAlign: "center" },
+  list: { gap: space.md, marginBottom: space.xl },
   docRow: {
-    backgroundColor: colors.surface, borderRadius: 14, padding: 14,
-    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: colors.surface, borderRadius: radius.card, padding: space.lg,
+    flexDirection: "row", alignItems: "center", gap: space.md,
   },
   docEmoji: { fontSize: 28 },
   docInfo: { flex: 1 },
-  docName: { fontSize: 14, fontWeight: "600", color: colors.text900 },
-  docMeta: { fontSize: 12, color: colors.text600, marginTop: 2 },
-  docUploader: { fontSize: 11, color: colors.text400, marginTop: 1 },
-  docActions: { flexDirection: "row", gap: 6 },
-  iconBtn: { padding: 6 },
+  docName: { ...type.label, fontWeight: "600", color: colors.text900 },
+  docMeta: { fontSize: 12, lineHeight: 16, color: colors.text600, marginTop: space.xs },
+  docUploader: { fontSize: 12, lineHeight: 16, color: colors.text400, marginTop: space.xs },
+  docActions: { flexDirection: "row", gap: space.sm },
+  iconBtn: { padding: space.sm },
   iconBtnText: { fontSize: 18 },
-  btn: { backgroundColor: colors.brand600, padding: 16, borderRadius: 14, alignItems: "center" },
-  btnRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  btnText: { color: colors.onBrand, fontSize: 16, fontWeight: "bold" },
+  btn: { backgroundColor: colors.brand600, padding: space.lg, borderRadius: radius.card, alignItems: "center" },
+  btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold" },
 });
