@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Plus } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import DatePicker from "../components/DatePicker";
-import { colors } from "../theme/tokens";
+import { colors, space, radius, type } from "../theme/tokens";
 
 // Местна валута на пътуването — показва се като втори ред до EUR сумите в
 // Разходи → Как да се изравним. EUR по подразбиране.
@@ -330,43 +330,44 @@ export default function TripSetupScreen({ user, onTripReady, pendingInviteCode, 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.brand600 },
   container: { flex: 1, backgroundColor: colors.brand600 },
-  namePad: { paddingHorizontal: 24 },
-  scroll: { paddingHorizontal: 24, alignItems: "center", minHeight: "100%" },
-  emoji: { fontSize: 64, marginBottom: 16, textAlign: "center" },
-  title: { fontSize: 28, fontWeight: "bold", color: colors.onBrand, marginBottom: 8, textAlign: "center" },
-  subtitle: { fontSize: 15, color: colors.onBrandMuted, textAlign: "center", marginBottom: 40, lineHeight: 22, paddingHorizontal: 24 },
-  buttons: { width: "100%", gap: 12 },
-  form: { width: "100%", gap: 8 },
-  label: { fontSize: 13, color: colors.onBrandMuted, fontWeight: "600", marginTop: 8, marginBottom: 4 },
-  hint: { fontSize: 11, color: "rgba(225,245,238,0.7)", marginBottom: 8 },
+  namePad: { paddingHorizontal: space.xl },
+  scroll: { paddingHorizontal: space.xl, alignItems: "center", minHeight: "100%" },
+  emoji: { fontSize: 64, marginBottom: space.lg, textAlign: "center" },
+  title: { ...type.title, color: colors.onBrand, textAlign: "center", marginBottom: space.sm },
+  subtitle: { ...type.label, color: colors.onBrandMuted, textAlign: "center", marginBottom: space.xxxl, paddingHorizontal: space.xl },
+  buttons: { width: "100%", gap: space.md },
+  form: { width: "100%", gap: space.sm },
+  label: { ...type.label, color: colors.onBrandMuted, fontWeight: "600", marginTop: space.sm, marginBottom: space.xs },
+  hint: { fontSize: 12, lineHeight: 16, color: "rgba(225,245,238,0.7)", marginBottom: space.sm },
   input: {
-    backgroundColor: colors.surface, borderRadius: 12, padding: 14,
-    fontSize: 16, color: colors.text900, marginBottom: 8, width: "100%",
+    ...type.body,
+    backgroundColor: colors.surface, borderRadius: radius.control, padding: space.lg,
+    color: colors.text900, marginBottom: space.sm, width: "100%",
   },
   codeInput: { fontSize: 24, fontWeight: "bold", letterSpacing: 8, textAlign: "center" },
-  dateRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  dateRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginBottom: space.sm },
   dateCol: { flex: 1 },
   dateSep: { color: colors.onBrandMuted, fontSize: 16, fontWeight: "600" },
-  currencyRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  currencyRow: { flexDirection: "row", gap: space.sm, marginBottom: space.sm },
   currencyChip: {
-    flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center",
+    flex: 1, paddingVertical: space.md, borderRadius: radius.control, alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.15)",
   },
   currencyChipActive: { backgroundColor: colors.surface },
-  currencyChipText: { fontSize: 14, fontWeight: "600", color: colors.onBrand },
+  currencyChipText: { ...type.label, fontWeight: "600", color: colors.onBrand },
   currencyChipTextActive: { color: colors.brand600 },
   btnPrimary: {
-    backgroundColor: colors.surface, padding: 16, borderRadius: 14,
-    alignItems: "center", marginTop: 8, width: "100%",
+    backgroundColor: colors.surface, padding: space.lg, borderRadius: radius.card,
+    alignItems: "center", marginTop: space.sm, width: "100%",
   },
-  btnRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  btnPrimaryText: { color: colors.brand600, fontSize: 16, fontWeight: "bold" },
+  btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  btnPrimaryText: { ...type.body, color: colors.brand600, fontWeight: "bold" },
   btnSecondary: {
-    backgroundColor: "transparent", padding: 16, borderRadius: 14,
+    backgroundColor: "transparent", padding: space.lg, borderRadius: radius.card,
     alignItems: "center", borderWidth: 1.5, borderColor: colors.onBrand,
   },
-  btnSecondaryText: { color: colors.onBrand, fontSize: 16, fontWeight: "500" },
-  back: { marginTop: 12, alignItems: "center" },
-  backTop: { alignSelf: "flex-start", marginBottom: 8 },
-  backText: { color: colors.onBrandMuted, fontSize: 15 },
+  btnSecondaryText: { ...type.body, color: colors.onBrand, fontWeight: "500" },
+  back: { marginTop: space.md, alignItems: "center" },
+  backTop: { alignSelf: "flex-start", marginBottom: space.sm },
+  backText: { ...type.body, color: colors.onBrandMuted },
 });
