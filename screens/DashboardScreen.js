@@ -56,6 +56,20 @@ function computeTripStatus(startStr, endStr) {
   return { label, kind: "past", sortOrder: 2000 + daysAfterEnd };
 }
 
+// Конвертира сума в EUR по курс от currency-rates Edge Function.
+// Ако курсът липсва (все още не е зареден или валутата не е позната),
+// връщаме суровата сума — по-добре приблизителен баланс, отколкото блокиран UI.
+function toEUR(amount, currency, rates) {
+  if (!currency || currency === "EUR") return amount;
+  const rate = rates?.[currency];
+  if (!rate) return amount;
+  return amount / rate;
+}
+
+function formatEUR(amount) {
+  return `${amount.toFixed(2)} €`;
+}
+
 export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI, onDocuments, onExpenses, onChat, onSwitchTrip, onNewTrip, onTripUpdated }) {	const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
@@ -68,6 +82,14 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [savingName, setSavingName] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [unblocking, setUnblocking] = useState(null);
+
+  // Живи данни за краткия контекст под всяка карта на Dashboard-а
+  // (брой документи, нетен баланс от разходите) — леки заявки, без
+  // да дублираме цялата логика на DocumentsScreen/ExpensesScreen.
+  const [docsCount, setDocsCount] = useState(0);
+  const [expenses, setExpenses] = useState([]);
+  const [expenseSplits, setExpenseSplits] = useState([]);
+  const [rates, setRates] = useState(null);
 
   // Edit trip modal state (само за организатора).
   // Целта: единно място за корекция на всички основни данни на пътуването,
@@ -204,6 +226,84 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
     return () => supabase.removeChannel(channel);
   }, [trip?.id, user?.id]);
+
+  // Брой документи — за краткия контекст под картата "Документи".
+  const fetchDocsCount = useCallback(async () => {
+    if (!trip?.id) return;
+    const { count } = await supabase
+      .from("documents")
+      .select("*", { count: "exact", head: true })
+      .eq("trip_id", trip.id);
+    setDocsCount(count || 0);
+  }, [trip?.id]);
+
+  useEffect(() => {
+    fetchDocsCount();
+    if (!trip?.id) return;
+    const channel = supabase
+      .channel(`dashboard-docs-${trip.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "documents", filter: `trip_id=eq.${trip.id}` },
+        () => fetchDocsCount()
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [trip?.id, fetchDocsCount]);
+
+  // Разходи + splits — за нетния баланс, показан горе и под картата "Разходи".
+  // Съзнателно е олекотена версия на логиката в ExpensesScreen (само сумите,
+  // без категории/описания), за да не дублираме целия екран тук.
+  const fetchExpensesData = useCallback(async () => {
+    if (!trip?.id) return;
+    const { data: eData } = await supabase
+      .from("expenses").select("id, amount, currency, paid_by").eq("trip_id", trip.id);
+    const expenseIds = (eData || []).map((e) => e.id);
+    let sData = [];
+    if (expenseIds.length > 0) {
+      const { data } = await supabase
+        .from("expense_splits").select("user_id, share, expense_id, is_settled").in("expense_id", expenseIds);
+      sData = data || [];
+    }
+    setExpenses(eData || []);
+    setExpenseSplits(sData);
+  }, [trip?.id]);
+
+  useEffect(() => {
+    fetchExpensesData();
+    supabase.functions.invoke("currency-rates?action=rates", { method: "GET" })
+      .then(({ data, error }) => { if (!error && data) setRates(data.rates || null); })
+      .catch(() => {});
+    if (!trip?.id) return;
+    const channel = supabase
+      .channel(`dashboard-expenses-${trip.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "expenses", filter: `trip_id=eq.${trip.id}` },
+        () => fetchExpensesData()
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "expense_splits" },
+        () => fetchExpensesData()
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [trip?.id, fetchExpensesData]);
+
+  // Нетен баланс на текущия потребител в EUR: положително = дължат ти,
+  // отрицателно = ти дължиш. Само неуредени (is_settled: false) splits.
+  const netBalance = useMemo(() => {
+    let net = 0;
+    expenses.forEach((exp) => {
+      const cur = exp.currency || "EUR";
+      if (exp.paid_by === user.id) {
+        const owedToMe = expenseSplits
+          .filter((s) => s.expense_id === exp.id && s.user_id !== user.id && !s.is_settled)
+          .reduce((s, x) => s + toEUR(Number(x.share), cur, rates), 0);
+        net += owedToMe;
+      } else {
+        const mySplit = expenseSplits.find((s) => s.expense_id === exp.id && s.user_id === user.id && !s.is_settled);
+        if (mySplit) net -= toEUR(Number(mySplit.share), cur, rates);
+      }
+    });
+    return net;
+  }, [expenses, expenseSplits, rates, user.id]);
 
   async function handleSaveName() {
     const name = newName.trim();
@@ -403,11 +503,26 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     }
   }
 
+  // Кратък "жив" контекст под всяка карта на Dashboard-а — реални данни
+  // вместо статичен подпис, така че потребителят вижда какво го чака преди
+  // да е отворил екрана.
+  const chatSub = unreadCount > 0
+    ? `${unreadCount} ${unreadCount === 1 ? "ново съобщение" : "нови съобщения"}`
+    : "Няма нови съобщения";
+  const docsSub = docsCount > 0
+    ? `${docsCount} ${docsCount === 1 ? "документ" : "документа"}`
+    : "Няма документи";
+  const expensesSub = Math.abs(netBalance) < 0.01
+    ? "Всичко е изравнено"
+    : netBalance > 0
+      ? `Дължат ти ${formatEUR(netBalance)}`
+      : `Дължиш ${formatEUR(Math.abs(netBalance))}`;
+
   const cards = [
     { Icon: Sparkles, title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: colors.brand50, badge: 0 },
-    { Icon: MessageSquare, title: "Чат", sub: "Групов чат", onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
-    { Icon: FileText, title: "Документи", sub: "Резервации и билети", onPress: onDocuments, color: "#E6F1FB", badge: 0 },
-    { Icon: CreditCard, title: "Разходи", sub: "Кой колко дължи", onPress: onExpenses, color: "#FAEEDA", badge: 0 },
+    { Icon: MessageSquare, title: "Чат", sub: chatSub, onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
+    { Icon: FileText, title: "Документи", sub: docsSub, onPress: onDocuments, color: "#E6F1FB", badge: 0 },
+    { Icon: CreditCard, title: "Разходи", sub: expensesSub, onPress: onExpenses, color: "#FAEEDA", badge: 0 },
   ];
 
   async function handleShare() {
@@ -466,6 +581,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   }, [allTrips]);
 
   const showMembersRow = otherMembers.length > 0 || isOwner;
+  const isSettled = Math.abs(netBalance) < 0.01;
 
   return (
     <View style={styles.flex}>
@@ -479,6 +595,22 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
             <Text style={styles.editIcon}>✏️</Text>
           </TouchableOpacity>
         </View>
+
+        {trip && (
+          <TouchableOpacity
+            style={[styles.balanceBar, isSettled ? styles.balanceBarSettled : (netBalance > 0 ? styles.balanceBarPositive : styles.balanceBarNegative)]}
+            onPress={onExpenses}
+          >
+            <Text style={styles.balanceBarLabel}>
+              {isSettled ? "💚 Всички сметки са изравнени" : netBalance > 0 ? "Дължат ти" : "Ти дължиш"}
+            </Text>
+            {!isSettled && (
+              <Text style={[styles.balanceBarAmount, netBalance > 0 ? styles.balanceBarAmountPositive : styles.balanceBarAmountNegative]}>
+                {formatEUR(Math.abs(netBalance))}
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
 
         {trip && (
           <View style={styles.tripCard}>
@@ -550,28 +682,32 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
         <View style={styles.cards}>
           {cards.map((card, i) => (
-            <TouchableOpacity key={i} style={[styles.card, { backgroundColor: card.color }]} onPress={card.onPress}>
-              <View style={styles.cardEmojiWrap}>
-                <card.Icon size={24} color={colors.brand600} strokeWidth={1.75} />
+            <TouchableOpacity key={i} style={[styles.cardRow, { backgroundColor: card.color }]} onPress={card.onPress}>
+              <View style={styles.cardIconWrap}>
+                <card.Icon size={22} color={colors.brand600} strokeWidth={1.75} />
                 {card.badge > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>{card.badge > 99 ? "99+" : card.badge}</Text>
                   </View>
                 )}
               </View>
-              <Text style={styles.cardTitle}>{card.title}</Text>
-              <Text style={styles.cardSub}>{card.sub}</Text>
+              <View style={styles.cardTextWrap}>
+                <Text style={styles.cardTitle}>{card.title}</Text>
+                <Text style={styles.cardSub}>{card.sub}</Text>
+              </View>
+              <Text style={styles.cardChevron}>›</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
-          <Text style={styles.shareBtnText}>🔗 Покани участник</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.signOut} onPress={onSignOut}>
-          <Text style={styles.signOutText}>Изход</Text>
-        </TouchableOpacity>
+        <View style={styles.bottomRow}>
+          <TouchableOpacity style={[styles.shareBtn, styles.bottomBtnHalf]} onPress={handleShare}>
+            <Text style={styles.shareBtnText}>🔗 Покани</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.signOut, styles.bottomBtnHalf]} onPress={onSignOut}>
+            <Text style={styles.signOutText}>Изход</Text>
+          </TouchableOpacity>
+        </View>
 
       </ScrollView>
 
@@ -824,6 +960,17 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginTop: space.xs },
   displayName: { ...type.label, color: colors.text600 },
   editIcon: { fontSize: 12 },
+  balanceBar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    borderRadius: radius.card, paddingHorizontal: space.lg, paddingVertical: space.md, marginBottom: space.md,
+  },
+  balanceBarSettled: { backgroundColor: colors.brand50 },
+  balanceBarPositive: { backgroundColor: colors.brand50 },
+  balanceBarNegative: { backgroundColor: "#FBEAE7" },
+  balanceBarLabel: { ...type.label, fontWeight: "600", color: colors.text900 },
+  balanceBarAmount: { ...type.body, fontWeight: "bold", fontVariant: ["tabular-nums"] },
+  balanceBarAmountPositive: { color: colors.brand600 },
+  balanceBarAmountNegative: { color: colors.owe600 },
   tripCard: {
     backgroundColor: colors.brand600, borderRadius: radius.card, padding: space.xl, marginBottom: space.xl,
     shadowColor: colors.brand600, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
@@ -866,10 +1013,9 @@ const styles = StyleSheet.create({
   membersLabelInline: { fontSize: 12, lineHeight: 16, color: colors.onBrandMuted },
   switchBtn: { marginTop: space.lg, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: radius.control, padding: space.md, alignItems: "center" },
   switchBtnText: { ...type.label, fontWeight: "600", color: colors.onBrand },
-  cards: { flexDirection: "row", flexWrap: "wrap", gap: space.md, marginBottom: space.md },
-  card: { width: "47%", borderRadius: radius.card, padding: space.xl, alignItems: "center" },
-  cardEmojiWrap: { position: "relative", marginBottom: space.sm },
-  cardEmoji: { fontSize: 32 },
+  cards: { gap: space.sm, marginBottom: space.md },
+  cardRow: { flexDirection: "row", alignItems: "center", borderRadius: radius.card, padding: space.lg, gap: space.md },
+  cardIconWrap: { position: "relative", width: 32, alignItems: "center", justifyContent: "center" },
   badge: {
     position: "absolute", top: -4, right: -8,
     backgroundColor: colors.owe600, borderRadius: radius.pill,
@@ -877,8 +1023,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.xs,
   },
   badgeText: { color: colors.onBrand, fontSize: 10, fontWeight: "bold" },
+  cardTextWrap: { flex: 1 },
   cardTitle: { ...type.body, fontWeight: "bold", color: colors.text900 },
-  cardSub: { fontSize: 12, lineHeight: 16, color: colors.text600, marginTop: space.xs, textAlign: "center", fontWeight: "600" },
+  cardSub: { fontSize: 12, lineHeight: 16, color: colors.text600, marginTop: space.xs, fontWeight: "600" },
+  cardChevron: { fontSize: 20, color: colors.text400 },
+  bottomRow: { flexDirection: "row", gap: space.sm },
+  bottomBtnHalf: { flex: 1, marginBottom: 0 },
   shareBtn: { backgroundColor: colors.surface, padding: space.lg, borderRadius: radius.control, alignItems: "center", marginBottom: space.md, borderWidth: 1, borderColor: colors.border },
   shareBtnText: { ...type.label, fontWeight: "600", color: colors.brand600 },
   signOut: { padding: space.lg, borderRadius: radius.control, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
