@@ -35,17 +35,29 @@ export const radius = {
   control: 10, card: 16, pill: 999,
 };
 
+// Golos Text (expo-font / @expo-google-fonts/golos-text) — заредена в App.js
+// през useFonts. RN custom шрифтове НЕ реагират на fontWeight, затова всяко
+// тегло тук е отделен fontFamily. fontWeight остава като metadata (безобиден
+// fallback, докато шрифтът се зарежда), но реалният вид идва от fontFamily.
+const fontFamily = {
+  regular: "GolosText_400Regular",
+  medium: "GolosText_500Medium",
+  semibold: "GolosText_600SemiBold",
+  bold: "GolosText_700Bold",
+  extrabold: "GolosText_800ExtraBold",
+};
+
 // Минимум 14pt за всичко видимо — аудитория 30–50, чете на слънце.
 export const type = {
-  display: { fontSize: 32, lineHeight: 38, fontWeight: "800", letterSpacing: -0.6 },
-  title:   { fontSize: 24, lineHeight: 30, fontWeight: "700", letterSpacing: -0.2 },
-  heading: { fontSize: 20, lineHeight: 26, fontWeight: "600" },
-  subhead: { fontSize: 17, lineHeight: 24, fontWeight: "600" },
-  body:    { fontSize: 16, lineHeight: 24, fontWeight: "400" },
-  label:   { fontSize: 14, lineHeight: 20, fontWeight: "500" },
-  caption: { fontSize: 12, lineHeight: 16, fontWeight: "600", letterSpacing: 1, textTransform: "uppercase" },
+  display: { fontSize: 32, lineHeight: 38, fontWeight: "800", letterSpacing: -0.6, fontFamily: fontFamily.extrabold },
+  title:   { fontSize: 24, lineHeight: 30, fontWeight: "700", letterSpacing: -0.2, fontFamily: fontFamily.bold },
+  heading: { fontSize: 20, lineHeight: 26, fontWeight: "600", fontFamily: fontFamily.semibold },
+  subhead: { fontSize: 17, lineHeight: 24, fontWeight: "600", fontFamily: fontFamily.semibold },
+  body:    { fontSize: 16, lineHeight: 24, fontWeight: "400", fontFamily: fontFamily.regular },
+  label:   { fontSize: 14, lineHeight: 20, fontWeight: "500", fontFamily: fontFamily.medium },
+  caption: { fontSize: 12, lineHeight: 16, fontWeight: "600", letterSpacing: 1, textTransform: "uppercase", fontFamily: fontFamily.semibold },
   // tabular-nums, иначе колоните в списъка с разходи танцуват
-  amount:  { fontSize: 28, lineHeight: 32, fontWeight: "700", fontVariant: ["tabular-nums"] },
+  amount:  { fontSize: 28, lineHeight: 32, fontWeight: "700", fontVariant: ["tabular-nums"], fontFamily: fontFamily.bold },
 };
 
 // Минимум 48×48, не 44 — палец на едната ръка, движеща се кола, слънце.
