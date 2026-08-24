@@ -5,6 +5,7 @@
     "version": "1.0.0",
     "scheme": "gotogether",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "platforms": ["ios", "android"],
     "ios": {
       "supportsTablet": true,
@@ -17,6 +18,10 @@
     },
     "android": {
       "package": "com.temsit.gotogether",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A6B57"
+      },
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
