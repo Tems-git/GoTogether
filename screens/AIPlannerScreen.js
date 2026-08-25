@@ -10,21 +10,140 @@ const TRANSPORT_OPTIONS = ["коли", "самолет", "автобус", "вл
 const ACCOMMODATION_TYPES = ["хотел", "хостел", "къща", "къмпинг", "Airbnb", "апартамент", "семеен хотел"];
 const COMFORT_OPTIONS = ["без значение", "3+ звезди", "4+ звезди", "5 звезди"];
 
-// Разпознава URL адреси в отговора на AI-то, за да ги покажем като истински
-// натискаеми линкове вместо суров текст.
-const URL_SPLIT_REGEX = /(https?:\/\/[^\s)]+)/g;
-const URL_TEST_REGEX = /^https?:\/\//;
+// --- Форматиране на текста на плана -----------------------------------------
+// AI-то връща markdown-подобен текст (## заглавия, **удебелено**, "- " списъци,
+// "---" разделители). Преди го показвахме в един <Text> и всички тези маркери
+// се виждаха буквално на екрана. Тук ги превръщаме в реално форматиране:
+// заглавия на раздели, удебелени части, списъци с водещи точки и линии, като
+// линковете си остават натискаеми. Нарочно е клиентско — така се подреждат и
+// вече запазените стари планове, без да пипаме edge функцията.
 
-function renderPlanText(text, linkStyle) {
-  return text.split(URL_SPLIT_REGEX).map((segment, i) =>
-    URL_TEST_REGEX.test(segment) ? (
-      <Text key={i} style={linkStyle} onPress={() => Linking.openURL(segment)}>
-        {segment}
+const URL_TEST_REGEX = /^https?:\/\//;
+// Разделя ред на части: **удебелено** и URL адреси, останалото е обикновен текст.
+const INLINE_SPLIT_REGEX = /(\*\*[^*]+\*\*|https?:\/\/[^\s)<>"']+)/g;
+
+const HEADING_REGEX = /^#{1,6}\s+/;
+const DIVIDER_REGEX = /^\s*([-*_])\1{2,}\s*$/;
+const BULLET_REGEX = /^\s*[-*•]\s+/;
+const NUMBERED_REGEX = /^\s*(\d+)[.)]\s+/;
+const BOLD_ONLY_REGEX = /^\*\*(.+?)\*\*:?$/;
+
+function stripInlineMarks(s) {
+  return (s || "").replace(/\*\*/g, "").trim();
+}
+
+// Ред като "1. МАРШРУТ" или "НАСТАНЯВАНЕ" е заглавие на раздел, а не елемент
+// от номериран списък — разпознаваме го по това, че е кратък и изцяло с
+// главни букви (така програмните точки "1. Тръгване в 8:00" не стават заглавия).
+function isSectionHeading(text) {
+  const plain = stripInlineMarks(text);
+  if (!plain || plain.length > 40) return false;
+  if (!/[A-Za-zА-Яа-яЁё]/.test(plain)) return false;
+  return plain === plain.toUpperCase();
+}
+
+function renderInline(text, keyPrefix) {
+  return (text || "").split(INLINE_SPLIT_REGEX).filter(Boolean).map((segment, i) => {
+    const key = `${keyPrefix}-i${i}`;
+    if (URL_TEST_REGEX.test(segment)) {
+      return (
+        <Text key={key} style={styles.planLink} onPress={() => Linking.openURL(segment)}>
+          {segment}
+        </Text>
+      );
+    }
+    if (/^\*\*[^*]+\*\*$/.test(segment)) {
+      return <Text key={key} style={styles.planBold}>{segment.slice(2, -2)}</Text>;
+    }
+    return <Text key={key}>{segment}</Text>;
+  });
+}
+
+function renderPlanBlocks(text) {
+  const lines = (text || "").split("\n");
+  const blocks = [];
+  let lastWasGap = true; // за да не слагаме празнина най-отгоре
+
+  function pushHeading(key, label) {
+    blocks.push(
+      <Text key={key} style={[styles.planHeading, blocks.length === 0 && styles.planHeadingFirst]}>
+        {label}
       </Text>
-    ) : (
-      <Text key={i}>{segment}</Text>
-    )
-  );
+    );
+    lastWasGap = false;
+  }
+
+  lines.forEach((rawLine, idx) => {
+    const line = rawLine.replace(/\s+$/, "");
+    const key = `b${idx}`;
+
+    if (!line.trim()) {
+      // Свиваме поредица от празни редове до една празнина — иначе разстоянията
+      // между разделите стават огромни.
+      if (!lastWasGap) {
+        blocks.push(<View key={key} style={styles.planGap} />);
+        lastWasGap = true;
+      }
+      return;
+    }
+
+    if (DIVIDER_REGEX.test(line)) {
+      blocks.push(<View key={key} style={styles.planDivider} />);
+      lastWasGap = true;
+      return;
+    }
+
+    if (HEADING_REGEX.test(line)) {
+      pushHeading(key, stripInlineMarks(line.replace(HEADING_REGEX, "")));
+      return;
+    }
+
+    const numbered = line.match(NUMBERED_REGEX);
+    if (numbered) {
+      const rest = line.replace(NUMBERED_REGEX, "");
+      if (isSectionHeading(rest)) {
+        pushHeading(key, `${numbered[1]}. ${stripInlineMarks(rest)}`);
+        return;
+      }
+      blocks.push(
+        <View key={key} style={styles.planListRow}>
+          <Text style={styles.planListMarker}>{numbered[1]}.</Text>
+          <Text style={styles.planListText}>{renderInline(rest, key)}</Text>
+        </View>
+      );
+      lastWasGap = false;
+      return;
+    }
+
+    if (BULLET_REGEX.test(line)) {
+      blocks.push(
+        <View key={key} style={styles.planListRow}>
+          <Text style={styles.planListMarker}>•</Text>
+          <Text style={styles.planListText}>{renderInline(line.replace(BULLET_REGEX, ""), key)}</Text>
+        </View>
+      );
+      lastWasGap = false;
+      return;
+    }
+
+    if (isSectionHeading(line)) {
+      pushHeading(key, stripInlineMarks(line));
+      return;
+    }
+
+    // Ред, който целият е в **...** — подзаглавие (напр. име на хотел или ден).
+    const boldOnly = line.trim().match(BOLD_ONLY_REGEX);
+    if (boldOnly) {
+      blocks.push(<Text key={key} style={styles.planSubheading}>{boldOnly[1].trim()}</Text>);
+      lastWasGap = false;
+      return;
+    }
+
+    blocks.push(<Text key={key} style={styles.planParagraph}>{renderInline(line, key)}</Text>);
+    lastWasGap = false;
+  });
+
+  return blocks;
 }
 
 // ISO "YYYY-MM-DD" (форматът, който връща DatePicker) → четим за AI-то низ
@@ -419,7 +538,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
 
         <ScrollView style={styles.planScroll} contentContainerStyle={styles.planScrollContent}>
           <View style={styles.planBox}>
-            <Text style={styles.planText}>{renderPlanText(plan, styles.planLink)}</Text>
+            {renderPlanBlocks(plan)}
           </View>
         </ScrollView>
 
@@ -698,8 +817,24 @@ const styles = StyleSheet.create({
   planFooter: { paddingHorizontal: space.xl, paddingTop: space.md, backgroundColor: colors.bg, borderTopWidth: 0.5, borderTopColor: colors.border },
   planTitle: { ...type.title, color: colors.text900, marginBottom: space.lg },
   planBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.xl },
-  planText: { ...type.body, color: colors.text900 },
   planLink: { ...type.body, color: colors.brand600, textDecorationLine: "underline" },
+  // Форматиране на плана (виж renderPlanBlocks по-горе).
+  planHeading: {
+    ...type.subhead, fontWeight: "bold", fontFamily: "GolosText_700Bold",
+    color: colors.text900, marginTop: space.lg, marginBottom: space.sm,
+  },
+  planHeadingFirst: { marginTop: 0 },
+  planSubheading: {
+    ...type.body, fontWeight: "600", fontFamily: "GolosText_600SemiBold",
+    color: colors.text900, marginTop: space.md, marginBottom: space.xs,
+  },
+  planParagraph: { ...type.body, color: colors.text900, marginBottom: space.xs },
+  planBold: { fontWeight: "700", fontFamily: "GolosText_700Bold" },
+  planListRow: { flexDirection: "row", gap: space.sm, marginBottom: space.xs, paddingLeft: space.xs },
+  planListMarker: { ...type.body, color: colors.text600, minWidth: 16 },
+  planListText: { ...type.body, color: colors.text900, flex: 1 },
+  planDivider: { height: 1, backgroundColor: colors.border, marginVertical: space.md },
+  planGap: { height: space.sm },
   planActionsRow: { flexDirection: "row", gap: space.sm, marginBottom: space.sm },
   planActionBtn: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.brand600, borderRadius: radius.control, padding: space.md, alignItems: "center" },
   planActionText: { ...type.label, color: colors.brand600, fontWeight: "600", fontFamily: "GolosText_600SemiBold" },
