@@ -71,6 +71,11 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   const [showHistory, setShowHistory] = useState(false);
   const [historyPlans, setHistoryPlans] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  // Реалните начало/дестинация, които AI-то е използвало в текущия план —
+  // идват от отговора на edge function-а (ROUTE_META), не само от формата,
+  // защото потребителят може да е оставил дестинацията празна за AI да избере.
+  // Пазим ги, за да ги запишем в params при всяко persistPlan извикване.
+  const [resolvedMeta, setResolvedMeta] = useState({ start: null, dest: null });
 
   const [form, setForm] = useState({
     startPoint: "София",
@@ -97,14 +102,15 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   useEffect(() => {
     if (!canPersist) return;
     const query = openPlanId
-      ? supabase.from("trip_plans").select("id, content").eq("id", openPlanId).eq("trip_id", trip.id).maybeSingle()
-      : supabase.from("trip_plans").select("id, content").eq("trip_id", trip.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      ? supabase.from("trip_plans").select("id, content, params").eq("id", openPlanId).eq("trip_id", trip.id).maybeSingle()
+      : supabase.from("trip_plans").select("id, content, params").eq("trip_id", trip.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
 
     query.then(async ({ data }) => {
       if (data?.content) {
         setPlan(data.content);
         setSaveStatus("saved");
         setCurrentPlanId(data.id);
+        setResolvedMeta({ start: data.params?.resolvedStart || null, dest: data.params?.resolvedDestination || null });
         return;
       }
       if (openPlanId) {
@@ -112,7 +118,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
         // назад към последния запазен, вместо да покажем празен екран.
         const { data: latest } = await supabase
           .from("trip_plans")
-          .select("id, content")
+          .select("id, content, params")
           .eq("trip_id", trip.id)
           .order("created_at", { ascending: false })
           .limit(1)
@@ -121,6 +127,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
           setPlan(latest.content);
           setSaveStatus("saved");
           setCurrentPlanId(latest.id);
+          setResolvedMeta({ start: latest.params?.resolvedStart || null, dest: latest.params?.resolvedDestination || null });
         }
       }
     }).finally(() => setLoadingSavedPlan(false));
@@ -152,6 +159,18 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
 
   function removeWaypoint(id) {
     setForm(f => ({ ...f, waypoints: f.waypoints.filter(w => w.id !== id) }));
+  }
+
+  // Обединява текущите формулярни данни с реалните начало/дестинация, които
+  // AI-то е използвало (meta) — това пазим в params на всеки запис, за да
+  // може историята да показва истинския маршрут дори когато потребителят е
+  // оставил дестинацията празна и AI сам я е избрал.
+  function buildParams(meta) {
+    return {
+      ...form,
+      resolvedStart: meta?.start || null,
+      resolvedDestination: meta?.dest || null,
+    };
   }
 
   // Общо запазване, извикано автоматично след всяко генериране/коригиране на
@@ -212,7 +231,8 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
 
       setPlan(data.plan);
       setSaveStatus(null);
-      persistPlan(data.plan, form);
+      setResolvedMeta(data.meta || { start: null, dest: null });
+      persistPlan(data.plan, buildParams(data.meta));
     } catch (e) {
       alert("Грешка: " + e.message);
     }
@@ -221,7 +241,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
 
   async function handleSaveToTrip() {
     if (!plan) return;
-    persistPlan(plan, form);
+    persistPlan(plan, buildParams(resolvedMeta));
   }
 
   async function handleShareToChat() {
@@ -232,7 +252,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       // план задръства чата за всички. Ако все още няма запазено id (напр.
       // автоматичното запазване е било неуспешно), пробваме да запазим сега.
       let planId = currentPlanId;
-      if (!planId) planId = await persistPlan(plan, form);
+      if (!planId) planId = await persistPlan(plan, buildParams(resolvedMeta));
       if (!planId) throw new Error("Планът не можа да се запази, опитай пак.");
 
       const { error } = await supabase.from("messages").insert({
@@ -270,6 +290,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     setSaveStatus("saved");
     setShowRefine(false);
     setShowHistory(false);
+    setResolvedMeta({ start: item.params?.resolvedStart || null, dest: item.params?.resolvedDestination || null });
   }
 
   function formatHistoryDate(iso) {
@@ -277,19 +298,38 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
 
+  // Първи що-годе съдържателен ред от текста на плана — резервен етикет за
+  // по-стари записи, запазени преди да пазим и реално избраната от AI
+  // дестинация (resolvedDestination), при които params.destination е празно,
+  // защото потребителят е оставил AI да избере дестинацията.
+  function extractFallbackLabel(content) {
+    if (!content) return null;
+    const lines = content.split("\n").map((l) =>
+      l.replace(/^#+\s*/, "").replace(/^[-*]+\s*/, "").replace(/\*\*/g, "").trim()
+    );
+    const line = lines.find((l) => l && l !== "---" && l.length > 3 && !/^\d+\.\s/.test(l));
+    return line ? line.slice(0, 60) : null;
+  }
+
   // Показваме маршрута (начало → спирки → дестинация) вместо суровата дата
   // като основен етикет на всеки ред в историята — по-лесно е да разпознаеш
   // кой план кой е, отколкото по час на запазване. Датата остава като
   // по-дребен подетикет под маршрута, а редовете пак са подредени хронологично
   // (най-новите отгоре — заявката по-горе е с order created_at desc).
-  function formatHistoryRoute(params) {
-    if (!params) return "План";
-    const start = (params.startPoint || "").trim();
-    const dest = (params.destination || "").trim();
-    const waypointNames = (params.waypoints || [])
+  // Предпочитаме resolvedStart/resolvedDestination (реално използваните от
+  // AI-то, идващи от ROUTE_META в отговора) пред суровите полета от формата,
+  // защото потребителят може да е оставил дестинацията празна за AI да избере.
+  function formatHistoryRoute(item) {
+    const params = item?.params;
+    const start = (params?.resolvedStart || params?.startPoint || "").trim();
+    const dest = (params?.resolvedDestination || params?.destination || "").trim();
+    const waypointNames = (params?.waypoints || [])
       .map((w) => (w?.name || "").trim())
       .filter(Boolean);
     const points = [start, ...waypointNames, dest].filter(Boolean);
+    if (points.length > 1) return points.join(" → ");
+    const fallback = extractFallbackLabel(item?.content);
+    if (fallback) return fallback;
     return points.length ? points.join(" → ") : "План";
   }
 
@@ -304,7 +344,8 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       if (data?.error) throw new Error(data.error);
       setPlan(data.plan);
       setSaveStatus(null);
-      persistPlan(data.plan, form);
+      setResolvedMeta(data.meta || { start: null, dest: null });
+      persistPlan(data.plan, buildParams(data.meta));
       setFeedback("");
       setShowRefine(false);
     } catch (e) {
@@ -319,6 +360,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     setSaveStatus(null);
     setShowRefine(false);
     setFeedback("");
+    setResolvedMeta({ start: null, dest: null });
   }
 
   if (loadingSavedPlan) {
@@ -422,7 +464,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
                 renderItem={({ item }) => (
                   <TouchableOpacity style={styles.historyItem} onPress={() => selectHistoryPlan(item)}>
                     <View style={styles.historyItemRow}>
-                      <Text style={styles.historyItemDate} numberOfLines={1}>{formatHistoryRoute(item.params)}</Text>
+                      <Text style={styles.historyItemDate} numberOfLines={1}>{formatHistoryRoute(item)}</Text>
                       {item.id === currentPlanId && <Text style={styles.historyItemCurrent}>● показан сега</Text>}
                     </View>
                     <Text style={styles.historyItemDateSub}>{formatHistoryDate(item.created_at)}</Text>
