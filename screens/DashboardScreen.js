@@ -641,7 +641,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         {trip && (
           <View style={styles.tripCard}>
             <View style={styles.tripTop}>
-              {/* Организаторът може да тапне върху trip info за редакция.
+              {/* Организаторът може да тапне върху trip info частта за редакция.
                   Не-организаторите виждат същия layout, но без тап реакция. */}
               <TouchableOpacity
                 style={styles.tripInfo}
@@ -711,17 +711,19 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
             <TouchableOpacity key={i} style={[styles.cardRow, { backgroundColor: card.color }]} onPress={card.onPress}>
               <View style={styles.cardIconWrap}>
                 <card.Icon size={22} color={colors.brand600} strokeWidth={1.75} />
-                {card.badge > 0 && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{card.badge > 99 ? "99+" : card.badge}</Text>
-                  </View>
-                )}
               </View>
               <View style={styles.cardTextWrap}>
                 <Text style={styles.cardTitle}>{card.title}</Text>
                 <Text style={styles.cardSub}>{card.sub}</Text>
               </View>
               <Text style={styles.cardChevron}>›</Text>
+              {card.badge > 0 && (
+                // Преместено в горния десен ъгъл на цялата карта, а не върху
+                // иконата — там се застъпваше с нея на по-малки икони (напр. 22px).
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{card.badge > 99 ? "99+" : card.badge}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           ))}
         </View>
@@ -1040,10 +1042,10 @@ const styles = StyleSheet.create({
   switchBtn: { marginTop: space.lg, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: radius.control, padding: space.md, alignItems: "center" },
   switchBtnText: { ...type.label, fontWeight: "600", fontFamily: "GolosText_600SemiBold", color: colors.onBrand },
   cards: { gap: space.sm, marginBottom: space.md },
-  cardRow: { flexDirection: "row", alignItems: "center", borderRadius: radius.card, padding: space.lg, gap: space.md },
-  cardIconWrap: { position: "relative", width: 32, alignItems: "center", justifyContent: "center" },
+  cardRow: { flexDirection: "row", alignItems: "center", borderRadius: radius.card, padding: space.lg, gap: space.md, position: "relative" },
+  cardIconWrap: { width: 32, alignItems: "center", justifyContent: "center" },
   badge: {
-    position: "absolute", top: -4, right: -8,
+    position: "absolute", top: space.sm, right: space.sm,
     backgroundColor: colors.owe600, borderRadius: radius.pill,
     minWidth: 18, height: 18, alignItems: "center", justifyContent: "center",
     paddingHorizontal: space.xs,
