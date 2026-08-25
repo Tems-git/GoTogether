@@ -161,7 +161,7 @@ function AppContent() {
     );
   }
 
-  if (screen === "ai") return <AIPlannerScreen onBack={() => setScreen(user ? "dashboard" : "home")} trip={activeTrip} />;
+  if (screen === "ai") return <AIPlannerScreen onBack={() => setScreen(user ? "dashboard" : "home")} trip={activeTrip} userId={user?.id} />;
 
   if (screen === "documents") {
     return (
