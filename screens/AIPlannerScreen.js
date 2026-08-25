@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   transportTextActive: { color: colors.onBrand },
   btn: { backgroundColor: colors.brand600, padding: space.lg, borderRadius: radius.card, alignItems: "center", marginTop: space.xl },
   btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold" },
+  btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
   planTitle: { ...type.title, color: colors.text900, marginBottom: space.lg },
   planBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.xl, marginBottom: space.xl },
   planText: { ...type.body, color: colors.text900 },
