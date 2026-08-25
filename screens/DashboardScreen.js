@@ -87,7 +87,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   // (брой документи, нетен баланс от разходите) — леки заявки, без
   // да дублираме цялата логика на DocumentsScreen/ExpensesScreen.
   const [docsCount, setDocsCount] = useState(0);
-  const [hasPlan, setHasPlan] = useState(false);
+  // Брой РЕАЛНИ отделни планове (не всяка версия/корекция) — виж
+  // fetchPlanCount по-долу.
+  const [planCount, setPlanCount] = useState(0);
   const [expenses, setExpenses] = useState([]);
   const [expenseSplits, setExpenseSplits] = useState([]);
   const [rates, setRates] = useState(null);
@@ -250,31 +252,38 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     return () => supabase.removeChannel(channel);
   }, [trip?.id, fetchDocsCount]);
 
-  // Има ли вече запазен AI план за пътуването — за да сменим подписа на
+  // Брой РЕАЛНИ отделни планове за пътуването — за да сменим подписа на
   // картата "Планирай с AI" от "Ново пътуване" на нещо, което показва, че
-  // вече има план (иначе не е очевидно, че отваряне на екрана пак ще го
-  // покаже, вместо да го подкарва отначало).
-  const fetchHasPlan = useCallback(async () => {
+  // вече има план, и за да покажем правилен брой на баджа. Всяко запазване
+  // в trip_plans (генериране ИЛИ корекция/refine) създава нов ред, за да се
+  // пази пълна история на версиите — затова броим по planGroupId (общ за
+  // първоначалния план и всичките му последващи корекции), не по брой
+  // редове, иначе всяка корекция на един и същ план щеше да вдига бройката.
+  // По-стари редове отпреди да пазим planGroupId се броят поотделно (нямат
+  // как да се свържат ретроактивно).
+  const fetchPlanCount = useCallback(async () => {
     if (!trip?.id) return;
-    const { count } = await supabase
+    const { data } = await supabase
       .from("trip_plans")
-      .select("*", { count: "exact", head: true })
+      .select("id, params")
       .eq("trip_id", trip.id);
-    setHasPlan((count || 0) > 0);
+    const rows = data || [];
+    const groupIds = new Set(rows.map((r) => r.params?.planGroupId || r.id));
+    setPlanCount(groupIds.size);
   }, [trip?.id]);
 
   useEffect(() => {
-    fetchHasPlan();
+    fetchPlanCount();
     if (!trip?.id) return;
     const channel = supabase
       .channel(`dashboard-plans-${trip.id}`)
       .on("postgres_changes",
         { event: "*", schema: "public", table: "trip_plans", filter: `trip_id=eq.${trip.id}` },
-        () => fetchHasPlan()
+        () => fetchPlanCount()
       )
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, [trip?.id, fetchHasPlan]);
+  }, [trip?.id, fetchPlanCount]);
 
   // Разходи + splits — за нетния баланс, показан горе и под картата "Разходи".
   // Съзнателно е олекотена версия на логиката в ExpensesScreen (само сумите,
@@ -545,7 +554,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       : `Дължиш ${formatEUR(Math.abs(netBalance))}`;
 
   const cards = [
-    { Icon: Sparkles, title: "Планирай с AI", sub: hasPlan ? "Виж/коригирай плана" : "Ново пътуване", onPress: onAI, color: colors.brand50, badge: hasPlan ? 1 : 0 },
+    { Icon: Sparkles, title: "Планирай с AI", sub: planCount > 0 ? "Виж/коригирай плана" : "Ново пътуване", onPress: onAI, color: colors.brand50, badge: planCount },
     { Icon: MessageSquare, title: "Чат", sub: chatSub, onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
     { Icon: FileText, title: "Документи", sub: docsSub, onPress: onDocuments, color: "#E6F1FB", badge: 0 },
     { Icon: CreditCard, title: "Разходи", sub: expensesSub, onPress: onExpenses, color: "#FAEEDA", badge: 0 },
@@ -641,7 +650,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         {trip && (
           <View style={styles.tripCard}>
             <View style={styles.tripTop}>
-              {/* Организаторът може да тапне върху trip info частта за редакция.
+              {/* Организаторът може да тапне върху trip info за редакция.
                   Не-организаторите виждат същия layout, но без тап реакция. */}
               <TouchableOpacity
                 style={styles.tripInfo}
