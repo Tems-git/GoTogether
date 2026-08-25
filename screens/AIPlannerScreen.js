@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Linking } from "react-native";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sparkles } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
@@ -26,15 +26,27 @@ function renderPlanText(text, linkStyle) {
   );
 }
 
-export default function AIPlannerScreen({ onBack, trip }) {
+export default function AIPlannerScreen({ onBack, trip, userId }) {
   // Реални safe area отстояния — без тях Android навигационната лента
   // застъпва бутона "Генерирай план", а status bar-ът закрива "← Назад".
   const insets = useSafeAreaInsets();
   // Бюджетът следва валутата на пътуването (зададена в TripSetup), за да е
   // консистентно с Разходи, вместо да е хардкоднат на лева/евро.
   const tripCurrency = trip?.local_currency || "EUR";
+  // Планерът е достъпен и от началния екран без вписан потребител/пътуване
+  // (маркетингова разходка) — запазване/споделяне/корекция изискват и двете.
+  const canPersist = !!(trip?.id && userId);
+
   const [loading, setLoading] = useState(false);
   const [plan, setPlan] = useState(null);
+  const [loadingSavedPlan, setLoadingSavedPlan] = useState(canPersist);
+  const [displayName, setDisplayName] = useState("");
+  const [saveStatus, setSaveStatus] = useState(null); // null | "saving" | "saved"
+  const [sharing, setSharing] = useState(false);
+  const [showRefine, setShowRefine] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [refining, setRefining] = useState(false);
+
   const [form, setForm] = useState({
     startPoint: "София",
     destination: "",
@@ -47,6 +59,37 @@ export default function AIPlannerScreen({ onBack, trip }) {
     accommodationType: null,
     comfort: "без значение",
   });
+
+  // Ако пътуването вече си има запазен план, го показваме директно вместо
+  // празна форма — така групата вижда последния съгласуван план при отваряне.
+  useEffect(() => {
+    if (!canPersist) return;
+    supabase
+      .from("trip_plans")
+      .select("content")
+      .eq("trip_id", trip.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.content) {
+          setPlan(data.content);
+          setSaveStatus("saved");
+        }
+      })
+      .finally(() => setLoadingSavedPlan(false));
+  }, [canPersist, trip?.id]);
+
+  useEffect(() => {
+    if (!canPersist) return;
+    supabase
+      .from("trip_members")
+      .select("display_name")
+      .eq("trip_id", trip.id)
+      .eq("user_id", userId)
+      .maybeSingle()
+      .then(({ data }) => setDisplayName(data?.display_name || ""));
+  }, [canPersist, trip?.id, userId]);
 
   const scrollPadding = { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40 };
 
@@ -90,10 +133,83 @@ export default function AIPlannerScreen({ onBack, trip }) {
       if (data?.error) throw new Error(data.error);
 
       setPlan(data.plan);
+      setSaveStatus(null);
     } catch (e) {
       alert("Грешка: " + e.message);
     }
     setLoading(false);
+  }
+
+  async function handleSaveToTrip() {
+    if (!canPersist || !plan) return;
+    setSaveStatus("saving");
+    try {
+      const { error } = await supabase.from("trip_plans").insert({
+        trip_id: trip.id,
+        created_by: userId,
+        content: plan,
+        params: form,
+      });
+      if (error) throw error;
+      setSaveStatus("saved");
+    } catch (e) {
+      setSaveStatus(null);
+      alert("Грешка при запазване: " + e.message);
+    }
+  }
+
+  async function handleShareToChat() {
+    if (!canPersist || !plan) return;
+    setSharing(true);
+    try {
+      const { error } = await supabase.from("messages").insert({
+        trip_id: trip.id,
+        user_id: userId,
+        display_name: displayName || "AI Планер",
+        text: `📋 AI план за пътуването:\n\n${plan}`,
+      });
+      if (error) throw error;
+      alert("Планът е споделен в чата.");
+    } catch (e) {
+      alert("Грешка: " + e.message);
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  async function handleRefine() {
+    if (!feedback.trim() || !plan) return;
+    setRefining(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("ai-trip-planner", {
+        body: { previousPlan: plan, feedback: feedback.trim(), currency: tripCurrency },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setPlan(data.plan);
+      setSaveStatus(null);
+      setFeedback("");
+      setShowRefine(false);
+    } catch (e) {
+      alert("Грешка: " + e.message);
+    } finally {
+      setRefining(false);
+    }
+  }
+
+  function startNewPlan() {
+    setPlan(null);
+    setSaveStatus(null);
+    setShowRefine(false);
+    setFeedback("");
+  }
+
+  if (loadingSavedPlan) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator color={colors.brand600} />
+      </View>
+    );
   }
 
   if (plan) {
@@ -106,7 +222,48 @@ export default function AIPlannerScreen({ onBack, trip }) {
         <View style={styles.planBox}>
           <Text style={styles.planText}>{renderPlanText(plan, styles.planLink)}</Text>
         </View>
-        <TouchableOpacity style={styles.btn} onPress={() => setPlan(null)}>
+
+        {canPersist && (
+          <View style={styles.planActionsRow}>
+            <TouchableOpacity style={styles.planActionBtn} onPress={handleSaveToTrip} disabled={saveStatus === "saving"}>
+              {saveStatus === "saving" ? <ActivityIndicator color={colors.brand600} /> : (
+                <Text style={styles.planActionText}>{saveStatus === "saved" ? "✓ Запазено" : "💾 Запази към пътуването"}</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.planActionBtn} onPress={handleShareToChat} disabled={sharing}>
+              {sharing ? <ActivityIndicator color={colors.brand600} /> : <Text style={styles.planActionText}>📤 Сподели в чата</Text>}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {canPersist && (
+          showRefine ? (
+            <View style={styles.refineBox}>
+              <Text style={styles.label}>Каква промяна искаш?</Text>
+              <TextInput
+                style={[styles.input, styles.refineInput]}
+                placeholder="напр. искаме хотел по-близо до плажа"
+                value={feedback}
+                onChangeText={setFeedback}
+                multiline
+              />
+              <View style={styles.refineBtnRow}>
+                <TouchableOpacity style={styles.btnSecondarySmall} onPress={() => { setShowRefine(false); setFeedback(""); }}>
+                  <Text style={styles.btnSecondarySmallText}>Отказ</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.btnSmall} onPress={handleRefine} disabled={refining || !feedback.trim()}>
+                  {refining ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.btnSmallText}>Обнови плана</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.refineToggleBtn} onPress={() => setShowRefine(true)}>
+              <Text style={styles.refineToggleText}>✏️ Коригирай плана</Text>
+            </TouchableOpacity>
+          )
+        )}
+
+        <TouchableOpacity style={styles.btn} onPress={startNewPlan}>
           <Text style={styles.btnText}>Нов план</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -216,6 +373,7 @@ export default function AIPlannerScreen({ onBack, trip }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  center: { alignItems: "center", justifyContent: "center" },
   scroll: { padding: space.xl },
   back: { marginBottom: space.lg },
   backText: { ...type.body, color: colors.brand600 },
@@ -253,4 +411,16 @@ const styles = StyleSheet.create({
   planBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.xl, marginBottom: space.xl },
   planText: { ...type.body, color: colors.text900 },
   planLink: { ...type.body, color: colors.brand600, textDecorationLine: "underline" },
+  planActionsRow: { flexDirection: "row", gap: space.sm, marginBottom: space.md },
+  planActionBtn: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.brand600, borderRadius: radius.control, padding: space.md, alignItems: "center" },
+  planActionText: { ...type.label, color: colors.brand600, fontWeight: "600", fontFamily: "GolosText_600SemiBold" },
+  refineToggleBtn: { alignItems: "center", padding: space.md, marginBottom: space.md },
+  refineToggleText: { ...type.label, color: colors.brand600, fontWeight: "600", fontFamily: "GolosText_600SemiBold" },
+  refineBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.lg, marginBottom: space.md },
+  refineInput: { minHeight: 80, textAlignVertical: "top", marginTop: space.sm },
+  refineBtnRow: { flexDirection: "row", gap: space.sm, marginTop: space.md },
+  btnSecondarySmall: { flex: 1, padding: space.md, borderRadius: radius.control, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
+  btnSecondarySmallText: { ...type.label, color: colors.text600 },
+  btnSmall: { flex: 1, backgroundColor: colors.brand600, padding: space.md, borderRadius: radius.control, alignItems: "center" },
+  btnSmallText: { ...type.label, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
 });
