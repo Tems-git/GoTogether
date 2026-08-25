@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sparkles } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
+import DatePicker from "../components/DatePicker";
 import { colors, space, radius, type } from "../theme/tokens";
 
 const TRANSPORT_OPTIONS = ["коли", "самолет", "автобус", "влак", "смесен"];
@@ -26,6 +27,21 @@ function renderPlanText(text, linkStyle) {
   );
 }
 
+// ISO "YYYY-MM-DD" (форматът, който връща DatePicker) → четим за AI-то низ
+// "ДД.ММ.ГГГГ", за да не подаваме суров ISO в промпта.
+function formatDateForPrompt(iso) {
+  if (!iso) return null;
+  const [y, m, d] = iso.split("-");
+  return `${d}.${m}.${y}`;
+}
+
+function buildDatesText(startDate, endDate) {
+  if (startDate && endDate) return `${formatDateForPrompt(startDate)} - ${formatDateForPrompt(endDate)}`;
+  if (startDate) return `от ${formatDateForPrompt(startDate)}`;
+  if (endDate) return `до ${formatDateForPrompt(endDate)}`;
+  return "";
+}
+
 export default function AIPlannerScreen({ onBack, trip, userId }) {
   // Реални safe area отстояния — без тях Android навигационната лента
   // застъпва бутона "Генерирай план", а status bar-ът закрива "← Назад".
@@ -46,12 +62,19 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
   const [showRefine, setShowRefine] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [refining, setRefining] = useState(false);
+  // Грешка от кръстосана проверка на датите (край преди начало) — показва се
+  // веднага под избора на дати, вместо генерично alert някъде другаде.
+  const [dateError, setDateError] = useState("");
 
   const [form, setForm] = useState({
     startPoint: "София",
     destination: "",
     waypoints: [],
-    dates: (trip?.start_date && trip?.end_date) ? `${trip.start_date} - ${trip.end_date}` : "",
+    // Датите вече идват от календарен избор (DatePicker), не от свободен
+    // текст — иначе AI-то получаваше невалидни/нечетими дати и питаше за
+    // корекция, вместо да генерира план.
+    startDate: trip?.start_date || null,
+    endDate: trip?.end_date || null,
     families: "2",
     children: "3",
     budget: "",
@@ -108,7 +131,37 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
     setForm(f => ({ ...f, waypoints: f.waypoints.filter(w => w.id !== id) }));
   }
 
+  // Общо запазване, извикано автоматично след всяко генериране/коригиране на
+  // план (когато е възможно) — така план никога не се губи само защото
+  // потребителят е забравил да натисне "Запази" (както се случи с втори,
+  // ненатиснат план). Бутонът "Запази" по-долу вика същата функция ръчно.
+  async function persistPlan(content, params) {
+    if (!canPersist || !content) return;
+    setSaveStatus("saving");
+    try {
+      const { error } = await supabase.from("trip_plans").insert({
+        trip_id: trip.id,
+        created_by: userId,
+        content,
+        params,
+      });
+      if (error) throw error;
+      setSaveStatus("saved");
+    } catch (e) {
+      setSaveStatus(null);
+      alert("Грешка при автоматично запазване: " + e.message);
+    }
+  }
+
   async function generatePlan() {
+    // Кръстосана проверка на датите (форматът вече е гарантирано валиден,
+    // защото идва от DatePicker, не от свободен текст) — само тук може да
+    // сгрешиш, ако избереш край преди начало.
+    if (form.startDate && form.endDate && form.endDate < form.startDate) {
+      setDateError("Крайната дата трябва да е след началната — провери избора на дати по-горе.");
+      return;
+    }
+    setDateError("");
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("ai-trip-planner", {
@@ -118,7 +171,7 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
           waypoints: form.waypoints
             .filter(w => w.name.trim())
             .map(w => ({ name: w.name.trim(), overnight: w.overnight })),
-          dates: form.dates,
+          dates: buildDatesText(form.startDate, form.endDate),
           families: form.families,
           children: form.children,
           budget: form.budget,
@@ -134,6 +187,7 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
 
       setPlan(data.plan);
       setSaveStatus(null);
+      persistPlan(data.plan, form);
     } catch (e) {
       alert("Грешка: " + e.message);
     }
@@ -141,21 +195,8 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
   }
 
   async function handleSaveToTrip() {
-    if (!canPersist || !plan) return;
-    setSaveStatus("saving");
-    try {
-      const { error } = await supabase.from("trip_plans").insert({
-        trip_id: trip.id,
-        created_by: userId,
-        content: plan,
-        params: form,
-      });
-      if (error) throw error;
-      setSaveStatus("saved");
-    } catch (e) {
-      setSaveStatus(null);
-      alert("Грешка при запазване: " + e.message);
-    }
+    if (!plan) return;
+    persistPlan(plan, form);
   }
 
   async function handleShareToChat() {
@@ -188,6 +229,7 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
       if (data?.error) throw new Error(data.error);
       setPlan(data.plan);
       setSaveStatus(null);
+      persistPlan(data.plan, form);
       setFeedback("");
       setShowRefine(false);
     } catch (e) {
@@ -321,7 +363,25 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
       </TouchableOpacity>
 
       <Text style={styles.label}>Период</Text>
-      <TextInput style={styles.input} placeholder="напр. 15-22 юли 2025" value={form.dates} onChangeText={v => setForm({...form, dates: v})} />
+      <View style={styles.dateRow}>
+        <View style={styles.dateCol}>
+          <DatePicker
+            value={form.startDate}
+            onChange={v => { setForm({ ...form, startDate: v }); setDateError(""); }}
+            placeholder="Начална дата"
+          />
+        </View>
+        <Text style={styles.dateSep}>→</Text>
+        <View style={styles.dateCol}>
+          <DatePicker
+            value={form.endDate}
+            onChange={v => { setForm({ ...form, endDate: v }); setDateError(""); }}
+            placeholder="Крайна дата"
+            minDate={form.startDate}
+          />
+        </View>
+      </View>
+      {!!dateError && <Text style={styles.dateErrorText}>{dateError}</Text>}
 
       <View style={styles.row}>
         <View style={styles.half}>
@@ -391,6 +451,10 @@ const styles = StyleSheet.create({
   subtitle: { ...type.label, color: colors.text600, marginBottom: space.xl },
   label: { ...type.label, color: colors.text600, marginBottom: space.sm, marginTop: space.md },
   input: { ...type.body, backgroundColor: colors.surface, padding: space.lg, borderRadius: radius.control, borderWidth: 0.5, borderColor: colors.border },
+  dateRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  dateCol: { flex: 1 },
+  dateSep: { ...type.body, color: colors.text400, fontWeight: "600" },
+  dateErrorText: { ...type.label, color: "#D64545", marginTop: -space.xs, marginBottom: space.sm },
   row: { flexDirection: "row", gap: space.md },
   half: { flex: 1 },
   waypointRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginBottom: space.sm },
