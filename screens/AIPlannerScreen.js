@@ -213,31 +213,42 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
   }
 
   if (plan) {
+    // Фиксирани хедър (← Назад) и футър (Запази/Сподели/Коригирай) извън
+    // ScrollView-а — иначе при дълъг AI отговор трябва да скролираш чак
+    // догоре за бутона за връщане и чак додолу за действията върху плана.
     return (
-      <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, scrollPadding]}>
-        <TouchableOpacity onPress={onBack} style={styles.back}>
-          <Text style={styles.backText}>← Назад</Text>
-        </TouchableOpacity>
-        <Text style={styles.planTitle}>🗺 Твоят план</Text>
-        <View style={styles.planBox}>
-          <Text style={styles.planText}>{renderPlanText(plan, styles.planLink)}</Text>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.planHeader}>
+          <TouchableOpacity onPress={onBack} style={styles.headerBackBtn}>
+            <Text style={styles.backText}>← Назад</Text>
+          </TouchableOpacity>
+          <Text style={styles.planHeaderTitle}>🗺 Твоят план</Text>
         </View>
 
-        {canPersist && (
-          <View style={styles.planActionsRow}>
-            <TouchableOpacity style={styles.planActionBtn} onPress={handleSaveToTrip} disabled={saveStatus === "saving"}>
-              {saveStatus === "saving" ? <ActivityIndicator color={colors.brand600} /> : (
-                <Text style={styles.planActionText}>{saveStatus === "saved" ? "✓ Запазено" : "💾 Запази към пътуването"}</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.planActionBtn} onPress={handleShareToChat} disabled={sharing}>
-              {sharing ? <ActivityIndicator color={colors.brand600} /> : <Text style={styles.planActionText}>📤 Сподели в чата</Text>}
-            </TouchableOpacity>
+        <ScrollView style={styles.planScroll} contentContainerStyle={styles.planScrollContent}>
+          <View style={styles.planBox}>
+            <Text style={styles.planText}>{renderPlanText(plan, styles.planLink)}</Text>
           </View>
-        )}
+        </ScrollView>
 
-        {canPersist && (
-          showRefine ? (
+        <View style={[styles.planFooter, { paddingBottom: insets.bottom + space.md }]}>
+          {canPersist && !showRefine && (
+            <View style={styles.planActionsRow}>
+              <TouchableOpacity style={styles.planActionBtn} onPress={handleSaveToTrip} disabled={saveStatus === "saving"}>
+                {saveStatus === "saving" ? <ActivityIndicator color={colors.brand600} /> : (
+                  <Text style={styles.planActionText}>{saveStatus === "saved" ? "✓ Запазено" : "💾 Запази"}</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.planActionBtn} onPress={handleShareToChat} disabled={sharing}>
+                {sharing ? <ActivityIndicator color={colors.brand600} /> : <Text style={styles.planActionText}>📤 Сподели</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.planActionBtn} onPress={() => setShowRefine(true)}>
+                <Text style={styles.planActionText}>✏️ Коригирай</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {canPersist && showRefine && (
             <View style={styles.refineBox}>
               <Text style={styles.label}>Каква промяна искаш?</Text>
               <TextInput
@@ -256,17 +267,15 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
                 </TouchableOpacity>
               </View>
             </View>
-          ) : (
-            <TouchableOpacity style={styles.refineToggleBtn} onPress={() => setShowRefine(true)}>
-              <Text style={styles.refineToggleText}>✏️ Коригирай плана</Text>
-            </TouchableOpacity>
-          )
-        )}
+          )}
 
-        <TouchableOpacity style={styles.btn} onPress={startNewPlan}>
-          <Text style={styles.btnText}>Нов план</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          {!showRefine && (
+            <TouchableOpacity style={styles.newPlanLink} onPress={startNewPlan}>
+              <Text style={styles.newPlanLinkText}>Нов план</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
     );
   }
 
@@ -407,16 +416,24 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: colors.brand600, padding: space.lg, borderRadius: radius.card, alignItems: "center", marginTop: space.xl },
   btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
+  planHeader: { flexDirection: "row", alignItems: "center", gap: space.md, paddingHorizontal: space.xl, paddingTop: space.sm, paddingBottom: space.md, backgroundColor: colors.bg, borderBottomWidth: 0.5, borderBottomColor: colors.border },
+  headerBackBtn: { paddingVertical: space.xs },
+  planHeaderTitle: { ...type.title, color: colors.text900 },
+  planScroll: { flex: 1 },
+  planScrollContent: { padding: space.xl },
+  planFooter: { paddingHorizontal: space.xl, paddingTop: space.md, backgroundColor: colors.bg, borderTopWidth: 0.5, borderTopColor: colors.border },
   planTitle: { ...type.title, color: colors.text900, marginBottom: space.lg },
-  planBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.xl, marginBottom: space.xl },
+  planBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.xl },
   planText: { ...type.body, color: colors.text900 },
   planLink: { ...type.body, color: colors.brand600, textDecorationLine: "underline" },
-  planActionsRow: { flexDirection: "row", gap: space.sm, marginBottom: space.md },
+  planActionsRow: { flexDirection: "row", gap: space.sm, marginBottom: space.sm },
   planActionBtn: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.brand600, borderRadius: radius.control, padding: space.md, alignItems: "center" },
   planActionText: { ...type.label, color: colors.brand600, fontWeight: "600", fontFamily: "GolosText_600SemiBold" },
+  newPlanLink: { alignItems: "center", padding: space.sm },
+  newPlanLinkText: { ...type.label, color: colors.text600, fontWeight: "600", fontFamily: "GolosText_600SemiBold" },
   refineToggleBtn: { alignItems: "center", padding: space.md, marginBottom: space.md },
   refineToggleText: { ...type.label, color: colors.brand600, fontWeight: "600", fontFamily: "GolosText_600SemiBold" },
-  refineBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.lg, marginBottom: space.md },
+  refineBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.lg, marginBottom: space.sm },
   refineInput: { minHeight: 80, textAlignVertical: "top", marginTop: space.sm },
   refineBtnRow: { flexDirection: "row", gap: space.sm, marginTop: space.md },
   btnSecondarySmall: { flex: 1, padding: space.md, borderRadius: radius.control, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
