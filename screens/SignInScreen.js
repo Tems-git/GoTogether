@@ -205,20 +205,20 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.2)", borderRadius: radius.control,
     paddingHorizontal: space.lg, paddingVertical: space.sm, marginBottom: space.lg,
   },
-  inviteBadgeText: { ...type.label, fontWeight: "bold", color: colors.onBrand },
+  inviteBadgeText: { ...type.label, fontWeight: "bold", color: colors.onBrand, fontFamily: "GolosText_700Bold" },
   input: {
     width: "100%", backgroundColor: colors.surface, padding: space.lg,
     borderRadius: radius.control, ...type.body, marginBottom: space.sm, color: colors.text900,
   },
   otpInput: {
     fontSize: 28, fontWeight: "bold", letterSpacing: 8,
-    textAlign: "center", paddingVertical: space.xl,
+    textAlign: "center", paddingVertical: space.xl, fontFamily: "GolosText_700Bold",
   },
   btn: {
     width: "100%", backgroundColor: colors.brand700,
     padding: space.lg, borderRadius: radius.card, alignItems: "center", marginBottom: space.sm,
   },
-  btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold" },
+  btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
   back: { marginTop: space.sm },
   backText: { ...type.body, color: colors.onBrandMuted },
   resend: { marginTop: space.lg },
