@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
   },
   docEmoji: { fontSize: 28 },
   docInfo: { flex: 1 },
-  docName: { ...type.label, fontWeight: "600", color: colors.text900 },
+  docName: { ...type.label, fontWeight: "600", color: colors.text900, fontFamily: "GolosText_600SemiBold" },
   docMeta: { fontSize: 12, lineHeight: 16, color: colors.text600, marginTop: space.xs },
   docUploader: { fontSize: 12, lineHeight: 16, color: colors.text400, marginTop: space.xs },
   docActions: { flexDirection: "row", gap: space.sm },
@@ -200,5 +200,5 @@ const styles = StyleSheet.create({
   iconBtnText: { fontSize: 18 },
   btn: { backgroundColor: colors.brand600, padding: space.lg, borderRadius: radius.card, alignItems: "center" },
   btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold" },
+  btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
 });
