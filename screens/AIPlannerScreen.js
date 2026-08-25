@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Linking, KeyboardAvoidingView, Platform, Modal, FlatList } from "react-native";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sparkles } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
@@ -222,17 +222,42 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     comfort: "без значение",
   });
 
-  // Възстановява началната точка (и дестинацията) от вече запазен план на това
-  // пътуване. Началната точка няма къде другаде да се пази — не е поле на
-  // пътуването — затова я помним от последния генериран план, вместо всеки път
-  // да е твърдо "София". Празни стойности се игнорират, за да не изтрият
-  // наследената от пътуването дестинация.
+  // Състав на групата — колко участници има пътуването и колко души са общо
+  // (сборът от теглата). Ползва се за предварително попълване на "Семейства"
+  // и за подсказката под полето.
+  const [tripMemberCount, setTripMemberCount] = useState(0);
+  const [tripPeopleCount, setTripPeopleCount] = useState(0);
+  // Дали формата вече е възстановена от предишен план. Двете зареждания
+  // (планът и съставът на групата) са асинхронни и могат да приключат в
+  // произволен ред — това гарантира, че последно въведеното от потребителя
+  // (от плана) винаги печели пред изчисления по подразбиране брой семейства.
+  const paramsAppliedRef = useRef(false);
+
+  // Възстановява формата от вече запазен план на това пътуване. Повечето полета
+  // (начална точка, спирки, бюджет, транспорт, настаняване) нямат аналог в
+  // самото пътуване и няма откъде другаде да се вземат — затова формата помни
+  // какво е било въведено миналия път, вместо всеки път да е по подразбиране.
+  // Празните стойности се игнорират, за да не изтрият наследеното от пътуването.
   function applyFormFromParams(params) {
     if (!params) return;
+    paramsAppliedRef.current = true;
     setForm((f) => ({
       ...f,
       startPoint: params.startPoint || f.startPoint,
       destination: params.destination || f.destination,
+      waypoints: Array.isArray(params.waypoints) && params.waypoints.length
+        ? params.waypoints.map((w, i) => ({
+            id: w?.id || `restored-${i}`,
+            name: w?.name || "",
+            overnight: !!w?.overnight,
+          }))
+        : f.waypoints,
+      families: params.families || f.families,
+      children: params.children || f.children,
+      budget: params.budget || f.budget,
+      transport: params.transport || f.transport,
+      accommodationType: params.accommodationType || f.accommodationType,
+      comfort: params.comfort || f.comfort,
     }));
   }
 
@@ -279,15 +304,28 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     }).finally(() => setLoadingSavedPlan(false));
   }, [canPersist, trip?.id, openPlanId]);
 
+  // Един запис за целия състав на групата — от него взимаме и собственото име
+  // (за подписа при споделяне в чата), и броя участници, с който предварително
+  // попълваме "Семейства" вместо твърдото "2". Броят деца не се пази никъде в
+  // пътуването, затова остава за ръчно попълване.
   useEffect(() => {
     if (!canPersist) return;
     supabase
       .from("trip_members")
-      .select("display_name")
+      .select("user_id, display_name, weight")
       .eq("trip_id", trip.id)
-      .eq("user_id", userId)
-      .maybeSingle()
-      .then(({ data }) => setDisplayName(data?.display_name || ""));
+      .then(({ data }) => {
+        const members = data || [];
+        setDisplayName(members.find((m) => m.user_id === userId)?.display_name || "");
+        if (!members.length) return;
+        setTripMemberCount(members.length);
+        setTripPeopleCount(members.reduce((sum, m) => sum + (m.weight || 1), 0));
+        // Ако вече сме възстановили формата от предишен план, не пипаме
+        // въведеното от потребителя — то е по-точно от изчисленото.
+        if (!paramsAppliedRef.current) {
+          setForm((f) => ({ ...f, families: String(members.length) }));
+        }
+      });
   }, [canPersist, trip?.id, userId]);
 
   const scrollPadding = { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40 };
@@ -726,6 +764,11 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
           <TextInput style={styles.input} keyboardType="number-pad" value={form.children} onChangeText={v => setForm({...form, children: v})} />
         </View>
       </View>
+      {tripMemberCount > 0 && (
+        <Text style={styles.fieldHint}>
+          {`Взето от пътуването: ${tripMemberCount} ${tripMemberCount === 1 ? "участник" : "участника"}, ${tripPeopleCount} ${tripPeopleCount === 1 ? "човек" : "души"} общо. Промени, ако е нужно.`}
+        </Text>
+      )}
 
       <Text style={styles.label}>Бюджет ({tripCurrency})</Text>
       <TextInput style={styles.input} placeholder="напр. 2500" keyboardType="number-pad" value={form.budget} onChangeText={v => setForm({...form, budget: v})} />
@@ -789,6 +832,7 @@ const styles = StyleSheet.create({
   dateCol: { flex: 1 },
   dateSep: { ...type.body, color: colors.text400, fontWeight: "600" },
   dateErrorText: { ...type.label, color: "#D64545", marginTop: -space.xs, marginBottom: space.sm },
+  fieldHint: { fontSize: 12, lineHeight: 16, color: colors.text400, marginTop: space.sm },
   row: { flexDirection: "row", gap: space.md },
   half: { flex: 1 },
   waypointRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginBottom: space.sm },
