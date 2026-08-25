@@ -528,7 +528,15 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
         <View style={styles.dateCol}>
           <DatePicker
             value={form.startDate}
-            onChange={v => { setForm({ ...form, startDate: v }); setDateError(""); }}
+            onChange={v => {
+              // Ресетваме крайната дата при промяна на началната — иначе тя
+              // пази старата си стойност (напр. датите на самото пътуване,
+              // с които формата се предзарежда по подразбиране) и календарът
+              // за крайна дата отваря нейния месец, вместо месеца на
+              // новоизбраната начална дата.
+              setForm({ ...form, startDate: v, endDate: null });
+              setDateError("");
+            }}
             placeholder="Начална дата"
           />
         </View>
