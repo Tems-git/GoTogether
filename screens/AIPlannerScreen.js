@@ -204,7 +204,10 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
 
   const [form, setForm] = useState({
     startPoint: "София",
-    destination: "",
+    // Наследяваме дестинацията от самото пътуване — иначе я въвеждаш втори път
+    // тук, след като вече си я задал при създаването/редакцията на пътуването.
+    // Може да се изчисти ръчно, ако искаш AI-то само да предложи дестинация.
+    destination: trip?.destination || "",
     waypoints: [],
     // Датите вече идват от календарен избор (DatePicker), не от свободен
     // текст — иначе AI-то получаваше невалидни/нечетими дати и питаше за
@@ -218,6 +221,20 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     accommodationType: null,
     comfort: "без значение",
   });
+
+  // Възстановява началната точка (и дестинацията) от вече запазен план на това
+  // пътуване. Началната точка няма къде другаде да се пази — не е поле на
+  // пътуването — затова я помним от последния генериран план, вместо всеки път
+  // да е твърдо "София". Празни стойности се игнорират, за да не изтрият
+  // наследената от пътуването дестинация.
+  function applyFormFromParams(params) {
+    if (!params) return;
+    setForm((f) => ({
+      ...f,
+      startPoint: params.startPoint || f.startPoint,
+      destination: params.destination || f.destination,
+    }));
+  }
 
   // Ако пътуването вече си има запазен план, го показваме директно вместо
   // празна форма — така групата вижда последния съгласуван план при отваряне.
@@ -237,6 +254,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
         setCurrentPlanId(data.id);
         setResolvedMeta({ start: data.params?.resolvedStart || null, dest: data.params?.resolvedDestination || null });
         setPlanGroupId(data.params?.planGroupId || data.id);
+        applyFormFromParams(data.params);
         return;
       }
       if (openPlanId) {
@@ -255,6 +273,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
           setCurrentPlanId(latest.id);
           setResolvedMeta({ start: latest.params?.resolvedStart || null, dest: latest.params?.resolvedDestination || null });
           setPlanGroupId(latest.params?.planGroupId || latest.id);
+          applyFormFromParams(latest.params);
         }
       }
     }).finally(() => setLoadingSavedPlan(false));
@@ -434,6 +453,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     setShowHistory(false);
     setResolvedMeta({ start: item.params?.resolvedStart || null, dest: item.params?.resolvedDestination || null });
     setPlanGroupId(item.params?.planGroupId || item.id);
+    applyFormFromParams(item.params);
   }
 
   function formatHistoryDate(iso) {
