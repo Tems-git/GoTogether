@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
   backText: { ...type.body, color: colors.brand600 },
   headerInfo: { flex: 1 },
   headerTitleRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
-  headerTitle: { ...type.subhead, fontWeight: "bold", color: colors.text900 },
+  headerTitle: { ...type.subhead, fontWeight: "bold", color: colors.text900, fontFamily: "GolosText_700Bold" },
   headerSub: { fontSize: 12, lineHeight: 16, color: colors.text600, marginTop: space.xs },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   list: { padding: space.lg, paddingBottom: space.sm },
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#4ECDC4", alignItems: "center", justifyContent: "center",
     marginRight: space.sm,
   },
-  avatarText: { ...type.label, fontWeight: "bold", color: colors.onBrand },
+  avatarText: { ...type.label, fontWeight: "bold", color: colors.onBrand, fontFamily: "GolosText_700Bold" },
   bubble: {
     maxWidth: "75%", backgroundColor: colors.surface,
     borderRadius: radius.card, borderBottomLeftRadius: 4,
