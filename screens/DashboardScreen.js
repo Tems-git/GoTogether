@@ -87,6 +87,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   // (брой документи, нетен баланс от разходите) — леки заявки, без
   // да дублираме цялата логика на DocumentsScreen/ExpensesScreen.
   const [docsCount, setDocsCount] = useState(0);
+  const [hasPlan, setHasPlan] = useState(false);
   const [expenses, setExpenses] = useState([]);
   const [expenseSplits, setExpenseSplits] = useState([]);
   const [rates, setRates] = useState(null);
@@ -197,7 +198,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         .eq("trip_id", trip.id)
         .eq("user_id", user.id)
         .maybeSingle();
-
       const lastRead = member?.chat_last_read || "1970-01-01";
 
       const { count } = await supabase
@@ -249,6 +249,32 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, [trip?.id, fetchDocsCount]);
+
+  // Има ли вече запазен AI план за пътуването — за да сменим подписа на
+  // картата "Планирай с AI" от "Ново пътуване" на нещо, което показва, че
+  // вече има план (иначе не е очевидно, че отваряне на екрана пак ще го
+  // покаже, вместо да го подкарва отначало).
+  const fetchHasPlan = useCallback(async () => {
+    if (!trip?.id) return;
+    const { count } = await supabase
+      .from("trip_plans")
+      .select("*", { count: "exact", head: true })
+      .eq("trip_id", trip.id);
+    setHasPlan((count || 0) > 0);
+  }, [trip?.id]);
+
+  useEffect(() => {
+    fetchHasPlan();
+    if (!trip?.id) return;
+    const channel = supabase
+      .channel(`dashboard-plans-${trip.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "trip_plans", filter: `trip_id=eq.${trip.id}` },
+        () => fetchHasPlan()
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [trip?.id, fetchHasPlan]);
 
   // Разходи + splits — за нетния баланс, показан горе и под картата "Разходи".
   // Съзнателно е олекотена версия на логиката в ExpensesScreen (само сумите,
@@ -519,7 +545,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       : `Дължиш ${formatEUR(Math.abs(netBalance))}`;
 
   const cards = [
-    { Icon: Sparkles, title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: colors.brand50, badge: 0 },
+    { Icon: Sparkles, title: "Планирай с AI", sub: hasPlan ? "Виж/коригирай плана" : "Ново пътуване", onPress: onAI, color: colors.brand50, badge: hasPlan ? 1 : 0 },
     { Icon: MessageSquare, title: "Чат", sub: chatSub, onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
     { Icon: FileText, title: "Документи", sub: docsSub, onPress: onDocuments, color: "#E6F1FB", badge: 0 },
     { Icon: CreditCard, title: "Разходи", sub: expensesSub, onPress: onExpenses, color: "#FAEEDA", badge: 0 },
