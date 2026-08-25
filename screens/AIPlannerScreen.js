@@ -76,6 +76,12 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // защото потребителят може да е оставил дестинацията празна за AI да избере.
   // Пазим ги, за да ги запишем в params при всяко persistPlan извикване.
   const [resolvedMeta, setResolvedMeta] = useState({ start: null, dest: null });
+  // Идентификатор на "родословието" на плана — един и същ за първоначално
+  // генерирания план и всички негови последващи корекции (refine), различен
+  // за всеки чисто нов план (генериран от празна форма). Ползва се само за
+  // да броим РЕАЛНИТЕ отделни планове на дашборда (виж fetchPlanCount в
+  // DashboardScreen.js), а не всяка отделна версия/корекция като нов план.
+  const [planGroupId, setPlanGroupId] = useState(null);
 
   const [form, setForm] = useState({
     startPoint: "София",
@@ -111,6 +117,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
         setSaveStatus("saved");
         setCurrentPlanId(data.id);
         setResolvedMeta({ start: data.params?.resolvedStart || null, dest: data.params?.resolvedDestination || null });
+        setPlanGroupId(data.params?.planGroupId || data.id);
         return;
       }
       if (openPlanId) {
@@ -128,6 +135,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
           setSaveStatus("saved");
           setCurrentPlanId(latest.id);
           setResolvedMeta({ start: latest.params?.resolvedStart || null, dest: latest.params?.resolvedDestination || null });
+          setPlanGroupId(latest.params?.planGroupId || latest.id);
         }
       }
     }).finally(() => setLoadingSavedPlan(false));
@@ -165,11 +173,12 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // AI-то е използвало (meta) — това пазим в params на всеки запис, за да
   // може историята да показва истинския маршрут дори когато потребителят е
   // оставил дестинацията празна и AI сам я е избрал.
-  function buildParams(meta) {
+  function buildParams(meta, groupId) {
     return {
       ...form,
       resolvedStart: meta?.start || null,
       resolvedDestination: meta?.dest || null,
+      planGroupId: groupId !== undefined ? groupId : planGroupId,
     };
   }
 
@@ -229,10 +238,15 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
+      // Чисто нов план (генериран от празна форма) — получава свое ново
+      // "родословие", различно от всеки предишен план, за да се брои като
+      // отделен план на дашборда, а не като корекция на предишния.
+      const newGroupId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setPlanGroupId(newGroupId);
       setPlan(data.plan);
       setSaveStatus(null);
       setResolvedMeta(data.meta || { start: null, dest: null });
-      persistPlan(data.plan, buildParams(data.meta));
+      persistPlan(data.plan, buildParams(data.meta, newGroupId));
     } catch (e) {
       alert("Грешка: " + e.message);
     }
@@ -255,11 +269,20 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       if (!planId) planId = await persistPlan(plan, buildParams(resolvedMeta));
       if (!planId) throw new Error("Планът не можа да се запази, опитай пак.");
 
+      // По-конкретно съобщение вместо еднакъв генеричен текст за всеки план —
+      // включва реалния маршрут (и датите, ако са зададени), за да личи от
+      // самия чат кой план е кой, без да се налага да го отваряш.
+      const routeLabel = formatHistoryRoute({ params: buildParams(resolvedMeta), content: plan });
+      const dateLabel = buildDatesText(form.startDate, form.endDate);
+      const shareText = dateLabel
+        ? `📋 AI план е готов: ${routeLabel} (${dateLabel})`
+        : `📋 AI план е готов: ${routeLabel}`;
+
       const { error } = await supabase.from("messages").insert({
         trip_id: trip.id,
         user_id: userId,
         display_name: displayName || "AI Планер",
-        text: "📋 AI план за пътуването е готов.",
+        text: shareText,
         plan_id: planId,
       });
       if (error) throw error;
@@ -291,6 +314,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     setShowRefine(false);
     setShowHistory(false);
     setResolvedMeta({ start: item.params?.resolvedStart || null, dest: item.params?.resolvedDestination || null });
+    setPlanGroupId(item.params?.planGroupId || item.id);
   }
 
   function formatHistoryDate(iso) {
@@ -361,6 +385,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     setShowRefine(false);
     setFeedback("");
     setResolvedMeta({ start: null, dest: null });
+    setPlanGroupId(null);
   }
 
   if (loadingSavedPlan) {
