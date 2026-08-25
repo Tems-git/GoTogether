@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, Modal, Pressable,
 } from "react-native";
@@ -62,6 +62,18 @@ export default function DatePicker({ value, onChange, minDate, placeholder = "И
   const initial = parsed || { year: today.getFullYear(), month: today.getMonth() };
   const [viewYear, setViewYear] = useState(initial.year);
   const [viewMonth, setViewMonth] = useState(initial.month);
+
+  // При всяко отваряне показваме месеца на вече избраната дата, а ако няма
+  // избрана — месеца на minDate (напр. началната дата, когато отваряш picker-а
+  // за крайната). Без това, ако началната дата е в следващ месец, календарът
+  // за крайната винаги отваряше текущия месец и трябваше ръчно да превърташ.
+  useEffect(() => {
+    if (!visible) return;
+    const base = parsed || parseISODate(minDate) || { year: today.getFullYear(), month: today.getMonth() };
+    setViewYear(base.year);
+    setViewMonth(base.month);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   const grid = useMemo(() => getMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
   const minParsed = parseISODate(minDate);
