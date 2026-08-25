@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Linking } from "react-native";
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Linking, KeyboardAvoidingView, Platform, Modal, FlatList } from "react-native";
 import { useState, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sparkles } from "lucide-react-native";
@@ -42,7 +42,7 @@ function buildDatesText(startDate, endDate) {
   return "";
 }
 
-export default function AIPlannerScreen({ onBack, trip, userId }) {
+export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // Реални safe area отстояния — без тях Android навигационната лента
   // застъпва бутона "Генерирай план", а status bar-ът закрива "← Назад".
   const insets = useSafeAreaInsets();
@@ -65,6 +65,12 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
   // Грешка от кръстосана проверка на датите (край преди начало) — показва се
   // веднага под избора на дати, вместо генерично alert някъде другаде.
   const [dateError, setDateError] = useState("");
+  // id-то на реда в trip_plans, който в момента се показва — нужно е, за да
+  // споделим в чата линк точно към тази версия, а не да копираме целия текст.
+  const [currentPlanId, setCurrentPlanId] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyPlans, setHistoryPlans] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const [form, setForm] = useState({
     startPoint: "София",
@@ -85,23 +91,40 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
 
   // Ако пътуването вече си има запазен план, го показваме директно вместо
   // празна форма — така групата вижда последния съгласуван план при отваряне.
+  // Ако сме дошли от линк към план в чата (openPlanId), зареждаме точно тази
+  // версия вместо последната — с fallback към последната, ако вече не съществува
+  // (напр. изтрита).
   useEffect(() => {
     if (!canPersist) return;
-    supabase
-      .from("trip_plans")
-      .select("content")
-      .eq("trip_id", trip.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.content) {
-          setPlan(data.content);
+    const query = openPlanId
+      ? supabase.from("trip_plans").select("id, content").eq("id", openPlanId).eq("trip_id", trip.id).maybeSingle()
+      : supabase.from("trip_plans").select("id, content").eq("trip_id", trip.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+    query.then(async ({ data }) => {
+      if (data?.content) {
+        setPlan(data.content);
+        setSaveStatus("saved");
+        setCurrentPlanId(data.id);
+        return;
+      }
+      if (openPlanId) {
+        // Планът, към който сочи чат линкът, вече не съществува — падаме
+        // назад към последния запазен, вместо да покажем празен екран.
+        const { data: latest } = await supabase
+          .from("trip_plans")
+          .select("id, content")
+          .eq("trip_id", trip.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (latest?.content) {
+          setPlan(latest.content);
           setSaveStatus("saved");
+          setCurrentPlanId(latest.id);
         }
-      })
-      .finally(() => setLoadingSavedPlan(false));
-  }, [canPersist, trip?.id]);
+      }
+    }).finally(() => setLoadingSavedPlan(false));
+  }, [canPersist, trip?.id, openPlanId]);
 
   useEffect(() => {
     if (!canPersist) return;
@@ -136,20 +159,22 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
   // потребителят е забравил да натисне "Запази" (както се случи с втори,
   // ненатиснат план). Бутонът "Запази" по-долу вика същата функция ръчно.
   async function persistPlan(content, params) {
-    if (!canPersist || !content) return;
+    if (!canPersist || !content) return null;
     setSaveStatus("saving");
     try {
-      const { error } = await supabase.from("trip_plans").insert({
-        trip_id: trip.id,
-        created_by: userId,
-        content,
-        params,
-      });
+      const { data, error } = await supabase
+        .from("trip_plans")
+        .insert({ trip_id: trip.id, created_by: userId, content, params })
+        .select("id")
+        .single();
       if (error) throw error;
       setSaveStatus("saved");
+      setCurrentPlanId(data.id);
+      return data.id;
     } catch (e) {
       setSaveStatus(null);
       alert("Грешка при автоматично запазване: " + e.message);
+      return null;
     }
   }
 
@@ -203,19 +228,53 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
     if (!canPersist || !plan) return;
     setSharing(true);
     try {
+      // Споделяме линк към запазената версия, не целия текст — иначе дълъг
+      // план задръства чата за всички. Ако все още няма запазено id (напр.
+      // автоматичното запазване е било неуспешно), пробваме да запазим сега.
+      let planId = currentPlanId;
+      if (!planId) planId = await persistPlan(plan, form);
+      if (!planId) throw new Error("Планът не можа да се запази, опитай пак.");
+
       const { error } = await supabase.from("messages").insert({
         trip_id: trip.id,
         user_id: userId,
         display_name: displayName || "AI Планер",
-        text: `📋 AI план за пътуването:\n\n${plan}`,
+        text: "📋 AI план за пътуването е готов.",
+        plan_id: planId,
       });
       if (error) throw error;
-      alert("Планът е споделен в чата.");
+      alert("Линк към плана е споделен в чата.");
     } catch (e) {
       alert("Грешка: " + e.message);
     } finally {
       setSharing(false);
     }
+  }
+
+  async function openHistory() {
+    if (!canPersist) return;
+    setShowHistory(true);
+    setLoadingHistory(true);
+    const { data } = await supabase
+      .from("trip_plans")
+      .select("id, content, created_at")
+      .eq("trip_id", trip.id)
+      .order("created_at", { ascending: false });
+    setHistoryPlans(data || []);
+    setLoadingHistory(false);
+  }
+
+  function selectHistoryPlan(item) {
+    setPlan(item.content);
+    setCurrentPlanId(item.id);
+    setSaveStatus("saved");
+    setShowRefine(false);
+    setShowHistory(false);
+  }
+
+  function formatHistoryDate(iso) {
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
 
   async function handleRefine() {
@@ -258,13 +317,21 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
     // Фиксирани хедър (← Назад) и футър (Запази/Сподели/Коригирай) извън
     // ScrollView-а — иначе при дълъг AI отговор трябва да скролираш чак
     // догоре за бутона за връщане и чак додолу за действията върху плана.
+    // KeyboardAvoidingView около всичко — иначе клавиатурата при писане в
+    // полето за корекция застава върху него, вместо да го избутва нагоре.
     return (
+      <KeyboardAvoidingView style={styles.flexOne} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.planHeader}>
           <TouchableOpacity onPress={onBack} style={styles.headerBackBtn}>
             <Text style={styles.backText}>← Назад</Text>
           </TouchableOpacity>
           <Text style={styles.planHeaderTitle}>🗺 Твоят план</Text>
+          {canPersist && (
+            <TouchableOpacity onPress={openHistory} style={styles.historyBtn}>
+              <Text style={styles.historyBtnText}>🕘 История</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <ScrollView style={styles.planScroll} contentContainerStyle={styles.planScrollContent}>
@@ -318,6 +385,41 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
           )}
         </View>
       </View>
+
+      <Modal visible={showHistory} transparent animationType="fade" onRequestClose={() => setShowHistory(false)}>
+        <View style={styles.historyBackdrop}>
+          <View style={styles.historyModal}>
+            <View style={styles.historyHeader}>
+              <Text style={styles.historyTitle}>История на плановете</Text>
+              <TouchableOpacity onPress={() => setShowHistory(false)}>
+                <Text style={styles.historyClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            {loadingHistory ? (
+              <ActivityIndicator color={colors.brand600} style={{ marginVertical: space.xl }} />
+            ) : (
+              <FlatList
+                data={historyPlans}
+                keyExtractor={(item) => item.id}
+                style={styles.historyList}
+                ListEmptyComponent={<Text style={styles.historyEmpty}>Няма запазени планове.</Text>}
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles.historyItem} onPress={() => selectHistoryPlan(item)}>
+                    <View style={styles.historyItemRow}>
+                      <Text style={styles.historyItemDate}>{formatHistoryDate(item.created_at)}</Text>
+                      {item.id === currentPlanId && <Text style={styles.historyItemCurrent}>● показан сега</Text>}
+                    </View>
+                    <Text style={styles.historyItemPreview} numberOfLines={2}>
+                      {item.content.replace(/\n+/g, " ").slice(0, 140)}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -441,6 +543,7 @@ export default function AIPlannerScreen({ onBack, trip, userId }) {
 }
 
 const styles = StyleSheet.create({
+  flexOne: { flex: 1 },
   container: { flex: 1, backgroundColor: colors.bg },
   center: { alignItems: "center", justifyContent: "center" },
   scroll: { padding: space.xl },
@@ -482,7 +585,21 @@ const styles = StyleSheet.create({
   btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
   planHeader: { flexDirection: "row", alignItems: "center", gap: space.md, paddingHorizontal: space.xl, paddingTop: space.sm, paddingBottom: space.md, backgroundColor: colors.bg, borderBottomWidth: 0.5, borderBottomColor: colors.border },
   headerBackBtn: { paddingVertical: space.xs },
-  planHeaderTitle: { ...type.title, color: colors.text900 },
+  planHeaderTitle: { ...type.title, color: colors.text900, flex: 1 },
+  historyBtn: { paddingVertical: space.xs, paddingHorizontal: space.sm },
+  historyBtnText: { ...type.label, color: colors.brand600, fontWeight: "600", fontFamily: "GolosText_600SemiBold" },
+  historyBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: space.xl },
+  historyModal: { backgroundColor: colors.bg, borderRadius: radius.card, maxHeight: "75%", padding: space.lg },
+  historyHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: space.md },
+  historyTitle: { ...type.subhead, color: colors.text900, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
+  historyClose: { ...type.title, color: colors.text400, paddingHorizontal: space.sm },
+  historyList: { flexGrow: 0 },
+  historyEmpty: { ...type.label, color: colors.text400, textAlign: "center", marginVertical: space.xl },
+  historyItem: { backgroundColor: colors.surface, borderRadius: radius.control, padding: space.md, marginBottom: space.sm },
+  historyItemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: space.xs },
+  historyItemDate: { ...type.label, color: colors.text600, fontWeight: "600", fontFamily: "GolosText_600SemiBold" },
+  historyItemCurrent: { ...type.label, color: colors.brand600, fontSize: 11 },
+  historyItemPreview: { ...type.label, color: colors.text400 },
   planScroll: { flex: 1 },
   planScrollContent: { padding: space.xl },
   planFooter: { paddingHorizontal: space.xl, paddingTop: space.md, backgroundColor: colors.bg, borderTopWidth: 0.5, borderTopColor: colors.border },
