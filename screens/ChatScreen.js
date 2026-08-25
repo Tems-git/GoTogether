@@ -8,7 +8,7 @@ import { MessageSquare } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import { colors, space, radius, type } from "../theme/tokens";
 
-export default function ChatScreen({ onBack, tripId, userId, tripName }) {
+export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPlan }) {
   // insets дава реалните височини на status bar (top) и navigation bar (bottom)
   // за конкретното устройство. Без тях Android навигационната лента застъпва
   // полето за писане — тапването задейства системните бутони вместо input-а.
@@ -282,7 +282,21 @@ export default function ChatScreen({ onBack, tripId, userId, tripName }) {
                   <TouchableWithoutFeedback onLongPress={() => handleLongPress(item)}>
                     <View style={[styles.bubble, isMe && styles.bubbleMe]}>
                       {!isMe && <Text style={styles.senderName}>{item.display_name}</Text>}
-                      <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
+                      {item.plan_id ? (
+                        // Споделен AI план — карта с бутон към Планера, не целия
+                        // текст на плана (иначе чатът се задръства при дълъг план).
+                        <View style={styles.planCard}>
+                          <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
+                          <TouchableOpacity
+                            style={[styles.planCardBtn, isMe && styles.planCardBtnMe]}
+                            onPress={() => onOpenPlan && onOpenPlan(item.plan_id)}
+                          >
+                            <Text style={[styles.planCardBtnText, isMe && styles.planCardBtnTextMe]}>🗺 Отвори плана →</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
+                      )}
                       <View style={styles.timeLine}>
                         <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>
                           {formatTime(item.created_at)}
@@ -405,6 +419,15 @@ const styles = StyleSheet.create({
     marginLeft: space.sm,
   },
   senderName: { fontSize: 12, lineHeight: 16, fontWeight: "700", color: colors.brand600, marginBottom: space.xs },
+  planCard: { gap: space.xs },
+  planCardBtn: {
+    marginTop: space.xs, alignSelf: "flex-start",
+    backgroundColor: colors.bg, borderRadius: radius.control,
+    paddingHorizontal: space.md, paddingVertical: space.sm,
+  },
+  planCardBtnMe: { backgroundColor: "rgba(255,255,255,0.2)" },
+  planCardBtnText: { fontSize: 13, lineHeight: 18, fontWeight: "700", color: colors.brand600 },
+  planCardBtnTextMe: { color: colors.onBrand },
   msgText: { ...type.body, color: colors.text900 },
   msgTextMe: { color: colors.onBrand },
   timeLine: { flexDirection: "row", justifyContent: "flex-end", marginTop: space.xs },
