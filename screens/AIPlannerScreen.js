@@ -257,7 +257,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     setLoadingHistory(true);
     const { data } = await supabase
       .from("trip_plans")
-      .select("id, content, created_at")
+      .select("id, content, created_at, params")
       .eq("trip_id", trip.id)
       .order("created_at", { ascending: false });
     setHistoryPlans(data || []);
@@ -275,6 +275,22 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   function formatHistoryDate(iso) {
     const d = new Date(iso);
     return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  // Показваме маршрута (начало → спирки → дестинация) вместо суровата дата
+  // като основен етикет на всеки ред в историята — по-лесно е да разпознаеш
+  // кой план кой е, отколкото по час на запазване. Датата остава като
+  // по-дребен подетикет под маршрута, а редовете пак са подредени хронологично
+  // (най-новите отгоре — заявката по-горе е с order created_at desc).
+  function formatHistoryRoute(params) {
+    if (!params) return "План";
+    const start = (params.startPoint || "").trim();
+    const dest = (params.destination || "").trim();
+    const waypointNames = (params.waypoints || [])
+      .map((w) => (w?.name || "").trim())
+      .filter(Boolean);
+    const points = [start, ...waypointNames, dest].filter(Boolean);
+    return points.length ? points.join(" → ") : "План";
   }
 
   async function handleRefine() {
@@ -406,9 +422,10 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
                 renderItem={({ item }) => (
                   <TouchableOpacity style={styles.historyItem} onPress={() => selectHistoryPlan(item)}>
                     <View style={styles.historyItemRow}>
-                      <Text style={styles.historyItemDate}>{formatHistoryDate(item.created_at)}</Text>
+                      <Text style={styles.historyItemDate} numberOfLines={1}>{formatHistoryRoute(item.params)}</Text>
                       {item.id === currentPlanId && <Text style={styles.historyItemCurrent}>● показан сега</Text>}
                     </View>
+                    <Text style={styles.historyItemDateSub}>{formatHistoryDate(item.created_at)}</Text>
                     <Text style={styles.historyItemPreview} numberOfLines={2}>
                       {item.content.replace(/\n+/g, " ").slice(0, 140)}
                     </Text>
@@ -597,7 +614,8 @@ const styles = StyleSheet.create({
   historyEmpty: { ...type.label, color: colors.text400, textAlign: "center", marginVertical: space.xl },
   historyItem: { backgroundColor: colors.surface, borderRadius: radius.control, padding: space.md, marginBottom: space.sm },
   historyItemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: space.xs },
-  historyItemDate: { ...type.label, color: colors.text600, fontWeight: "600", fontFamily: "GolosText_600SemiBold" },
+  historyItemDate: { ...type.label, color: colors.text600, fontWeight: "600", fontFamily: "GolosText_600SemiBold", flex: 1, marginRight: space.sm },
+  historyItemDateSub: { fontSize: 11, lineHeight: 14, color: colors.text400, marginBottom: space.xs },
   historyItemCurrent: { ...type.label, color: colors.brand600, fontSize: 11 },
   historyItemPreview: { ...type.label, color: colors.text400 },
   planScroll: { flex: 1 },
