@@ -87,6 +87,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   // (брой документи, нетен баланс от разходите) — леки заявки, без
   // да дублираме цялата логика на DocumentsScreen/ExpensesScreen.
   const [docsCount, setDocsCount] = useState(0);
+  // Брой РЕАЛНИ отделни планове (не всяка версия/корекция) — виж
+  // fetchPlanCount по-долу.
+  const [planCount, setPlanCount] = useState(0);
   const [expenses, setExpenses] = useState([]);
   const [expenseSplits, setExpenseSplits] = useState([]);
   const [rates, setRates] = useState(null);
@@ -107,7 +110,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     if (!trip?.id) return;
     const { data } = await supabase
       .from("trip_members")
-      .select("user_id, display_name, role, weight")
+      .select("user_id, display_name, role, weight, children")
       .eq("trip_id", trip.id);
     setMembers(data || []);
   }, [trip?.id]);
@@ -197,7 +200,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         .eq("trip_id", trip.id)
         .eq("user_id", user.id)
         .maybeSingle();
-
       const lastRead = member?.chat_last_read || "1970-01-01";
 
       const { count } = await supabase
@@ -249,6 +251,39 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, [trip?.id, fetchDocsCount]);
+
+  // Брой РЕАЛНИ отделни планове за пътуването — за да сменим подписа на
+  // картата "Планирай с AI" от "Ново пътуване" на нещо, което показва, че
+  // вече има план, и за да покажем правилен брой на баджа. Всяко запазване
+  // в trip_plans (генериране ИЛИ корекция/refine) създава нов ред, за да се
+  // пази пълна история на версиите — затова броим по planGroupId (общ за
+  // първоначалния план и всичките му последващи корекции), не по брой
+  // редове, иначе всяка корекция на един и същ план щеше да вдига бройката.
+  // По-стари редове отпреди да пазим planGroupId се броят поотделно (нямат
+  // как да се свържат ретроактивно).
+  const fetchPlanCount = useCallback(async () => {
+    if (!trip?.id) return;
+    const { data } = await supabase
+      .from("trip_plans")
+      .select("id, params")
+      .eq("trip_id", trip.id);
+    const rows = data || [];
+    const groupIds = new Set(rows.map((r) => r.params?.planGroupId || r.id));
+    setPlanCount(groupIds.size);
+  }, [trip?.id]);
+
+  useEffect(() => {
+    fetchPlanCount();
+    if (!trip?.id) return;
+    const channel = supabase
+      .channel(`dashboard-plans-${trip.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "trip_plans", filter: `trip_id=eq.${trip.id}` },
+        () => fetchPlanCount()
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [trip?.id, fetchPlanCount]);
 
   // Разходи + splits — за нетния баланс, показан горе и под картата "Разходи".
   // Съзнателно е олекотена версия на логиката в ExpensesScreen (само сумите,
@@ -329,12 +364,33 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   async function handleSetWeight(memberId, newWeight) {
     if (newWeight < 1 || newWeight > 20) return;
+    // Децата са подмножество на общия брой хора — ако свалим общия брой под
+    // тях, свиваме и децата, иначе базата отхвърля записа (children <= weight).
+    const member = members.find((m) => m.user_id === memberId);
+    const newChildren = Math.min(member?.children || 0, newWeight);
     try {
       await supabase.from("trip_members")
-        .update({ weight: newWeight })
+        .update({ weight: newWeight, children: newChildren })
         .eq("trip_id", trip.id)
         .eq("user_id", memberId);
-      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, weight: newWeight } : m));
+      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, weight: newWeight, children: newChildren } : m));
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    }
+  }
+
+  // Колко от хората на този участник са деца. Ползва се от AI планера, за да
+  // не пита ръчно за броя деца — самото тегло не носи информация за възраст.
+  async function handleSetChildren(memberId, newChildren) {
+    const member = members.find((m) => m.user_id === memberId);
+    const maxChildren = member?.weight || 1;
+    if (newChildren < 0 || newChildren > maxChildren) return;
+    try {
+      await supabase.from("trip_members")
+        .update({ children: newChildren })
+        .eq("trip_id", trip.id)
+        .eq("user_id", memberId);
+      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, children: newChildren } : m));
     } catch (e) {
       Alert.alert("Грешка", e.message);
     }
@@ -519,7 +575,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       : `Дължиш ${formatEUR(Math.abs(netBalance))}`;
 
   const cards = [
-    { Icon: Sparkles, title: "Планирай с AI", sub: "Ново пътуване", onPress: onAI, color: colors.brand50, badge: 0 },
+    { Icon: Sparkles, title: "Планирай с AI", sub: planCount > 0 ? "Виж/коригирай плана" : "Ново пътуване", onPress: onAI, color: colors.brand50, badge: planCount },
     { Icon: MessageSquare, title: "Чат", sub: chatSub, onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
     { Icon: FileText, title: "Документи", sub: docsSub, onPress: onDocuments, color: "#E6F1FB", badge: 0 },
     { Icon: CreditCard, title: "Разходи", sub: expensesSub, onPress: onExpenses, color: "#FAEEDA", badge: 0 },
@@ -685,17 +741,19 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
             <TouchableOpacity key={i} style={[styles.cardRow, { backgroundColor: card.color }]} onPress={card.onPress}>
               <View style={styles.cardIconWrap}>
                 <card.Icon size={22} color={colors.brand600} strokeWidth={1.75} />
-                {card.badge > 0 && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{card.badge > 99 ? "99+" : card.badge}</Text>
-                  </View>
-                )}
               </View>
               <View style={styles.cardTextWrap}>
                 <Text style={styles.cardTitle}>{card.title}</Text>
                 <Text style={styles.cardSub}>{card.sub}</Text>
               </View>
               <Text style={styles.cardChevron}>›</Text>
+              {card.badge > 0 && (
+                // Преместено в горния десен ъгъл на цялата карта, а не върху
+                // иконата — там се застъпваше с нея на по-малки икони (напр. 22px).
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{card.badge > 99 ? "99+" : card.badge}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           ))}
         </View>
@@ -718,39 +776,59 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               <Users size={22} color={colors.text900} strokeWidth={1.75} />
               <Text style={[styles.modalTitle, styles.modalTitleInline]}>Участници</Text>
             </View>
-            <Text style={styles.modalSubtitle}>Брой хора определя дела от разходите</Text>
+            <Text style={styles.modalSubtitle}>Броят хора определя дела от разходите, а децата се ползват от AI планера</Text>
 
             {members.map((m, i) => {
               const weight = m.weight || 1;
+              const children = m.children || 0;
               const isMe = m.user_id === user.id;
               const canRemove = isOwner && !isMe;
               return (
                 <View key={m.user_id} style={styles.memberRow}>
-                  <View style={[styles.avatarLg, { backgroundColor: isMe ? colors.brand600 : COLORS[i % COLORS.length] }]}>
-                    <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
-                  </View>
-                  <View style={styles.memberInfo}>
-                    <Text style={styles.memberRowName}>{m.display_name}</Text>
-                    <View style={styles.memberBadges}>
-                      {isMe && <Text style={styles.memberYou}>ти</Text>}
-                      {m.role === "owner" && <Text style={styles.memberOwner}>организатор</Text>}
+                  <View style={styles.memberTopRow}>
+                    <View style={[styles.avatarLg, { backgroundColor: isMe ? colors.brand600 : COLORS[i % COLORS.length] }]}>
+                      <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
                     </View>
-                  </View>
-                  <View style={styles.memberRight}>
-                    <View style={styles.weightControl}>
-                      <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={weight <= 1}>
-                        <Text style={[styles.weightBtnText, weight <= 1 && { color: colors.text400 }]}>−</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.weightVal}>{weight}</Text>
-                      <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)}>
-                        <Text style={styles.weightBtnText}>+</Text>
-                      </TouchableOpacity>
+                    <View style={styles.memberInfo}>
+                      <Text style={styles.memberRowName}>{m.display_name}</Text>
+                      <View style={styles.memberBadges}>
+                        {isMe && <Text style={styles.memberYou}>ти</Text>}
+                        {m.role === "owner" && <Text style={styles.memberOwner}>организатор</Text>}
+                      </View>
                     </View>
                     {canRemove && (
                       <TouchableOpacity onPress={() => handleRemoveMember(m)} style={styles.removeBtn}>
                         <Text style={styles.removeBtnText}>✕</Text>
                       </TouchableOpacity>
                     )}
+                  </View>
+                  {/* Двата брояча са с етикети — иначе голото число до "− +" не
+                      казва какво брои, а вече са две различни неща. */}
+                  <View style={styles.memberCounters}>
+                    <View style={styles.counterGroup}>
+                      <Text style={styles.counterLabel}>Общо хора</Text>
+                      <View style={styles.weightControl}>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={weight <= 1}>
+                          <Text style={[styles.weightBtnText, weight <= 1 && { color: colors.text400 }]}>−</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.weightVal}>{weight}</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)}>
+                          <Text style={styles.weightBtnText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <View style={styles.counterGroup}>
+                      <Text style={styles.counterLabel}>от които деца</Text>
+                      <View style={styles.weightControl}>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children - 1)} disabled={children <= 0}>
+                          <Text style={[styles.weightBtnText, children <= 0 && { color: colors.text400 }]}>−</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.weightVal}>{children}</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children + 1)} disabled={children >= weight}>
+                          <Text style={[styles.weightBtnText, children >= weight && { color: colors.text400 }]}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
                   </View>
                 </View>
               );
@@ -1014,10 +1092,10 @@ const styles = StyleSheet.create({
   switchBtn: { marginTop: space.lg, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: radius.control, padding: space.md, alignItems: "center" },
   switchBtnText: { ...type.label, fontWeight: "600", fontFamily: "GolosText_600SemiBold", color: colors.onBrand },
   cards: { gap: space.sm, marginBottom: space.md },
-  cardRow: { flexDirection: "row", alignItems: "center", borderRadius: radius.card, padding: space.lg, gap: space.md },
-  cardIconWrap: { position: "relative", width: 32, alignItems: "center", justifyContent: "center" },
+  cardRow: { flexDirection: "row", alignItems: "center", borderRadius: radius.card, padding: space.lg, gap: space.md, position: "relative" },
+  cardIconWrap: { width: 32, alignItems: "center", justifyContent: "center" },
   badge: {
-    position: "absolute", top: -4, right: -8,
+    position: "absolute", top: space.sm, right: space.sm,
     backgroundColor: colors.owe600, borderRadius: radius.pill,
     minWidth: 18, height: 18, alignItems: "center", justifyContent: "center",
     paddingHorizontal: space.xs,
@@ -1058,7 +1136,11 @@ const styles = StyleSheet.create({
   editCurrencyChipActive: { backgroundColor: colors.surface },
   editCurrencyChipText: { ...type.label, fontWeight: "600", fontFamily: "GolosText_600SemiBold", color: colors.onBrand },
   editCurrencyChipTextActive: { color: colors.brand600 },
-  memberRow: { flexDirection: "row", alignItems: "center", gap: space.md, paddingVertical: space.md, borderBottomWidth: 0.5, borderBottomColor: colors.border },
+  memberRow: { paddingVertical: space.md, borderBottomWidth: 0.5, borderBottomColor: colors.border },
+  memberTopRow: { flexDirection: "row", alignItems: "center", gap: space.md },
+  memberCounters: { flexDirection: "row", gap: space.lg, marginTop: space.md, paddingLeft: 40 + space.md },
+  counterGroup: { gap: space.xs },
+  counterLabel: { fontSize: 11, lineHeight: 14, color: colors.text400 },
   avatarLg: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   avatarLgText: { ...type.label, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.onBrand },
   memberInfo: { flex: 1 },
@@ -1066,7 +1148,6 @@ const styles = StyleSheet.create({
   memberBadges: { flexDirection: "row", gap: space.sm, marginTop: space.xs },
   memberYou: { fontSize: 12, lineHeight: 16, color: colors.brand600, backgroundColor: colors.brand50, paddingHorizontal: space.sm, paddingVertical: space.xs, borderRadius: radius.control },
   memberOwner: { fontSize: 12, lineHeight: 16, color: colors.text600, backgroundColor: colors.bg, paddingHorizontal: space.sm, paddingVertical: space.xs, borderRadius: radius.control },
-  memberRight: { flexDirection: "row", alignItems: "center", gap: space.sm },
   weightControl: { flexDirection: "row", alignItems: "center", gap: space.sm },
   weightBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.border, alignItems: "center", justifyContent: "center" },
   weightBtnText: { fontSize: 18, fontWeight: "bold", color: colors.brand600, lineHeight: 22 },

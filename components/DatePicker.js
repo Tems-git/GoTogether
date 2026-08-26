@@ -63,6 +63,20 @@ export default function DatePicker({ value, onChange, minDate, placeholder = "И
   const [viewYear, setViewYear] = useState(initial.year);
   const [viewMonth, setViewMonth] = useState(initial.month);
 
+  // При отваряне показваме месеца на вече избраната дата, а ако няма избрана —
+  // месеца на minDate (напр. началната дата, когато отваряш picker-а за
+  // крайната). Без това, ако началната дата е в следващ месец, календарът за
+  // крайната винаги отваряше текущия месец и трябваше ръчно да превърташ.
+  // Смятаме и прилагаме месеца СИНХРОННО в самия onPress (не през useEffect),
+  // за да няма кадър, в който модалът се показва с грешен месец преди да се
+  // коригира.
+  function openCalendar() {
+    const base = parsed || parseISODate(minDate) || { year: today.getFullYear(), month: today.getMonth() };
+    setViewYear(base.year);
+    setViewMonth(base.month);
+    setVisible(true);
+  }
+
   const grid = useMemo(() => getMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
   const minParsed = parseISODate(minDate);
 
@@ -111,7 +125,7 @@ export default function DatePicker({ value, onChange, minDate, placeholder = "И
   return (
     <View>
       {label && <Text style={styles.label}>{label}</Text>}
-      <TouchableOpacity style={styles.trigger} onPress={() => setVisible(true)}>
+      <TouchableOpacity style={styles.trigger} onPress={openCalendar}>
         <Text style={value ? styles.triggerText : styles.triggerPlaceholder}>
           {value ? formatDisplay(value) : placeholder}
         </Text>

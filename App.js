@@ -72,6 +72,9 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState("home");
   const [activeTrip, setActiveTrip] = useState(null);
+  // id на конкретен запазен план, отворен от линк в чата (📋 карта) — за да
+  // покажем точно тази версия в Планера, вместо винаги последната.
+  const [openPlanId, setOpenPlanId] = useState(null);
   const [allTrips, setAllTrips] = useState([]);
   const [tripLoading, setTripLoading] = useState(false);
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
@@ -161,7 +164,14 @@ function AppContent() {
     );
   }
 
-  if (screen === "ai") return <AIPlannerScreen onBack={() => setScreen(user ? "dashboard" : "home")} trip={activeTrip} />;
+  if (screen === "ai") return (
+    <AIPlannerScreen
+      onBack={() => { setOpenPlanId(null); setScreen(user ? "dashboard" : "home"); }}
+      trip={activeTrip}
+      userId={user?.id}
+      openPlanId={openPlanId}
+    />
+  );
 
   if (screen === "documents") {
     return (
@@ -191,6 +201,7 @@ function AppContent() {
         tripId={activeTrip?.id}
         userId={user?.id}
         tripName={activeTrip?.name}
+        onOpenPlan={(planId) => { setOpenPlanId(planId); setScreen("ai"); }}
       />
     );
   }
