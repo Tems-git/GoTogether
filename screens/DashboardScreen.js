@@ -362,21 +362,36 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     }
   }
 
+  // Общо за двата брояча: базата пази правата (свой ред или организатор на
+  // пътуването). Когато няма право, RLS НЕ връща грешка — просто не обновява
+  // нито един ред. Затова искаме обновените редове обратно и ако са нула,
+  // третираме го като отказ; иначе екранът показва стойност, която базата не
+  // пази, и тя се връща обратно при следващо отваряне.
+  async function updateMemberCounts(memberId, patch) {
+    try {
+      const { data, error } = await supabase.from("trip_members")
+        .update(patch)
+        .eq("trip_id", trip.id)
+        .eq("user_id", memberId)
+        .select("user_id");
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("Само участникът или организаторът на пътуването може да променя тези числа.");
+      }
+      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, ...patch } : m));
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+      fetchMembers();
+    }
+  }
+
   async function handleSetWeight(memberId, newWeight) {
     if (newWeight < 1 || newWeight > 20) return;
     // Децата са подмножество на общия брой хора — ако свалим общия брой под
     // тях, свиваме и децата, иначе базата отхвърля записа (children <= weight).
     const member = members.find((m) => m.user_id === memberId);
     const newChildren = Math.min(member?.children || 0, newWeight);
-    try {
-      await supabase.from("trip_members")
-        .update({ weight: newWeight, children: newChildren })
-        .eq("trip_id", trip.id)
-        .eq("user_id", memberId);
-      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, weight: newWeight, children: newChildren } : m));
-    } catch (e) {
-      Alert.alert("Грешка", e.message);
-    }
+    updateMemberCounts(memberId, { weight: newWeight, children: newChildren });
   }
 
   // Колко от хората на този участник са деца. Ползва се от AI планера, за да
@@ -385,15 +400,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     const member = members.find((m) => m.user_id === memberId);
     const maxChildren = member?.weight || 1;
     if (newChildren < 0 || newChildren > maxChildren) return;
-    try {
-      await supabase.from("trip_members")
-        .update({ children: newChildren })
-        .eq("trip_id", trip.id)
-        .eq("user_id", memberId);
-      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, children: newChildren } : m));
-    } catch (e) {
-      Alert.alert("Грешка", e.message);
-    }
+    updateMemberCounts(memberId, { children: newChildren });
   }
 
   async function handleRemoveMember(member) {
@@ -783,6 +790,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               const children = m.children || 0;
               const isMe = m.user_id === user.id;
               const canRemove = isOwner && !isMe;
+              // Огледало на правата в базата (виж политиките за UPDATE върху
+              // trip_members) — иначе бутоните изглеждат работещи, но записът
+              // тихо се отхвърля.
+              const canEditCounts = isMe || isOwner;
               return (
                 <View key={m.user_id} style={styles.memberRow}>
                   <View style={styles.memberTopRow}>
@@ -808,28 +819,31 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                     <View style={styles.counterGroup}>
                       <Text style={styles.counterLabel}>Общо хора</Text>
                       <View style={styles.weightControl}>
-                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={weight <= 1}>
-                          <Text style={[styles.weightBtnText, weight <= 1 && { color: colors.text400 }]}>−</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={!canEditCounts || weight <= 1}>
+                          <Text style={[styles.weightBtnText, (!canEditCounts || weight <= 1) && styles.weightBtnTextOff]}>−</Text>
                         </TouchableOpacity>
                         <Text style={styles.weightVal}>{weight}</Text>
-                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)}>
-                          <Text style={styles.weightBtnText}>+</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)} disabled={!canEditCounts}>
+                          <Text style={[styles.weightBtnText, !canEditCounts && styles.weightBtnTextOff]}>+</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
                     <View style={styles.counterGroup}>
                       <Text style={styles.counterLabel}>от които деца</Text>
                       <View style={styles.weightControl}>
-                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children - 1)} disabled={children <= 0}>
-                          <Text style={[styles.weightBtnText, children <= 0 && { color: colors.text400 }]}>−</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children - 1)} disabled={!canEditCounts || children <= 0}>
+                          <Text style={[styles.weightBtnText, (!canEditCounts || children <= 0) && styles.weightBtnTextOff]}>−</Text>
                         </TouchableOpacity>
                         <Text style={styles.weightVal}>{children}</Text>
-                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children + 1)} disabled={children >= weight}>
-                          <Text style={[styles.weightBtnText, children >= weight && { color: colors.text400 }]}>+</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children + 1)} disabled={!canEditCounts || children >= weight}>
+                          <Text style={[styles.weightBtnText, (!canEditCounts || children >= weight) && styles.weightBtnTextOff]}>+</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
                   </View>
+                  {!canEditCounts && (
+                    <Text style={styles.counterLocked}>Само {m.display_name} или организаторът може да променя тези числа</Text>
+                  )}
                 </View>
               );
             })}
@@ -1141,6 +1155,7 @@ const styles = StyleSheet.create({
   memberCounters: { flexDirection: "row", gap: space.lg, marginTop: space.md, paddingLeft: 40 + space.md },
   counterGroup: { gap: space.xs },
   counterLabel: { fontSize: 11, lineHeight: 14, color: colors.text400 },
+  counterLocked: { fontSize: 11, lineHeight: 14, color: colors.text400, marginTop: space.sm, paddingLeft: 40 + space.md },
   avatarLg: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   avatarLgText: { ...type.label, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.onBrand },
   memberInfo: { flex: 1 },
@@ -1151,6 +1166,7 @@ const styles = StyleSheet.create({
   weightControl: { flexDirection: "row", alignItems: "center", gap: space.sm },
   weightBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.border, alignItems: "center", justifyContent: "center" },
   weightBtnText: { fontSize: 18, fontWeight: "bold", color: colors.brand600, lineHeight: 22 },
+  weightBtnTextOff: { color: colors.text400 },
   weightVal: { ...type.body, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.text900, minWidth: 20, textAlign: "center", fontVariant: ["tabular-nums"] },
   removeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#FFE8E8", alignItems: "center", justifyContent: "center" },
   removeBtnText: { fontSize: 13, color: colors.owe600, fontWeight: "bold" },
