@@ -82,6 +82,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [savingName, setSavingName] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [unblocking, setUnblocking] = useState(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   // Живи данни за краткия контекст под всяка карта на Dashboard-а
   // (брой документи, нетен баланс от разходите) — леки заявки, без
@@ -528,6 +529,71 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     }
   }
 
+  // Изтриване на акаунт от самото приложение. Google Play изисква това за
+  // приложения с регистрация — само уеб страница не е достатъчна.
+  // Самото изтриване минава през Edge функцията delete-account със service
+  // role, защото клиентът няма право да трие auth.users. Функцията вади
+  // самоличността от токена, не от тялото на заявката.
+  //
+  // Две потвърждения, а не едно: първото обяснява последиците, второто пита
+  // за необратимостта. Действието трие чужди неща (напр. пътуване, което
+  // никой друг не ползва) и не може да се върне.
+  function handleDeleteAccount() {
+    Alert.alert(
+      "Изтриване на акаунт",
+      "Ще бъдат изтрити акаунтът, имейлът и името ти, съобщенията и документите ти, както и участието ти във всички пътувания.\n\n" +
+      "Пътуванията, които си организирал, преминават към друг участник. Ако си единственият участник, пътуването се изтрива изцяло.\n\n" +
+      "Разходите в общи пътувания остават, за да не се объркат сметките на останалите.",
+      [
+        { text: "Отказ", style: "cancel" },
+        {
+          text: "Продължи",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Сигурен ли си?",
+              "Това е необратимо. Няма да можеш да влезеш отново с този имейл, а данните не могат да бъдат възстановени.",
+              [
+                { text: "Отказ", style: "cancel" },
+                { text: "Изтрий акаунта", style: "destructive", onPress: performDeleteAccount },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  }
+
+  async function performDeleteAccount() {
+    setDeletingAccount(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-account");
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      const parts = [];
+      if (data?.transferredTrips) {
+        parts.push(`${data.transferredTrips} ${data.transferredTrips === 1 ? "пътуване премина" : "пътувания преминаха"} към друг участник`);
+      }
+      if (data?.deletedTrips) {
+        parts.push(`${data.deletedTrips} ${data.deletedTrips === 1 ? "пътуване беше изтрито" : "пътувания бяха изтрити"}`);
+      }
+
+      Alert.alert(
+        "Акаунтът е изтрит",
+        parts.length ? `Готово. ${parts.join(", ")}.` : "Готово. Благодарим ти, че опита GoTogether.",
+        [{ text: "OK", onPress: async () => { await supabase.auth.signOut(); onSignOut(); } }]
+      );
+    } catch (e) {
+      Alert.alert(
+        "Изтриването не успя",
+        `${e.message}\n\nАкаунтът ти е непокътнат. Ако проблемът се повтори, пиши на support@wegotogether.xyz.`
+      );
+    } finally {
+      setDeletingAccount(false);
+    }
+  }
+
   const isOwner = members.find((m) => m.user_id === user.id)?.role === "owner";
 
   // Отваря trip edit модала с текущите стойности prefilled
@@ -783,6 +849,17 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
             <Text style={styles.signOutText}>Изход</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Нарочно дискретно и най-долу — рядко и необратимо действие, което
+            не бива да стои до ежедневните бутони. Google Play обаче изисква
+            да е достъпно в приложението, не само през уеб страница. */}
+        <TouchableOpacity style={styles.deleteAccountBtn} onPress={handleDeleteAccount} disabled={deletingAccount}>
+          {deletingAccount ? (
+            <ActivityIndicator color={colors.owe600} />
+          ) : (
+            <Text style={styles.deleteAccountText}>Изтрий акаунта си</Text>
+          )}
+        </TouchableOpacity>
 
       </ScrollView>
 
@@ -1139,6 +1216,8 @@ const styles = StyleSheet.create({
   shareBtnText: { ...type.label, fontWeight: "600", fontFamily: "GolosText_600SemiBold", color: colors.brand600 },
   signOut: { padding: space.lg, borderRadius: radius.control, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
   signOutText: { ...type.label, color: colors.text400 },
+  deleteAccountBtn: { alignItems: "center", paddingVertical: space.lg, marginTop: space.sm },
+  deleteAccountText: { fontSize: 13, lineHeight: 18, color: colors.text400, textDecorationLine: "underline" },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modal: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%" },
   modalContent: { padding: space.xl, paddingBottom: space.xxxl },
