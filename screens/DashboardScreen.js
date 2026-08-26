@@ -110,7 +110,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     if (!trip?.id) return;
     const { data } = await supabase
       .from("trip_members")
-      .select("user_id, display_name, role, weight")
+      .select("user_id, display_name, role, weight, children")
       .eq("trip_id", trip.id);
     setMembers(data || []);
   }, [trip?.id]);
@@ -364,12 +364,33 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   async function handleSetWeight(memberId, newWeight) {
     if (newWeight < 1 || newWeight > 20) return;
+    // Децата са подмножество на общия брой хора — ако свалим общия брой под
+    // тях, свиваме и децата, иначе базата отхвърля записа (children <= weight).
+    const member = members.find((m) => m.user_id === memberId);
+    const newChildren = Math.min(member?.children || 0, newWeight);
     try {
       await supabase.from("trip_members")
-        .update({ weight: newWeight })
+        .update({ weight: newWeight, children: newChildren })
         .eq("trip_id", trip.id)
         .eq("user_id", memberId);
-      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, weight: newWeight } : m));
+      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, weight: newWeight, children: newChildren } : m));
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    }
+  }
+
+  // Колко от хората на този участник са деца. Ползва се от AI планера, за да
+  // не пита ръчно за броя деца — самото тегло не носи информация за възраст.
+  async function handleSetChildren(memberId, newChildren) {
+    const member = members.find((m) => m.user_id === memberId);
+    const maxChildren = member?.weight || 1;
+    if (newChildren < 0 || newChildren > maxChildren) return;
+    try {
+      await supabase.from("trip_members")
+        .update({ children: newChildren })
+        .eq("trip_id", trip.id)
+        .eq("user_id", memberId);
+      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, children: newChildren } : m));
     } catch (e) {
       Alert.alert("Грешка", e.message);
     }
@@ -755,39 +776,59 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               <Users size={22} color={colors.text900} strokeWidth={1.75} />
               <Text style={[styles.modalTitle, styles.modalTitleInline]}>Участници</Text>
             </View>
-            <Text style={styles.modalSubtitle}>Брой хора определя дела от разходите</Text>
+            <Text style={styles.modalSubtitle}>Броят хора определя дела от разходите, а децата се ползват от AI планера</Text>
 
             {members.map((m, i) => {
               const weight = m.weight || 1;
+              const children = m.children || 0;
               const isMe = m.user_id === user.id;
               const canRemove = isOwner && !isMe;
               return (
                 <View key={m.user_id} style={styles.memberRow}>
-                  <View style={[styles.avatarLg, { backgroundColor: isMe ? colors.brand600 : COLORS[i % COLORS.length] }]}>
-                    <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
-                  </View>
-                  <View style={styles.memberInfo}>
-                    <Text style={styles.memberRowName}>{m.display_name}</Text>
-                    <View style={styles.memberBadges}>
-                      {isMe && <Text style={styles.memberYou}>ти</Text>}
-                      {m.role === "owner" && <Text style={styles.memberOwner}>организатор</Text>}
+                  <View style={styles.memberTopRow}>
+                    <View style={[styles.avatarLg, { backgroundColor: isMe ? colors.brand600 : COLORS[i % COLORS.length] }]}>
+                      <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
                     </View>
-                  </View>
-                  <View style={styles.memberRight}>
-                    <View style={styles.weightControl}>
-                      <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={weight <= 1}>
-                        <Text style={[styles.weightBtnText, weight <= 1 && { color: colors.text400 }]}>−</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.weightVal}>{weight}</Text>
-                      <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)}>
-                        <Text style={styles.weightBtnText}>+</Text>
-                      </TouchableOpacity>
+                    <View style={styles.memberInfo}>
+                      <Text style={styles.memberRowName}>{m.display_name}</Text>
+                      <View style={styles.memberBadges}>
+                        {isMe && <Text style={styles.memberYou}>ти</Text>}
+                        {m.role === "owner" && <Text style={styles.memberOwner}>организатор</Text>}
+                      </View>
                     </View>
                     {canRemove && (
                       <TouchableOpacity onPress={() => handleRemoveMember(m)} style={styles.removeBtn}>
                         <Text style={styles.removeBtnText}>✕</Text>
                       </TouchableOpacity>
                     )}
+                  </View>
+                  {/* Двата брояча са с етикети — иначе голото число до "− +" не
+                      казва какво брои, а вече са две различни неща. */}
+                  <View style={styles.memberCounters}>
+                    <View style={styles.counterGroup}>
+                      <Text style={styles.counterLabel}>Общо хора</Text>
+                      <View style={styles.weightControl}>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={weight <= 1}>
+                          <Text style={[styles.weightBtnText, weight <= 1 && { color: colors.text400 }]}>−</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.weightVal}>{weight}</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)}>
+                          <Text style={styles.weightBtnText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <View style={styles.counterGroup}>
+                      <Text style={styles.counterLabel}>от които деца</Text>
+                      <View style={styles.weightControl}>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children - 1)} disabled={children <= 0}>
+                          <Text style={[styles.weightBtnText, children <= 0 && { color: colors.text400 }]}>−</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.weightVal}>{children}</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children + 1)} disabled={children >= weight}>
+                          <Text style={[styles.weightBtnText, children >= weight && { color: colors.text400 }]}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
                   </View>
                 </View>
               );
@@ -1095,7 +1136,11 @@ const styles = StyleSheet.create({
   editCurrencyChipActive: { backgroundColor: colors.surface },
   editCurrencyChipText: { ...type.label, fontWeight: "600", fontFamily: "GolosText_600SemiBold", color: colors.onBrand },
   editCurrencyChipTextActive: { color: colors.brand600 },
-  memberRow: { flexDirection: "row", alignItems: "center", gap: space.md, paddingVertical: space.md, borderBottomWidth: 0.5, borderBottomColor: colors.border },
+  memberRow: { paddingVertical: space.md, borderBottomWidth: 0.5, borderBottomColor: colors.border },
+  memberTopRow: { flexDirection: "row", alignItems: "center", gap: space.md },
+  memberCounters: { flexDirection: "row", gap: space.lg, marginTop: space.md, paddingLeft: 40 + space.md },
+  counterGroup: { gap: space.xs },
+  counterLabel: { fontSize: 11, lineHeight: 14, color: colors.text400 },
   avatarLg: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   avatarLgText: { ...type.label, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.onBrand },
   memberInfo: { flex: 1 },
@@ -1103,7 +1148,6 @@ const styles = StyleSheet.create({
   memberBadges: { flexDirection: "row", gap: space.sm, marginTop: space.xs },
   memberYou: { fontSize: 12, lineHeight: 16, color: colors.brand600, backgroundColor: colors.brand50, paddingHorizontal: space.sm, paddingVertical: space.xs, borderRadius: radius.control },
   memberOwner: { fontSize: 12, lineHeight: 16, color: colors.text600, backgroundColor: colors.bg, paddingHorizontal: space.sm, paddingVertical: space.xs, borderRadius: radius.control },
-  memberRight: { flexDirection: "row", alignItems: "center", gap: space.sm },
   weightControl: { flexDirection: "row", alignItems: "center", gap: space.sm },
   weightBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.border, alignItems: "center", justifyContent: "center" },
   weightBtnText: { fontSize: 18, fontWeight: "bold", color: colors.brand600, lineHeight: 22 },
