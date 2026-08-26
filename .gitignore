@@ -2,3 +2,10 @@
 .env.local
 node_modules/
 .expo/
+dist/
+eas-debug.txt
+*.log
+.DS_Store
+web-build/
+/android
+/ios
