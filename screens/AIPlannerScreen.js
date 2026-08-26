@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Linking, KeyboardAvoidingView, Platform, Modal, FlatList } from "react-native";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sparkles } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
@@ -228,20 +228,17 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   const [tripMemberCount, setTripMemberCount] = useState(0);
   const [tripPeopleCount, setTripPeopleCount] = useState(0);
   const [tripChildrenCount, setTripChildrenCount] = useState(0);
-  // Дали формата вече е възстановена от предишен план. Двете зареждания
-  // (планът и съставът на групата) са асинхронни и могат да приключат в
-  // произволен ред — това гарантира, че последно въведеното от потребителя
-  // (от плана) винаги печели пред изчисления по подразбиране брой семейства.
-  const paramsAppliedRef = useRef(false);
 
-  // Възстановява формата от вече запазен план на това пътуване. Повечето полета
-  // (начална точка, спирки, бюджет, транспорт, настаняване) нямат аналог в
-  // самото пътуване и няма откъде другаде да се вземат — затова формата помни
-  // какво е било въведено миналия път, вместо всеки път да е по подразбиране.
+  // Възстановява от вече запазен план САМО полетата, които нямат друг източник
+  // (начална точка, спирки, бюджет, транспорт, настаняване) — те не се пазят
+  // никъде в пътуването, затова формата ги помни от миналия път.
+  // ВАЖНО: "Семейства" и "Деца" НЕ се възстановяват оттук. Те се смятат от
+  // реалния състав на участниците (виж ефекта по-долу) и това е живата истина —
+  // ако ги възстановявахме и от плана, пътуване с вече запазен план щеше да
+  // показва старите стойности и промените в "Участници" нямаше да се виждат.
   // Празните стойности се игнорират, за да не изтрият наследеното от пътуването.
   function applyFormFromParams(params) {
     if (!params) return;
-    paramsAppliedRef.current = true;
     setForm((f) => ({
       ...f,
       startPoint: params.startPoint || f.startPoint,
@@ -253,8 +250,6 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
             overnight: !!w?.overnight,
           }))
         : f.waypoints,
-      families: params.families || f.families,
-      children: params.children || f.children,
       budget: params.budget || f.budget,
       transport: params.transport || f.transport,
       accommodationType: params.accommodationType || f.accommodationType,
@@ -324,11 +319,11 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
         setTripMemberCount(members.length);
         setTripPeopleCount(people);
         setTripChildrenCount(kids);
-        // Ако вече сме възстановили формата от предишен план, не пипаме
-        // въведеното от потребителя — то е по-точно от изчисленото.
-        if (!paramsAppliedRef.current) {
-          setForm((f) => ({ ...f, families: String(members.length), children: String(kids) }));
-        }
+        // Съставът на групата винаги идва оттук, дори когато пътуването вече
+        // има запазен план — промените в "Участници" трябва да се виждат
+        // веднага в планера. Ръчна корекция в самата форма остава валидна за
+        // текущата сесия (ефектът се изпълнява само при отваряне на екрана).
+        setForm((f) => ({ ...f, families: String(members.length), children: String(kids) }));
       });
   }, [canPersist, trip?.id, userId]);
 
