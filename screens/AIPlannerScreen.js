@@ -222,11 +222,12 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     comfort: "без значение",
   });
 
-  // Състав на групата — колко участници има пътуването и колко души са общо
-  // (сборът от теглата). Ползва се за предварително попълване на "Семейства"
-  // и за подсказката под полето.
+  // Състав на групата — колко участници има пътуването, колко души са общо
+  // (сборът от теглата) и колко от тях са деца. Ползва се за предварително
+  // попълване на "Семейства" и "Деца" и за подсказката под полетата.
   const [tripMemberCount, setTripMemberCount] = useState(0);
   const [tripPeopleCount, setTripPeopleCount] = useState(0);
+  const [tripChildrenCount, setTripChildrenCount] = useState(0);
   // Дали формата вече е възстановена от предишен план. Двете зареждания
   // (планът и съставът на групата) са асинхронни и могат да приключат в
   // произволен ред — това гарантира, че последно въведеното от потребителя
@@ -305,25 +306,28 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   }, [canPersist, trip?.id, openPlanId]);
 
   // Един запис за целия състав на групата — от него взимаме и собственото име
-  // (за подписа при споделяне в чата), и броя участници, с който предварително
-  // попълваме "Семейства" вместо твърдото "2". Броят деца не се пази никъде в
-  // пътуването, затова остава за ръчно попълване.
+  // (за подписа при споделяне в чата), и реалния състав: брой участници →
+  // "Семейства", сбор от децата им → "Деца". И двете се въвеждаха ръчно преди
+  // да пазим children при участниците.
   useEffect(() => {
     if (!canPersist) return;
     supabase
       .from("trip_members")
-      .select("user_id, display_name, weight")
+      .select("user_id, display_name, weight, children")
       .eq("trip_id", trip.id)
       .then(({ data }) => {
         const members = data || [];
         setDisplayName(members.find((m) => m.user_id === userId)?.display_name || "");
         if (!members.length) return;
+        const people = members.reduce((sum, m) => sum + (m.weight || 1), 0);
+        const kids = members.reduce((sum, m) => sum + (m.children || 0), 0);
         setTripMemberCount(members.length);
-        setTripPeopleCount(members.reduce((sum, m) => sum + (m.weight || 1), 0));
+        setTripPeopleCount(people);
+        setTripChildrenCount(kids);
         // Ако вече сме възстановили формата от предишен план, не пипаме
         // въведеното от потребителя — то е по-точно от изчисленото.
         if (!paramsAppliedRef.current) {
-          setForm((f) => ({ ...f, families: String(members.length) }));
+          setForm((f) => ({ ...f, families: String(members.length), children: String(kids) }));
         }
       });
   }, [canPersist, trip?.id, userId]);
@@ -766,7 +770,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       </View>
       {tripMemberCount > 0 && (
         <Text style={styles.fieldHint}>
-          {`Взето от пътуването: ${tripMemberCount} ${tripMemberCount === 1 ? "участник" : "участника"}, ${tripPeopleCount} ${tripPeopleCount === 1 ? "човек" : "души"} общо. Промени, ако е нужно.`}
+          {`Взето от участниците: ${tripPeopleCount} ${tripPeopleCount === 1 ? "човек" : "души"} общо, от които ${tripChildrenCount} ${tripChildrenCount === 1 ? "дете" : "деца"}. Броят се променя от "Участници" на началния екран.`}
         </Text>
       )}
 
