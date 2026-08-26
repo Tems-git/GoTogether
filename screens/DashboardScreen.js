@@ -362,38 +362,55 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     }
   }
 
-  async function handleSetWeight(memberId, newWeight) {
-    if (newWeight < 1 || newWeight > 20) return;
-    // Децата са подмножество на общия брой хора — ако свалим общия брой под
-    // тях, свиваме и децата, иначе базата отхвърля записа (children <= weight).
-    const member = members.find((m) => m.user_id === memberId);
-    const newChildren = Math.min(member?.children || 0, newWeight);
+  // Общо за двата брояча: базата пази правата (свой ред или организатор на
+  // пътуването). Когато няма право, RLS НЕ връща грешка — просто не обновява
+  // нито един ред. Затова искаме обновените редове обратно и ако са нула,
+  // третираме го като отказ; иначе екранът показва стойност, която базата не
+  // пази, и тя се връща обратно при следващо отваряне.
+  async function updateMemberCounts(memberId, patch) {
     try {
-      await supabase.from("trip_members")
-        .update({ weight: newWeight, children: newChildren })
+      const { data, error } = await supabase.from("trip_members")
+        .update(patch)
         .eq("trip_id", trip.id)
-        .eq("user_id", memberId);
-      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, weight: newWeight, children: newChildren } : m));
+        .eq("user_id", memberId)
+        .select("user_id");
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("Само участникът или организаторът на пътуването може да променя тези числа.");
+      }
+      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, ...patch } : m));
     } catch (e) {
       Alert.alert("Грешка", e.message);
+      fetchMembers();
     }
   }
 
-  // Колко от хората на този участник са деца. Ползва се от AI планера, за да
-  // не пита ръчно за броя деца — самото тегло не носи информация за възраст.
+  // В базата пазим weight (ОБЩО хора, по него се делят разходите) и children.
+  // В интерфейса обаче показваме "Възрастни" и "Деца" — две равностойни числа,
+  // които се събират. Така никой не се чуди дали децата са включени в общото
+  // число, или се добавят към него. Общият брой се смята оттук.
+  function splitCounts(member) {
+    const weight = member?.weight || 1;
+    const children = member?.children || 0;
+    return { adults: Math.max(weight - children, 0), children, total: weight };
+  }
+
+  async function handleSetAdults(memberId, newAdults) {
+    if (newAdults < 0) return;
+    const { children } = splitCounts(members.find((m) => m.user_id === memberId));
+    const newWeight = newAdults + children;
+    if (newWeight < 1 || newWeight > 20) return;
+    updateMemberCounts(memberId, { weight: newWeight, children });
+  }
+
+  // Децата са отделно число, а не подмножество — увеличаването им вдига и
+  // общия брой хора. Ползва се и от AI планера, за да не пита ръчно за деца.
   async function handleSetChildren(memberId, newChildren) {
-    const member = members.find((m) => m.user_id === memberId);
-    const maxChildren = member?.weight || 1;
-    if (newChildren < 0 || newChildren > maxChildren) return;
-    try {
-      await supabase.from("trip_members")
-        .update({ children: newChildren })
-        .eq("trip_id", trip.id)
-        .eq("user_id", memberId);
-      setMembers((prev) => prev.map((m) => m.user_id === memberId ? { ...m, children: newChildren } : m));
-    } catch (e) {
-      Alert.alert("Грешка", e.message);
-    }
+    if (newChildren < 0) return;
+    const { adults } = splitCounts(members.find((m) => m.user_id === memberId));
+    const newWeight = adults + newChildren;
+    if (newWeight < 1 || newWeight > 20) return;
+    updateMemberCounts(memberId, { weight: newWeight, children: newChildren });
   }
 
   async function handleRemoveMember(member) {
@@ -776,13 +793,16 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               <Users size={22} color={colors.text900} strokeWidth={1.75} />
               <Text style={[styles.modalTitle, styles.modalTitleInline]}>Участници</Text>
             </View>
-            <Text style={styles.modalSubtitle}>Броят хора определя дела от разходите, а децата се ползват от AI планера</Text>
+            <Text style={styles.modalSubtitle}>Общият брой хора определя дела от разходите, а децата се ползват и от AI планера</Text>
 
             {members.map((m, i) => {
-              const weight = m.weight || 1;
-              const children = m.children || 0;
+              const { adults, children, total } = splitCounts(m);
               const isMe = m.user_id === user.id;
               const canRemove = isOwner && !isMe;
+              // Огледало на правата в базата (виж политиките за UPDATE върху
+              // trip_members) — иначе бутоните изглеждат работещи, но записът
+              // тихо се отхвърля.
+              const canEditCounts = isMe || isOwner;
               return (
                 <View key={m.user_id} style={styles.memberRow}>
                   <View style={styles.memberTopRow}>
@@ -802,34 +822,42 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                       </TouchableOpacity>
                     )}
                   </View>
-                  {/* Двата брояча са с етикети — иначе голото число до "− +" не
-                      казва какво брои, а вече са две различни неща. */}
+                  {/* Възрастни и Деца са две равностойни числа, които се събират
+                      — нарочно не показваме "общо, от които деца", защото се
+                      четеше двусмислено (4 и 2 изглеждаха като 6). */}
                   <View style={styles.memberCounters}>
                     <View style={styles.counterGroup}>
-                      <Text style={styles.counterLabel}>Общо хора</Text>
+                      <Text style={styles.counterLabel}>Възрастни</Text>
                       <View style={styles.weightControl}>
-                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight - 1)} disabled={weight <= 1}>
-                          <Text style={[styles.weightBtnText, weight <= 1 && { color: colors.text400 }]}>−</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetAdults(m.user_id, adults - 1)} disabled={!canEditCounts || adults <= 0 || total <= 1}>
+                          <Text style={[styles.weightBtnText, (!canEditCounts || adults <= 0 || total <= 1) && styles.weightBtnTextOff]}>−</Text>
                         </TouchableOpacity>
-                        <Text style={styles.weightVal}>{weight}</Text>
-                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetWeight(m.user_id, weight + 1)}>
-                          <Text style={styles.weightBtnText}>+</Text>
+                        <Text style={styles.weightVal}>{adults}</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetAdults(m.user_id, adults + 1)} disabled={!canEditCounts || total >= 20}>
+                          <Text style={[styles.weightBtnText, (!canEditCounts || total >= 20) && styles.weightBtnTextOff]}>+</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
                     <View style={styles.counterGroup}>
-                      <Text style={styles.counterLabel}>от които деца</Text>
+                      <Text style={styles.counterLabel}>Деца</Text>
                       <View style={styles.weightControl}>
-                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children - 1)} disabled={children <= 0}>
-                          <Text style={[styles.weightBtnText, children <= 0 && { color: colors.text400 }]}>−</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children - 1)} disabled={!canEditCounts || children <= 0 || total <= 1}>
+                          <Text style={[styles.weightBtnText, (!canEditCounts || children <= 0 || total <= 1) && styles.weightBtnTextOff]}>−</Text>
                         </TouchableOpacity>
                         <Text style={styles.weightVal}>{children}</Text>
-                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children + 1)} disabled={children >= weight}>
-                          <Text style={[styles.weightBtnText, children >= weight && { color: colors.text400 }]}>+</Text>
+                        <TouchableOpacity style={styles.weightBtn} onPress={() => handleSetChildren(m.user_id, children + 1)} disabled={!canEditCounts || total >= 20}>
+                          <Text style={[styles.weightBtnText, (!canEditCounts || total >= 20) && styles.weightBtnTextOff]}>+</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
+                    <View style={styles.counterTotalGroup}>
+                      <Text style={styles.counterLabel}>Общо</Text>
+                      <Text style={styles.counterTotal}>{total} {total === 1 ? "човек" : "души"}</Text>
+                    </View>
                   </View>
+                  {!canEditCounts && (
+                    <Text style={styles.counterLocked}>Само {m.display_name} или организаторът може да променя тези числа</Text>
+                  )}
                 </View>
               );
             })}
@@ -858,7 +886,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               </View>
             )}
 
-            <Text style={styles.weightHint}>💡 Смени броя хора за пропорционално делене на разходите</Text>
+            <Text style={styles.weightHint}>💡 Възрастни + деца дават общия брой, по който се делят разходите</Text>
             <TouchableOpacity style={styles.modalClose} onPress={() => setMembersModalVisible(false)}>
               <Text style={styles.modalCloseText}>Готово</Text>
             </TouchableOpacity>
@@ -1141,6 +1169,9 @@ const styles = StyleSheet.create({
   memberCounters: { flexDirection: "row", gap: space.lg, marginTop: space.md, paddingLeft: 40 + space.md },
   counterGroup: { gap: space.xs },
   counterLabel: { fontSize: 11, lineHeight: 14, color: colors.text400 },
+  counterLocked: { fontSize: 11, lineHeight: 14, color: colors.text400, marginTop: space.sm, paddingLeft: 40 + space.md },
+  counterTotalGroup: { gap: space.xs, justifyContent: "flex-start" },
+  counterTotal: { ...type.label, fontWeight: "600", fontFamily: "GolosText_600SemiBold", color: colors.text900, paddingTop: space.xs },
   avatarLg: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   avatarLgText: { ...type.label, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.onBrand },
   memberInfo: { flex: 1 },
@@ -1151,6 +1182,7 @@ const styles = StyleSheet.create({
   weightControl: { flexDirection: "row", alignItems: "center", gap: space.sm },
   weightBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.border, alignItems: "center", justifyContent: "center" },
   weightBtnText: { fontSize: 18, fontWeight: "bold", color: colors.brand600, lineHeight: 22 },
+  weightBtnTextOff: { color: colors.text400 },
   weightVal: { ...type.body, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.text900, minWidth: 20, textAlign: "center", fontVariant: ["tabular-nums"] },
   removeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#FFE8E8", alignItems: "center", justifyContent: "center" },
   removeBtnText: { fontSize: 13, color: colors.owe600, fontWeight: "bold" },
