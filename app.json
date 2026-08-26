@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "GoTogether използва камерата за снимане на документи.",
         "NSPhotoLibraryUsageDescription": "GoTogether използва галерията за качване на документи и снимки.",
-        "NSPhotoLibraryAddUsageDescription": "GoTogether запазва снимки в галерията."
+        "NSPhotoLibraryAddUsageDescription": "GoTogether запазва снимки в галерията.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
