@@ -24,8 +24,21 @@ const IMAGE_REGEX = /\.(jpg|jpeg|png|gif|webp|bmp)$/i;
 // Android, затова не го обещаваме — пращаме го навън, където се отваря.
 const MAX_UPLOAD_MB = 25;
 
+// Колко дълго важи връзката към файла. Достатъчно, за да се отвори и разгледа,
+// но не толкова, че препратена връзка да остане жива с дни.
+const SIGNED_URL_SECONDS = 300;
+
 function isImage(name = "") {
   return IMAGE_REGEX.test(name.trim());
+}
+
+// Кофата вече е частна и в базата пазим само пътя вътре в нея. По-старите
+// записи обаче пазят пълен публичен URL — приемаме и двете форми.
+function storagePath(fileUrl = "") {
+  const value = String(fileUrl || "");
+  const match = value.match(/\/object\/(?:public|sign)\/documents\/(.+?)(?:\?|$)/);
+  if (match) return decodeURIComponent(match[1]);
+  return value.replace(/^\/?documents\//, "");
 }
 
 function guessDocType(name = "") {
@@ -45,25 +58,43 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [openingId, setOpeningId] = useState(null);
+
+  // Файловете вече не са публични. Всяко отваряне иска нова подписана връзка,
+  // която важи няколко минути и се издава само ако базата признае, че този
+  // потребител участва в пътуването.
+  async function signedUrlFor(doc) {
+    const { data, error } = await supabase.storage
+      .from("documents")
+      .createSignedUrl(storagePath(doc.file_url), SIGNED_URL_SECONDS);
+    if (error || !data?.signedUrl) {
+      throw error || new Error("Връзката към файла не може да бъде създадена.");
+    }
+    return data.signedUrl;
+  }
 
   // Снимката се отваря вътре в приложението. Всичко останало — PDF, документ
   // на Word, архив — го подаваме на системата, защото нямаме с какво да го
   // нарисуваме. Ако телефонът няма подходящо приложение, казваме го направо,
   // вместо да отваряме каквото се случи.
   async function handleOpen(doc) {
-    if (isImage(doc.name)) {
-      setPreview(doc);
-      return;
-    }
+    setOpeningId(doc.id);
     try {
-      const supported = await Linking.canOpenURL(doc.file_url);
+      const url = await signedUrlFor(doc);
+      if (isImage(doc.name)) {
+        setPreview({ name: doc.name, url });
+        return;
+      }
+      const supported = await Linking.canOpenURL(url);
       if (!supported) throw new Error("no handler");
-      await Linking.openURL(doc.file_url);
-    } catch {
+      await Linking.openURL(url);
+    } catch (e) {
       Alert.alert(
         "Не мога да отворя файла",
-        `На този телефон няма приложение, което да отваря „${doc.name}“. Свали го от браузър или го отвори на компютър.`
+        `„${doc.name}“ не се отвори. ${e?.message || ""}\n\nАко проблемът се повтори, провери дали още участваш в пътуването.`.trim()
       );
+    } finally {
+      setOpeningId(null);
     }
   }
 
@@ -111,14 +142,13 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
         .upload(path, uint8, { contentType: file.mimeType || "application/octet-stream" });
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("documents").getPublicUrl(path);
-
+      // Пазим пътя, не URL. Публичен адрес вече няма — той се издава
+      // временно при всяко отваряне.
       const { error: dbError } = await supabase.from("documents").insert({
         trip_id: tripId,
         uploaded_by: userId,
         name: file.name,
-        file_url: publicUrl,
+        file_url: path,
         doc_type: guessDocType(file.name),
       });
       if (dbError) throw dbError;
@@ -136,10 +166,16 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
       {
         text: "Изтрий", style: "destructive",
         onPress: async () => {
-          const urlParts = doc.file_url.split("/documents/");
-          const storagePath = urlParts[1];
-          await supabase.storage.from("documents").remove([storagePath]);
-          await supabase.from("documents").delete().eq("id", doc.id);
+          try {
+            const { error } = await supabase.storage
+              .from("documents").remove([storagePath(doc.file_url)]);
+            if (error) throw error;
+            const { error: rowError } = await supabase
+              .from("documents").delete().eq("id", doc.id);
+            if (rowError) throw rowError;
+          } catch (e) {
+            Alert.alert("Изтриването не успя", e.message);
+          }
           await fetchDocs();
         },
       },
@@ -188,8 +224,14 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
                   )}
                 </View>
                 <View style={styles.docActions}>
-                  <TouchableOpacity onPress={() => handleOpen(doc)} style={styles.iconBtn}>
-                    <Text style={styles.iconBtnText}>👁</Text>
+                  <TouchableOpacity
+                    onPress={() => handleOpen(doc)}
+                    style={styles.iconBtn}
+                    disabled={openingId === doc.id}
+                  >
+                    {openingId === doc.id
+                      ? <ActivityIndicator size="small" color={colors.brand600} />
+                      : <Text style={styles.iconBtnText}>👁</Text>}
                   </TouchableOpacity>
                   {doc.uploaded_by === userId && (
                     <TouchableOpacity onPress={() => handleDelete(doc)} style={styles.iconBtn}>
@@ -229,7 +271,7 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
           </View>
           {preview && (
             <Image
-              source={{ uri: preview.file_url }}
+              source={{ uri: preview.url }}
               style={styles.previewImage}
               resizeMode="contain"
             />

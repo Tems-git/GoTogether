@@ -9,3 +9,5 @@ eas-debug.txt
 web-build/
 /android
 /ios
+
+*.patch
