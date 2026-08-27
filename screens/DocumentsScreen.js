@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, ActivityIndicator, Alert, Linking,
+  ScrollView, ActivityIndicator, Alert, Linking, Modal, Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
@@ -16,6 +16,17 @@ const DOC_TYPES = {
   photo: { emoji: "🖼️", label: "Снимка" },
   other: { emoji: "📄", label: "Друго" },
 };
+
+// Качва се всичко, но не всичко може да се покаже вътре в приложението.
+// Снимките ги показваме сами; останалото подаваме на системата.
+const IMAGE_REGEX = /\.(jpg|jpeg|png|gif|webp|bmp)$/i;
+// HEIC е форматът по подразбиране на iPhone. React Native не го рисува на
+// Android, затова не го обещаваме — пращаме го навън, където се отваря.
+const MAX_UPLOAD_MB = 25;
+
+function isImage(name = "") {
+  return IMAGE_REGEX.test(name.trim());
+}
 
 function guessDocType(name = "") {
   const n = name.toLowerCase();
@@ -33,6 +44,28 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState(null);
+
+  // Снимката се отваря вътре в приложението. Всичко останало — PDF, документ
+  // на Word, архив — го подаваме на системата, защото нямаме с какво да го
+  // нарисуваме. Ако телефонът няма подходящо приложение, казваме го направо,
+  // вместо да отваряме каквото се случи.
+  async function handleOpen(doc) {
+    if (isImage(doc.name)) {
+      setPreview(doc);
+      return;
+    }
+    try {
+      const supported = await Linking.canOpenURL(doc.file_url);
+      if (!supported) throw new Error("no handler");
+      await Linking.openURL(doc.file_url);
+    } catch {
+      Alert.alert(
+        "Не мога да отворя файла",
+        `На този телефон няма приложение, което да отваря „${doc.name}“. Свали го от браузър или го отвори на компютър.`
+      );
+    }
+  }
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
@@ -55,6 +88,17 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
       });
       if (result.canceled) return;
       const file = result.assets[0];
+
+      // Кофата в Supabase няма ограничение за размер. Без тази проверка един
+      // видеофайл може да изяде мястото на всички.
+      if (file.size && file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        Alert.alert(
+          "Файлът е твърде голям",
+          `„${file.name}“ е над ${MAX_UPLOAD_MB} MB. Намали го или качи само страницата, която ви трябва.`
+        );
+        return;
+      }
+
       setUploading(true);
 
       const response = await fetch(file.uri);
@@ -144,7 +188,7 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
                   )}
                 </View>
                 <View style={styles.docActions}>
-                  <TouchableOpacity onPress={() => Linking.openURL(doc.file_url)} style={styles.iconBtn}>
+                  <TouchableOpacity onPress={() => handleOpen(doc)} style={styles.iconBtn}>
                     <Text style={styles.iconBtnText}>👁</Text>
                   </TouchableOpacity>
                   {doc.uploaded_by === userId && (
@@ -169,6 +213,29 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
             </View>
           )}
       </TouchableOpacity>
+
+      <Modal
+        visible={!!preview}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setPreview(null)}
+      >
+        <View style={styles.previewBackdrop}>
+          <View style={styles.previewBar}>
+            <Text style={styles.previewName} numberOfLines={1}>{preview?.name}</Text>
+            <TouchableOpacity onPress={() => setPreview(null)} style={styles.previewClose}>
+              <Text style={styles.previewCloseText}>Затвори</Text>
+            </TouchableOpacity>
+          </View>
+          {preview && (
+            <Image
+              source={{ uri: preview.file_url }}
+              style={styles.previewImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -201,4 +268,16 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: colors.brand600, padding: space.lg, borderRadius: radius.card, alignItems: "center" },
   btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
+
+  // Прегледът е на тъмен фон нарочно — снимка на документ се чете по-добре
+  // така, а и е ясно, че си "извън" списъка.
+  previewBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.92)" },
+  previewBar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingTop: space.xxxl, paddingHorizontal: space.lg, paddingBottom: space.md, gap: space.md,
+  },
+  previewName: { ...type.body, color: "#fff", flex: 1 },
+  previewClose: { paddingVertical: space.sm, paddingHorizontal: space.md },
+  previewCloseText: { ...type.body, color: "#fff", fontWeight: "bold", fontFamily: "GolosText_700Bold" },
+  previewImage: { flex: 1, width: "100%" },
 });

@@ -111,9 +111,21 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     if (!trip?.id) return;
     const { data } = await supabase
       .from("trip_members")
-      .select("user_id, display_name, role, weight, children")
-      .eq("trip_id", trip.id);
-    setMembers(data || []);
+      .select("user_id, display_name, role, weight, children, joined_at")
+      .eq("trip_id", trip.id)
+      .order("joined_at", { ascending: true });
+
+    // Postgres не гарантира ред без ORDER BY, а при всяка промяна на брояч
+    // редът се пренаписва и излиза на друго място — заради това списъкът
+    // подскачаше точно докато човек натиска "+" и "−". Организаторът е винаги
+    // пръв, останалите по реда на присъединяване.
+    const rows = (data || []).slice().sort((a, b) => {
+      const aOwner = a.role === "owner";
+      const bOwner = b.role === "owner";
+      if (aOwner !== bOwner) return aOwner ? -1 : 1;
+      return String(a.joined_at || "").localeCompare(String(b.joined_at || ""));
+    });
+    setMembers(rows);
   }, [trip?.id]);
 
   const fetchRemovedMembers = useCallback(async () => {
@@ -666,10 +678,23 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   async function handleShare() {
     if (!trip?.invite_code) return;
+
+    // Заглавието трябва да се подаде на две места: Android го чете от
+    // content.title, а iOS слага тема на писмото от options.subject. Без тях
+    // поканата тръгва по имейл без ред "Относно" и изглежда като спам.
+    const subject = `Покана за „${trip.name}“ в GoTogether`;
+    const message =
+      `Присъединяваш се към „${trip.name}“ в GoTogether — там държим разходите, ` +
+      `документите и разговора по пътуването на едно място.\n\n` +
+      `Код за покана: ${trip.invite_code}\n\n` +
+      `Свали GoTogether, влез с имейла си и въведи кода в „Присъедини се с код“.\n` +
+      `Повече за приложението: https://tems-git.github.io/GoTogether/`;
+
     try {
-      await Share.share({
-        message: `Присъедини се към "${trip.name}" в GoTogether!\n\n1. Инсталирай Expo Go\n2. Отвори GoTogether\n3. Въведи код: ${trip.invite_code}`,
-      });
+      await Share.share(
+        { title: subject, message },
+        { subject, dialogTitle: "Изпрати покана" }
+      );
     } catch (e) {
       Alert.alert("Грешка", e.message);
     }
