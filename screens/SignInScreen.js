@@ -10,6 +10,13 @@ import { colors, space, radius, type } from "../theme/tokens";
 
 const OTP_LENGTH = 6;
 
+// Акаунт за ревюърите на Google Play и App Store. Влизането в приложението е с
+// код по имейл, а те нямат достъп до чужда поща — без това виждат празен екран
+// и отхвърлят приложението. Този адрес няма истинска кутия: кодът за него е
+// фиксиран, стои само на сървъра и е изписан в бележките за ревю.
+const REVIEW_EMAIL = "review@wegotogether.xyz";
+const REVIEW_CODE_LENGTH = 12;
+
 export default function SignInScreen({ onSignIn, pendingInviteCode }) {
   // Съдържанието е центрирано, но при отворена клавиатура на Android може да
   // опре в status/navigation bar — insets гарантират минимално отстояние.
@@ -20,11 +27,22 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
   const [step, setStep] = useState("email");
   const [loading, setLoading] = useState(false);
 
+  const address = email.trim().toLowerCase();
+  const isReview = address === REVIEW_EMAIL;
+
   async function handleSendOtp() {
-    if (!email.trim()) return Alert.alert("Грешка", "Въведи имейл адрес");
+    if (!address) return Alert.alert("Грешка", "Въведи имейл адрес");
+
+    // Няма на кого да пратим писмо — адресът за ревю не е истинска кутия.
+    if (isReview) {
+      setOtp("");
+      setStep("otp");
+      return;
+    }
+
     setLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim().toLowerCase(),
+      email: address,
       options: { shouldCreateUser: true },
     });
     setLoading(false);
@@ -35,17 +53,56 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
     }
   }
 
-  async function handleVerifyOtp() {
-    if (otp.length !== OTP_LENGTH) return Alert.alert("Грешка", `Въведи ${OTP_LENGTH}-цифрения код`);
-    setLoading(true);
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: email.trim().toLowerCase(),
-      token: otp.trim(),
-      type: "email",
+  // Разменя кода за ревю за истинска сесия. Функцията на сървъра проверява кода
+  // и връща еднократен токен на Supabase; тук той се превръща в сесия по
+  // същия път като обикновен код по имейл.
+  async function verifyReviewCode(code) {
+    const { data: grant, error: grantError } = await supabase.functions.invoke("review-signin", {
+      body: { email: address, code },
     });
+    if (grantError || grant?.error) {
+      return { data: null, error: grantError || new Error(grant.error) };
+    }
+
+    // Supabase приема токена в две форми и различните версии на клиента
+    // предпочитат различна. Пробваме първо hash-а, после шестцифрения код.
+    if (grant?.token_hash) {
+      const byHash = await supabase.auth.verifyOtp({
+        token_hash: grant.token_hash,
+        type: grant.type || "magiclink",
+      });
+      if (!byHash.error) return byHash;
+    }
+    if (grant?.email_otp) {
+      return supabase.auth.verifyOtp({
+        email: address,
+        token: grant.email_otp,
+        type: "email",
+      });
+    }
+    return { data: null, error: new Error("Липсва токен за вход.") };
+  }
+
+  async function handleVerifyOtp() {
+    const token = otp.trim();
+    if (isReview) {
+      if (!token) return Alert.alert("Грешка", "Въведи кода от бележките за ревю");
+    } else if (token.length !== OTP_LENGTH) {
+      return Alert.alert("Грешка", `Въведи ${OTP_LENGTH}-цифрения код`);
+    }
+
+    setLoading(true);
+    const { data, error } = isReview
+      ? await verifyReviewCode(token)
+      : await supabase.auth.verifyOtp({ email: address, token, type: "email" });
     setLoading(false);
     if (error) {
-      Alert.alert("Грешка", "Невалиден или изтекъл код. Опитай отново.");
+      Alert.alert(
+        "Грешка",
+        isReview
+          ? "Кодът за ревю не е приет. Провери го в бележките за ревю."
+          : "Невалиден или изтекъл код. Опитай отново."
+      );
       return;
     }
 
@@ -110,19 +167,25 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
     if (step === "otp") {
       return (
         <>
-          <Text style={styles.emoji}>📬</Text>
+          <Text style={styles.emoji}>{isReview ? "🔑" : "📬"}</Text>
           <Text style={styles.title}>Въведи кода</Text>
           <Text style={styles.subtitle}>
-            Пратихме {OTP_LENGTH}-цифрен код на{"\n"}{email}
+            {isReview
+              ? `Кодът е в бележките за ревю\nEnter the code from the review notes`
+              : `Пратихме ${OTP_LENGTH}-цифрен код на\n${email}`}
           </Text>
           <TextInput
-            style={[styles.input, styles.otpInput]}
-            placeholder={"0".repeat(OTP_LENGTH)}
+            style={[styles.input, isReview ? styles.reviewInput : styles.otpInput]}
+            placeholder={isReview ? "код за ревю" : "0".repeat(OTP_LENGTH)}
             placeholderTextColor={colors.text400}
             value={otp}
-            onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, ""))}
-            keyboardType="number-pad"
-            maxLength={OTP_LENGTH}
+            onChangeText={(t) =>
+              setOtp(isReview ? t.replace(/[^A-Za-z0-9]/g, "").toUpperCase() : t.replace(/[^0-9]/g, ""))
+            }
+            keyboardType={isReview ? "default" : "number-pad"}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={isReview ? REVIEW_CODE_LENGTH : OTP_LENGTH}
             returnKeyType="done"
             onSubmitEditing={handleVerifyOtp}
           />
@@ -132,9 +195,11 @@ export default function SignInScreen({ onSignIn, pendingInviteCode }) {
           <TouchableOpacity style={styles.back} onPress={() => { setStep("email"); setOtp(""); }}>
             <Text style={styles.backText}>← Смени имейл</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.resend} onPress={handleSendOtp} disabled={loading}>
-            <Text style={styles.resendText}>Изпрати нов код</Text>
-          </TouchableOpacity>
+          {!isReview && (
+            <TouchableOpacity style={styles.resend} onPress={handleSendOtp} disabled={loading}>
+              <Text style={styles.resendText}>Изпрати нов код</Text>
+            </TouchableOpacity>
+          )}
         </>
       );
     }
@@ -212,6 +277,11 @@ const styles = StyleSheet.create({
   },
   otpInput: {
     fontSize: 28, fontWeight: "bold", letterSpacing: 8,
+    textAlign: "center", paddingVertical: space.xl, fontFamily: "GolosText_700Bold",
+  },
+  // Кодът за ревю е дванайсет знака — по-дребен шрифт, за да се побере на един ред.
+  reviewInput: {
+    fontSize: 19, fontWeight: "bold", letterSpacing: 2,
     textAlign: "center", paddingVertical: space.xl, fontFamily: "GolosText_700Bold",
   },
   btn: {
