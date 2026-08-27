@@ -6,7 +6,10 @@
     "scheme": "gotogether",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.temsit.gotogether",
@@ -44,7 +47,8 @@
           "imageWidth": 220,
           "backgroundColor": "#0A6B57"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

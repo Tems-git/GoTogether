@@ -73,10 +73,39 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
     return data.signedUrl;
   }
 
+  // PDF и другите нерисуваеми файлове се отварят в таб ВЪРХУ приложението, а
+  // не в системния браузър. Разликата е в излизането: табът има бутон за
+  // затваряне и връща тук с едно докосване, докато Linking.openURL праща в
+  // Safari или Chrome и приложението остава на заден план.
+  //
+  // Модулът се иска лениво и нарочно. Той носи нативен код, тоест липсва в
+  // билд, направен преди да го добавим. Ако този екран тръгне върху такъв
+  // билд — например при OTA обновление — тук се пада тихо към системния
+  // браузър, вместо приложението да гръмне при зареждане.
+  async function openOutside(url) {
+    try {
+      const WebBrowser = require("expo-web-browser");
+      if (WebBrowser?.openBrowserAsync) {
+        await WebBrowser.openBrowserAsync(url, {
+          toolbarColor: colors.surface,
+          controlsColor: colors.brand600,
+          dismissButtonStyle: "close",
+          enableBarCollapsing: true,
+        });
+        return;
+      }
+    } catch {
+      // Няма нативния модул в този билд — минаваме към системния браузър.
+    }
+    const supported = await Linking.canOpenURL(url);
+    if (!supported) throw new Error("no handler");
+    await Linking.openURL(url);
+  }
+
   // Снимката се отваря вътре в приложението. Всичко останало — PDF, документ
-  // на Word, архив — го подаваме на системата, защото нямаме с какво да го
-  // нарисуваме. Ако телефонът няма подходящо приложение, казваме го направо,
-  // вместо да отваряме каквото се случи.
+  // на Word, архив — го подаваме навън, защото нямаме с какво да го нарисуваме.
+  // Ако телефонът няма подходящо приложение, казваме го направо, вместо да
+  // отваряме каквото се случи.
   async function handleOpen(doc) {
     setOpeningId(doc.id);
     try {
@@ -85,9 +114,7 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
         setPreview({ name: doc.name, url });
         return;
       }
-      const supported = await Linking.canOpenURL(url);
-      if (!supported) throw new Error("no handler");
-      await Linking.openURL(url);
+      await openOutside(url);
     } catch (e) {
       Alert.alert(
         "Не мога да отворя файла",
