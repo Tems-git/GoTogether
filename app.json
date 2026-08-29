@@ -6,14 +6,18 @@
     "scheme": "gotogether",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.temsit.gotogether",
       "infoPlist": {
         "NSCameraUsageDescription": "GoTogether използва камерата за снимане на документи.",
         "NSPhotoLibraryUsageDescription": "GoTogether използва галерията за качване на документи и снимки.",
-        "NSPhotoLibraryAddUsageDescription": "GoTogether запазва снимки в галерията."
+        "NSPhotoLibraryAddUsageDescription": "GoTogether запазва снимки в галерията.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -23,9 +27,7 @@
         "backgroundColor": "#0A6B57"
       },
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "CAMERA"
       ]
     },
     "plugins": [
@@ -43,7 +45,8 @@
           "imageWidth": 220,
           "backgroundColor": "#0A6B57"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

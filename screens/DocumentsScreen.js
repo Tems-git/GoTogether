@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, ActivityIndicator, Alert, Linking,
+  ScrollView, ActivityIndicator, Alert, Linking, Modal, Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
@@ -16,6 +16,30 @@ const DOC_TYPES = {
   photo: { emoji: "🖼️", label: "Снимка" },
   other: { emoji: "📄", label: "Друго" },
 };
+
+// Качва се всичко, но не всичко може да се покаже вътре в приложението.
+// Снимките ги показваме сами; останалото подаваме на системата.
+const IMAGE_REGEX = /\.(jpg|jpeg|png|gif|webp|bmp)$/i;
+// HEIC е форматът по подразбиране на iPhone. React Native не го рисува на
+// Android, затова не го обещаваме — пращаме го навън, където се отваря.
+const MAX_UPLOAD_MB = 25;
+
+// Колко дълго важи връзката към файла. Достатъчно, за да се отвори и разгледа,
+// но не толкова, че препратена връзка да остане жива с дни.
+const SIGNED_URL_SECONDS = 300;
+
+function isImage(name = "") {
+  return IMAGE_REGEX.test(name.trim());
+}
+
+// Кофата вече е частна и в базата пазим само пътя вътре в нея. По-старите
+// записи обаче пазят пълен публичен URL — приемаме и двете форми.
+function storagePath(fileUrl = "") {
+  const value = String(fileUrl || "");
+  const match = value.match(/\/object\/(?:public|sign)\/documents\/(.+?)(?:\?|$)/);
+  if (match) return decodeURIComponent(match[1]);
+  return value.replace(/^\/?documents\//, "");
+}
 
 function guessDocType(name = "") {
   const n = name.toLowerCase();
@@ -33,6 +57,73 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [openingId, setOpeningId] = useState(null);
+
+  // Файловете вече не са публични. Всяко отваряне иска нова подписана връзка,
+  // която важи няколко минути и се издава само ако базата признае, че този
+  // потребител участва в пътуването.
+  async function signedUrlFor(doc) {
+    const { data, error } = await supabase.storage
+      .from("documents")
+      .createSignedUrl(storagePath(doc.file_url), SIGNED_URL_SECONDS);
+    if (error || !data?.signedUrl) {
+      throw error || new Error("Връзката към файла не може да бъде създадена.");
+    }
+    return data.signedUrl;
+  }
+
+  // PDF и другите нерисуваеми файлове се отварят в таб ВЪРХУ приложението, а
+  // не в системния браузър. Разликата е в излизането: табът има бутон за
+  // затваряне и връща тук с едно докосване, докато Linking.openURL праща в
+  // Safari или Chrome и приложението остава на заден план.
+  //
+  // Модулът се иска лениво и нарочно. Той носи нативен код, тоест липсва в
+  // билд, направен преди да го добавим. Ако този екран тръгне върху такъв
+  // билд — например при OTA обновление — тук се пада тихо към системния
+  // браузър, вместо приложението да гръмне при зареждане.
+  async function openOutside(url) {
+    try {
+      const WebBrowser = require("expo-web-browser");
+      if (WebBrowser?.openBrowserAsync) {
+        await WebBrowser.openBrowserAsync(url, {
+          toolbarColor: colors.surface,
+          controlsColor: colors.brand600,
+          dismissButtonStyle: "close",
+          enableBarCollapsing: true,
+        });
+        return;
+      }
+    } catch {
+      // Няма нативния модул в този билд — минаваме към системния браузър.
+    }
+    const supported = await Linking.canOpenURL(url);
+    if (!supported) throw new Error("no handler");
+    await Linking.openURL(url);
+  }
+
+  // Снимката се отваря вътре в приложението. Всичко останало — PDF, документ
+  // на Word, архив — го подаваме навън, защото нямаме с какво да го нарисуваме.
+  // Ако телефонът няма подходящо приложение, казваме го направо, вместо да
+  // отваряме каквото се случи.
+  async function handleOpen(doc) {
+    setOpeningId(doc.id);
+    try {
+      const url = await signedUrlFor(doc);
+      if (isImage(doc.name)) {
+        setPreview({ name: doc.name, url });
+        return;
+      }
+      await openOutside(url);
+    } catch (e) {
+      Alert.alert(
+        "Не мога да отворя файла",
+        `„${doc.name}“ не се отвори. ${e?.message || ""}\n\nАко проблемът се повтори, провери дали още участваш в пътуването.`.trim()
+      );
+    } finally {
+      setOpeningId(null);
+    }
+  }
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
@@ -55,6 +146,17 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
       });
       if (result.canceled) return;
       const file = result.assets[0];
+
+      // Кофата в Supabase няма ограничение за размер. Без тази проверка един
+      // видеофайл може да изяде мястото на всички.
+      if (file.size && file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        Alert.alert(
+          "Файлът е твърде голям",
+          `„${file.name}“ е над ${MAX_UPLOAD_MB} MB. Намали го или качи само страницата, която ви трябва.`
+        );
+        return;
+      }
+
       setUploading(true);
 
       const response = await fetch(file.uri);
@@ -67,14 +169,13 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
         .upload(path, uint8, { contentType: file.mimeType || "application/octet-stream" });
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("documents").getPublicUrl(path);
-
+      // Пазим пътя, не URL. Публичен адрес вече няма — той се издава
+      // временно при всяко отваряне.
       const { error: dbError } = await supabase.from("documents").insert({
         trip_id: tripId,
         uploaded_by: userId,
         name: file.name,
-        file_url: publicUrl,
+        file_url: path,
         doc_type: guessDocType(file.name),
       });
       if (dbError) throw dbError;
@@ -92,10 +193,16 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
       {
         text: "Изтрий", style: "destructive",
         onPress: async () => {
-          const urlParts = doc.file_url.split("/documents/");
-          const storagePath = urlParts[1];
-          await supabase.storage.from("documents").remove([storagePath]);
-          await supabase.from("documents").delete().eq("id", doc.id);
+          try {
+            const { error } = await supabase.storage
+              .from("documents").remove([storagePath(doc.file_url)]);
+            if (error) throw error;
+            const { error: rowError } = await supabase
+              .from("documents").delete().eq("id", doc.id);
+            if (rowError) throw rowError;
+          } catch (e) {
+            Alert.alert("Изтриването не успя", e.message);
+          }
           await fetchDocs();
         },
       },
@@ -144,8 +251,14 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
                   )}
                 </View>
                 <View style={styles.docActions}>
-                  <TouchableOpacity onPress={() => Linking.openURL(doc.file_url)} style={styles.iconBtn}>
-                    <Text style={styles.iconBtnText}>👁</Text>
+                  <TouchableOpacity
+                    onPress={() => handleOpen(doc)}
+                    style={styles.iconBtn}
+                    disabled={openingId === doc.id}
+                  >
+                    {openingId === doc.id
+                      ? <ActivityIndicator size="small" color={colors.brand600} />
+                      : <Text style={styles.iconBtnText}>👁</Text>}
                   </TouchableOpacity>
                   {doc.uploaded_by === userId && (
                     <TouchableOpacity onPress={() => handleDelete(doc)} style={styles.iconBtn}>
@@ -169,6 +282,29 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
             </View>
           )}
       </TouchableOpacity>
+
+      <Modal
+        visible={!!preview}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setPreview(null)}
+      >
+        <View style={styles.previewBackdrop}>
+          <View style={styles.previewBar}>
+            <Text style={styles.previewName} numberOfLines={1}>{preview?.name}</Text>
+            <TouchableOpacity onPress={() => setPreview(null)} style={styles.previewClose}>
+              <Text style={styles.previewCloseText}>Затвори</Text>
+            </TouchableOpacity>
+          </View>
+          {preview && (
+            <Image
+              source={{ uri: preview.url }}
+              style={styles.previewImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -201,4 +337,16 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: colors.brand600, padding: space.lg, borderRadius: radius.card, alignItems: "center" },
   btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
+
+  // Прегледът е на тъмен фон нарочно — снимка на документ се чете по-добре
+  // така, а и е ясно, че си "извън" списъка.
+  previewBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.92)" },
+  previewBar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingTop: space.xxxl, paddingHorizontal: space.lg, paddingBottom: space.md, gap: space.md,
+  },
+  previewName: { ...type.body, color: "#fff", flex: 1 },
+  previewClose: { paddingVertical: space.sm, paddingHorizontal: space.md },
+  previewCloseText: { ...type.body, color: "#fff", fontWeight: "bold", fontFamily: "GolosText_700Bold" },
+  previewImage: { flex: 1, width: "100%" },
 });

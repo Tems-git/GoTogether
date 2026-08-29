@@ -8,6 +8,24 @@ import { MessageSquare } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import { colors, space, radius, type } from "../theme/tokens";
 
+// Цветът на аватара се избира по user_id, а не по мястото в списъка. Така
+// един и същи човек е с един и същи цвят при всяко отваряне, на всяко
+// устройство и при всички участници — иначе цветовете щяха да скачат при
+// зареждане на по-стари съобщения.
+const AVATAR_COLORS = [
+  "#0A6B57", "#B4531F", "#3D5A98", "#7A3E9D",
+  "#177A6B", "#9B2C46", "#4C6B1A", "#2B5F7A",
+];
+
+function avatarColor(id) {
+  const key = String(id || "");
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  }
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
 export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPlan }) {
   // insets дава реалните височини на status bar (top) и navigation bar (bottom)
   // за конкретното устройство. Без тях Android навигационната лента застъпва
@@ -273,7 +291,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
               <View style={[styles.msgWrapper, isMe && styles.msgWrapperMe]}>
                 <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
                   {!isMe && (
-                    <View style={styles.avatar}>
+                    <View style={[styles.avatar, { backgroundColor: avatarColor(item.user_id) }]}>
                       <Text style={styles.avatarText}>
                         {(item.display_name || "?")[0].toUpperCase()}
                       </Text>
@@ -403,7 +421,7 @@ const styles = StyleSheet.create({
   msgRowMe: { flexDirection: "row-reverse" },
   avatar: {
     width: 30, height: 30, borderRadius: 15,
-    backgroundColor: "#4ECDC4", alignItems: "center", justifyContent: "center",
+    backgroundColor: AVATAR_COLORS[0], alignItems: "center", justifyContent: "center",
     marginRight: space.sm,
   },
   avatarText: { ...type.label, fontWeight: "bold", color: colors.onBrand, fontFamily: "GolosText_700Bold" },
