@@ -78,8 +78,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const [memberReads, setMemberReads] = useState([]);
   const [editingMsg, setEditingMsg] = useState(null);
   const [editText, setEditText] = useState("");
+  const [showJump, setShowJump] = useState(false);
   const flatRef = useRef(null);
   const editInputRef = useRef(null);
+  // Дали в момента сме в дъното на списъка. Държим го в ref, а не в state,
+  // защото се чете вътре в onContentSizeChange, където state би бил стар.
+  const atBottom = useRef(true);
 
   const markAsRead = useCallback(async () => {
     await supabase.from("trip_members")
@@ -274,6 +278,22 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     return `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}`;
   }
 
+  // Две различни разстояния нарочно: списъкът се влачи надолу сам само ако
+  // сме почти долу, а бутонът се появява доста по-късно — иначе би мигал при
+  // всяко леко превъртане.
+  function handleScroll(e) {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const fromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    atBottom.current = fromBottom < 120;
+    setShowJump(fromBottom > 400);
+  }
+
+  function jumpToLatest() {
+    atBottom.current = true;
+    setShowJump(false);
+    flatRef.current?.scrollToEnd({ animated: true });
+  }
+
   async function openLink(url) {
     try {
       if (MAP_URL.test(url)) {
@@ -371,7 +391,14 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           data={grouped}
           keyExtractor={(item) => item.key}
           contentContainerStyle={styles.list}
-          onContentSizeChange={() => flatRef.current?.scrollToEnd({ animated: false })}
+          onScroll={handleScroll}
+          scrollEventThrottle={64}
+          // Ново съобщение сваля списъка надолу само ако човекът вече е долу.
+          // Иначе четенето на стар разговор се прекъсваше от всяко пристигащо
+          // съобщение — екранът просто отскачаше.
+          onContentSizeChange={() => {
+            if (atBottom.current) flatRef.current?.scrollToEnd({ animated: false });
+          }}
           renderItem={({ item }) => {
             if (item.type === "date") {
               return (
@@ -437,6 +464,17 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             </View>
           }
         />
+      )}
+
+      {showJump && !editingMsg && (
+        <TouchableOpacity
+          style={[styles.jumpBtn, { bottom: insets.bottom + 76 }]}
+          onPress={jumpToLatest}
+          activeOpacity={0.85}
+          accessibilityLabel="Към последното съобщение"
+        >
+          <Text style={styles.jumpBtnIcon}>↓</Text>
+        </TouchableOpacity>
       )}
 
       {editingMsg ? (
@@ -544,6 +582,15 @@ const styles = StyleSheet.create({
   planCardBtnTextMe: { color: colors.onBrand },
   msgText: { ...type.body, color: colors.text900 },
   msgTextMe: { color: colors.onBrand },
+  jumpBtn: {
+    position: "absolute", right: space.lg,
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.brand600,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 }, elevation: 5,
+  },
+  jumpBtnIcon: { color: colors.onBrand, fontSize: 22, lineHeight: 26, fontWeight: "700" },
   link: { color: colors.brand600, textDecorationLine: "underline" },
   linkMe: { color: colors.onBrand, textDecorationLine: "underline", fontWeight: "600" },
   timeLine: { flexDirection: "row", justifyContent: "flex-end", marginTop: space.xs },
