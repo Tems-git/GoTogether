@@ -194,7 +194,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // идват от отговора на edge function-а (ROUTE_META), не само от формата,
   // защото потребителят може да е оставил дестинацията празна за AI да избере.
   // Пазим ги, за да ги запишем в params при всяко persistPlan извикване.
-  const [resolvedMeta, setResolvedMeta] = useState({ start: null, dest: null });
+  const [resolvedMeta, setResolvedMeta] = useState({ start: null, dest: null, places: [] });
   // Идентификатор на "родословието" на плана — един и същ за първоначално
   // генерирания план и всички негови последващи корекции (refine), различен
   // за всеки чисто нов план (генериран от празна форма). Ползва се само за
@@ -273,7 +273,11 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
         setPlan(data.content);
         setSaveStatus("saved");
         setCurrentPlanId(data.id);
-        setResolvedMeta({ start: data.params?.resolvedStart || null, dest: data.params?.resolvedDestination || null });
+        setResolvedMeta({
+          start: data.params?.resolvedStart || null,
+          dest: data.params?.resolvedDestination || null,
+          places: data.params?.resolvedPlaces || [],
+        });
         setPlanGroupId(data.params?.planGroupId || data.id);
         applyFormFromParams(data.params);
         return;
@@ -292,7 +296,11 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
           setPlan(latest.content);
           setSaveStatus("saved");
           setCurrentPlanId(latest.id);
-          setResolvedMeta({ start: latest.params?.resolvedStart || null, dest: latest.params?.resolvedDestination || null });
+          setResolvedMeta({
+            start: latest.params?.resolvedStart || null,
+            dest: latest.params?.resolvedDestination || null,
+            places: latest.params?.resolvedPlaces || [],
+          });
           setPlanGroupId(latest.params?.planGroupId || latest.id);
           applyFormFromParams(latest.params);
         }
@@ -344,6 +352,21 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     setForm(f => ({ ...f, waypoints: f.waypoints.filter(w => w.id !== id) }));
   }
 
+  // Отваря картите с търсене около мястото. Нарочно е само адрес, а не наша
+  // функция: не струва нищо, не влиза в никаква квота и показва снимки, оценки
+  // и работно време, каквито ние няма да имаме.
+  function openNearby(place) {
+    const query = encodeURIComponent(`забележителности ${place}`);
+    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`).catch(() => {});
+  }
+
+  // Местата идват от служебния ред на плана. Планове отпреди тази версия го
+  // нямат — тогава падаме назад към дестинацията, за да има поне един бутон.
+  const nearbyPlaces =
+    resolvedMeta.places && resolvedMeta.places.length > 0
+      ? resolvedMeta.places
+      : [resolvedMeta.dest || trip?.destination].filter(Boolean);
+
   // Обединява текущите формулярни данни с реалните начало/дестинация, които
   // AI-то е използвало (meta) — това пазим в params на всеки запис, за да
   // може историята да показва истинския маршрут дори когато потребителят е
@@ -353,6 +376,10 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       ...form,
       resolvedStart: meta?.start || null,
       resolvedDestination: meta?.dest || null,
+      // Местата от служебния ред на плана — от тях идват бутоните
+      // „Какво има наоколо". Пазят се тук, за да ги имат и старите записи
+      // при повторно отваряне.
+      resolvedPlaces: meta?.places || [],
       planGroupId: groupId !== undefined ? groupId : planGroupId,
     };
   }
@@ -420,7 +447,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       setPlanGroupId(newGroupId);
       setPlan(data.plan);
       setSaveStatus(null);
-      setResolvedMeta(data.meta || { start: null, dest: null });
+      setResolvedMeta(data.meta || { start: null, dest: null, places: [] });
       persistPlan(data.plan, buildParams(data.meta, newGroupId));
     } catch (e) {
       alert("Грешка: " + e.message);
@@ -544,7 +571,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       if (data?.error) throw new Error(data.error);
       setPlan(data.plan);
       setSaveStatus(null);
-      setResolvedMeta(data.meta || { start: null, dest: null });
+      setResolvedMeta(data.meta || { start: null, dest: null, places: [] });
       persistPlan(data.plan, buildParams(data.meta));
       setFeedback("");
       setShowRefine(false);
@@ -594,6 +621,22 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
         </View>
 
         <ScrollView style={styles.planScroll} contentContainerStyle={styles.planScrollContent}>
+          {nearbyPlaces.length > 0 && (
+            <View style={styles.nearbyBox}>
+              <Text style={styles.nearbyLabel}>📍 Какво има наоколо</Text>
+              <View style={styles.nearbyRow}>
+                {nearbyPlaces.map((place) => (
+                  <TouchableOpacity
+                    key={place}
+                    style={styles.nearbyChip}
+                    onPress={() => openNearby(place)}
+                  >
+                    <Text style={styles.nearbyChipText}>{place}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
           <View style={styles.planBox}>
             {renderPlanBlocks(plan)}
           </View>
@@ -880,6 +923,17 @@ const styles = StyleSheet.create({
   planFooter: { paddingHorizontal: space.xl, paddingTop: space.md, backgroundColor: colors.bg, borderTopWidth: 0.5, borderTopColor: colors.border },
   planTitle: { ...type.title, color: colors.text900, marginBottom: space.lg },
   planBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.xl },
+  nearbyBox: { marginBottom: space.lg },
+  nearbyLabel: {
+    fontSize: 13, lineHeight: 18, fontWeight: "700",
+    color: colors.text600, marginBottom: space.sm,
+  },
+  nearbyRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+  nearbyChip: {
+    backgroundColor: colors.brand50, borderWidth: 1, borderColor: colors.brand600,
+    borderRadius: radius.pill, paddingVertical: space.sm, paddingHorizontal: space.md,
+  },
+  nearbyChipText: { fontSize: 14, lineHeight: 18, color: colors.brand600, fontWeight: "600" },
   planLink: { ...type.body, color: colors.brand600, textDecorationLine: "underline" },
   // Форматиране на плана (виж renderPlanBlocks по-горе).
   planHeading: {
