@@ -215,6 +215,8 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // Какво търсим около местата. Категориите само го попълват — човек може
   // да напише каквото си иска и то отива буквално в картите.
   const [nearbyQuery, setNearbyQuery] = useState(NEARBY_KINDS[0].query);
+  // Място извън плана — човек рядко се движи точно по написаното.
+  const [nearbyPlace, setNearbyPlace] = useState("");
   // Идентификатор на "родословието" на плана — един и същ за първоначално
   // генерирания план и всички негови последващи корекции (refine), различен
   // за всеки чисто нов план (генериран от празна форма). Ползва се само за
@@ -375,10 +377,14 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // Отваря картите с търсене около мястото. Нарочно е само адрес, а не наша
   // функция: не струва нищо, не влиза в никаква квота и показва снимки, оценки
   // и работно време, каквито ние няма да имаме.
+  // Двете части са независими. Без място картите търсят около текущото
+  // положение — те си знаят къде е телефонът, затова ние не искаме разрешение
+  // за местоположение и не пишем нито ред за GPS. Без „какво" пък просто
+  // показват самото място.
   function openNearby(place) {
-    // Празно поле е валиден избор — тогава картите просто показват самото място.
-    const what = nearbyQuery.trim();
-    const query = encodeURIComponent(what ? `${what} ${place}` : place);
+    const parts = [nearbyQuery.trim(), String(place || "").trim()].filter(Boolean);
+    if (parts.length === 0) return;
+    const query = encodeURIComponent(parts.join(" "));
     Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`).catch(() => {});
   }
 
@@ -686,6 +692,23 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
                     <Text style={styles.nearbyChipText}>{place}</Text>
                   </TouchableOpacity>
                 ))}
+                <TouchableOpacity
+                  style={[styles.nearbyChip, styles.nearbyChipMe]}
+                  onPress={() => openNearby(null)}
+                >
+                  <Text style={[styles.nearbyChipText, styles.nearbyChipTextMe]}>
+                    📍 Около мен
+                  </Text>
+                </TouchableOpacity>
+                <TextInput
+                  style={[styles.nearbyChip, styles.nearbyPlaceInput]}
+                  value={nearbyPlace}
+                  onChangeText={setNearbyPlace}
+                  placeholder="друго място…"
+                  placeholderTextColor={colors.text400}
+                  returnKeyType="search"
+                  onSubmitEditing={() => openNearby(nearbyPlace)}
+                />
               </View>
             </View>
           )}
@@ -999,6 +1022,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill, paddingVertical: space.sm, paddingHorizontal: space.md,
   },
   nearbyChipText: { fontSize: 14, lineHeight: 18, color: colors.brand600, fontWeight: "600" },
+  nearbyChipMe: { backgroundColor: colors.brand600 },
+  nearbyChipTextMe: { color: "#FFFFFF" },
+  // Пунктирът казва „тук се пише", без да има нужда от надпис за това.
+  nearbyPlaceInput: {
+    backgroundColor: "transparent", borderStyle: "dashed", borderColor: colors.text400,
+    minWidth: 140, fontSize: 14, color: colors.text900,
+    paddingVertical: space.sm, paddingHorizontal: space.md,
+  },
   planLink: { ...type.body, color: colors.brand600, textDecorationLine: "underline" },
   // Форматиране на плана (виж renderPlanBlocks по-горе).
   planHeading: {
