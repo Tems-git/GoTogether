@@ -10,6 +10,16 @@ const TRANSPORT_OPTIONS = ["коли", "самолет", "автобус", "вл
 const ACCOMMODATION_TYPES = ["хотел", "хостел", "къща", "къмпинг", "Airbnb", "апартамент", "семеен хотел"];
 const COMFORT_OPTIONS = ["без значение", "3+ звезди", "4+ звезди", "5 звезди"];
 
+// Какво да търсим около мястото. Думата отива направо в търсенето на картите —
+// затова е на български и звучи като нещо, което човек би написал сам.
+// „най-добри" при заведенията не е сортиране (адресът на картите не приема
+// такъв параметър), а подсказка към търсачката, която реално вдига оценените
+// нагоре в резултатите.
+const NEARBY_KINDS = [
+  { key: "sights", label: "🏛 Забележителности", query: "забележителности" },
+  { key: "food", label: "🍽 Заведения", query: "най-добри ресторанти и заведения" },
+];
+
 // --- Форматиране на текста на плана -----------------------------------------
 // AI-то връща markdown-подобен текст (## заглавия, **удебелено**, "- " списъци,
 // "---" разделители). Преди го показвахме в един <Text> и всички тези маркери
@@ -195,6 +205,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // защото потребителят може да е оставил дестинацията празна за AI да избере.
   // Пазим ги, за да ги запишем в params при всяко persistPlan извикване.
   const [resolvedMeta, setResolvedMeta] = useState({ start: null, dest: null, places: [] });
+  const [nearbyKind, setNearbyKind] = useState("sights");
   // Идентификатор на "родословието" на плана — един и същ за първоначално
   // генерирания план и всички негови последващи корекции (refine), различен
   // за всеки чисто нов план (генериран от празна форма). Ползва се само за
@@ -356,7 +367,8 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // функция: не струва нищо, не влиза в никаква квота и показва снимки, оценки
   // и работно време, каквито ние няма да имаме.
   function openNearby(place) {
-    const query = encodeURIComponent(`забележителности ${place}`);
+    const kind = NEARBY_KINDS.find((k) => k.key === nearbyKind) || NEARBY_KINDS[0];
+    const query = encodeURIComponent(`${kind.query} ${place}`);
     Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`).catch(() => {});
   }
 
@@ -624,6 +636,22 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
           {nearbyPlaces.length > 0 && (
             <View style={styles.nearbyBox}>
               <Text style={styles.nearbyLabel}>📍 Какво има наоколо</Text>
+              <View style={styles.nearbyKindRow}>
+                {NEARBY_KINDS.map((kind) => {
+                  const active = kind.key === nearbyKind;
+                  return (
+                    <TouchableOpacity
+                      key={kind.key}
+                      style={[styles.nearbyKind, active && styles.nearbyKindOn]}
+                      onPress={() => setNearbyKind(kind.key)}
+                    >
+                      <Text style={[styles.nearbyKindText, active && styles.nearbyKindTextOn]}>
+                        {kind.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
               <View style={styles.nearbyRow}>
                 {nearbyPlaces.map((place) => (
                   <TouchableOpacity
@@ -928,6 +956,14 @@ const styles = StyleSheet.create({
     fontSize: 13, lineHeight: 18, fontWeight: "700",
     color: colors.text600, marginBottom: space.sm,
   },
+  nearbyKindRow: { flexDirection: "row", gap: space.sm, marginBottom: space.sm },
+  nearbyKind: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill,
+    paddingVertical: 6, paddingHorizontal: space.md,
+  },
+  nearbyKindOn: { backgroundColor: colors.brand600, borderColor: colors.brand600 },
+  nearbyKindText: { fontSize: 13, lineHeight: 17, color: colors.text600, fontWeight: "600" },
+  nearbyKindTextOn: { color: "#FFFFFF" },
   nearbyRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   nearbyChip: {
     backgroundColor: colors.brand50, borderWidth: 1, borderColor: colors.brand600,
