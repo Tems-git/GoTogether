@@ -377,15 +377,31 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // Отваря картите с търсене около мястото. Нарочно е само адрес, а не наша
   // функция: не струва нищо, не влиза в никаква квота и показва снимки, оценки
   // и работно време, каквито ние няма да имаме.
-  // Двете части са независими. Без място картите търсят около текущото
-  // положение — те си знаят къде е телефонът, затова ние не искаме разрешение
-  // за местоположение и не пишем нито ред за GPS. Без „какво" пък просто
-  // показват самото място.
-  function openNearby(place) {
-    const parts = [nearbyQuery.trim(), String(place || "").trim()].filter(Boolean);
-    if (parts.length === 0) return;
-    const query = encodeURIComponent(parts.join(" "));
+  // Уеб адресът на картите винаги търси в частта от света, която те последно
+  // са показвали. За място това е точно каквото искаме; за „около мен" — не,
+  // защото последно сме гледали дестинацията и търсенето остава там.
+  function openMapsWeb(text) {
+    const query = encodeURIComponent(text);
     Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`).catch(() => {});
+  }
+
+  // Двете части — какво и къде — са независими; всяка може да е празна.
+  function openNearby(place) {
+    const what = nearbyQuery.trim();
+    const where = String(place || "").trim();
+    if (!what && !where) return;
+
+    // Без място значи „около мен". На Android има адрес точно с това значение:
+    // geo: с координати 0,0 казва „нямам точка, използвай текущото място".
+    // Не иска разрешение от нас — картите питат за местоположение сами и почти
+    // винаги вече имат отговора. Ако телефонът не разбира такъв адрес, падаме
+    // назад към уеб търсенето.
+    if (!where && Platform.OS === "android") {
+      Linking.openURL(`geo:0,0?q=${encodeURIComponent(what)}`).catch(() => openMapsWeb(what));
+      return;
+    }
+
+    openMapsWeb([what, where].filter(Boolean).join(" "));
   }
 
   // Местата идват от служебния ред на плана. Планове отпреди тази версия го
@@ -709,6 +725,16 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
                   returnKeyType="search"
                   onSubmitEditing={() => openNearby(nearbyPlace)}
                 />
+                {nearbyPlace.trim().length > 0 && (
+                  <TouchableOpacity
+                    style={[styles.nearbyChip, styles.nearbyChipMe]}
+                    onPress={() => openNearby(nearbyPlace)}
+                  >
+                    <Text style={[styles.nearbyChipText, styles.nearbyChipTextMe]}>
+                      🔍 Търси
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           )}
