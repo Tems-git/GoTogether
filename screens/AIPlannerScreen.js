@@ -212,7 +212,9 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // защото потребителят може да е оставил дестинацията празна за AI да избере.
   // Пазим ги, за да ги запишем в params при всяко persistPlan извикване.
   const [resolvedMeta, setResolvedMeta] = useState({ start: null, dest: null, places: [] });
-  const [nearbyKind, setNearbyKind] = useState("sights");
+  // Какво търсим около местата. Категориите само го попълват — човек може
+  // да напише каквото си иска и то отива буквално в картите.
+  const [nearbyQuery, setNearbyQuery] = useState(NEARBY_KINDS[0].query);
   // Идентификатор на "родословието" на плана — един и същ за първоначално
   // генерирания план и всички негови последващи корекции (refine), различен
   // за всеки чисто нов план (генериран от празна форма). Ползва се само за
@@ -374,8 +376,9 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // функция: не струва нищо, не влиза в никаква квота и показва снимки, оценки
   // и работно време, каквито ние няма да имаме.
   function openNearby(place) {
-    const kind = NEARBY_KINDS.find((k) => k.key === nearbyKind) || NEARBY_KINDS[0];
-    const query = encodeURIComponent(`${kind.query} ${place}`);
+    // Празно поле е валиден избор — тогава картите просто показват самото място.
+    const what = nearbyQuery.trim();
+    const query = encodeURIComponent(what ? `${what} ${place}` : place);
     Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`).catch(() => {});
   }
 
@@ -649,12 +652,14 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
                 contentContainerStyle={styles.nearbyKindRow}
               >
                 {NEARBY_KINDS.map((kind) => {
-                  const active = kind.key === nearbyKind;
+                  // Осветен е само докато текстът съвпада дума по дума. Напише ли
+                  // човек нещо свое, никой чип не е осветен — и това е честно.
+                  const active = kind.query === nearbyQuery;
                   return (
                     <TouchableOpacity
                       key={kind.key}
                       style={[styles.nearbyKind, active && styles.nearbyKindOn]}
-                      onPress={() => setNearbyKind(kind.key)}
+                      onPress={() => setNearbyQuery(kind.query)}
                     >
                       <Text style={[styles.nearbyKindText, active && styles.nearbyKindTextOn]}>
                         {kind.label}
@@ -663,6 +668,14 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
                   );
                 })}
               </ScrollView>
+              <TextInput
+                style={styles.nearbyInput}
+                value={nearbyQuery}
+                onChangeText={setNearbyQuery}
+                placeholder="какво да търся"
+                placeholderTextColor={colors.text400}
+                returnKeyType="done"
+              />
               <View style={styles.nearbyRow}>
                 {nearbyPlaces.map((place) => (
                   <TouchableOpacity
@@ -975,6 +988,11 @@ const styles = StyleSheet.create({
   nearbyKindOn: { backgroundColor: colors.brand600, borderColor: colors.brand600 },
   nearbyKindText: { fontSize: 13, lineHeight: 17, color: colors.text600, fontWeight: "600" },
   nearbyKindTextOn: { color: "#FFFFFF" },
+  nearbyInput: {
+    backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border,
+    borderRadius: radius.control, paddingVertical: space.sm, paddingHorizontal: space.md,
+    fontSize: 14, lineHeight: 18, color: colors.text900, marginBottom: space.sm,
+  },
   nearbyRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   nearbyChip: {
     backgroundColor: colors.brand50, borderWidth: 1, borderColor: colors.brand600,
