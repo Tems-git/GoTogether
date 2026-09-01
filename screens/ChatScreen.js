@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback,
   FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageSquare } from "lucide-react-native";
@@ -24,6 +25,44 @@ function avatarColor(id) {
     hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
   }
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
+// Разпознаване на адреси в текста на съобщение. Умишлено просто: пълен адрес
+// с http/https, или започващ с www. Каквото не отговаря на това, си остава
+// обикновен текст — по-добре един линк да не се хване, отколкото половин
+// изречение да посинее и да води наникъде.
+const URL_REGEX = /((?:https?:\/\/|www\.)[^\s<>"']+)/gi;
+
+// Крайната пунктуация почти винаги принадлежи на изречението, не на адреса.
+// „…виж https://maps.app.goo.gl/abc." трябва да отвори адреса без точката.
+const TRAILING_PUNCT = /[.,;:!?)\]}»„“"'…]+$/;
+
+// Картовите адреси се подават на системата, за да ги поеме приложението за
+// карти. Вътрешният браузър би показал уеб версията и би загубил навигацията,
+// запазените места и профила на човека.
+const MAP_URL = /(maps\.app\.goo\.gl|goo\.gl\/maps|google\.[a-z.]{2,8}\/maps|maps\.google\.|maps\.apple\.com|waze\.com)/i;
+
+// Връща текста, нарязан на парчета: обикновените имат само `text`, адресите
+// имат и `url`. Един елемент без `url` означава съобщение без линкове.
+function splitByLinks(value) {
+  const source = String(value || "");
+  const parts = [];
+  let cursor = 0;
+
+  source.replace(URL_REGEX, (match, _captured, offset) => {
+    const clean = match.replace(TRAILING_PUNCT, "");
+    if (!clean) return match;
+    if (offset > cursor) parts.push({ text: source.slice(cursor, offset) });
+    parts.push({
+      text: clean,
+      url: clean.toLowerCase().startsWith("www.") ? `https://${clean}` : clean,
+    });
+    cursor = offset + clean.length;
+    return match;
+  });
+
+  if (cursor < source.length) parts.push({ text: source.slice(cursor) });
+  return parts.length ? parts : [{ text: source }];
 }
 
 export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPlan }) {
@@ -235,6 +274,63 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     return `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}`;
   }
 
+  async function openLink(url) {
+    try {
+      if (MAP_URL.test(url)) {
+        await Linking.openURL(url);
+        return;
+      }
+      try {
+        const WebBrowser = require("expo-web-browser");
+        if (WebBrowser?.openBrowserAsync) {
+          await WebBrowser.openBrowserAsync(url, {
+            toolbarColor: colors.surface,
+            controlsColor: colors.brand600,
+            dismissButtonStyle: "close",
+            enableBarCollapsing: true,
+          });
+          return;
+        }
+      } catch {
+        // Билдът няма нативния модул — минаваме към системния браузър.
+      }
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert("Не мога да отворя линка", url);
+    }
+  }
+
+  // Дългото натискане върху линк трябва да отваря същото меню като върху
+  // останалата част от балона — иначе редакцията и изтриването изчезват за
+  // съобщения, които са само линк.
+  function renderMessageText(item, isMe) {
+    const parts = splitByLinks(item.text);
+    const textStyle = [styles.msgText, isMe && styles.msgTextMe];
+
+    if (parts.length === 1 && !parts[0].url) {
+      return <Text style={textStyle}>{item.text}</Text>;
+    }
+
+    return (
+      <Text style={textStyle}>
+        {parts.map((part, i) =>
+          part.url ? (
+            <Text
+              key={`l${i}`}
+              style={[styles.link, isMe && styles.linkMe]}
+              onPress={() => openLink(part.url)}
+              onLongPress={() => handleLongPress(item)}
+            >
+              {part.text}
+            </Text>
+          ) : (
+            part.text
+          )
+        )}
+      </Text>
+    );
+  }
+
   const grouped = [];
   let lastDate = null;
   messages.forEach((msg) => {
@@ -304,7 +400,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                         // Споделен AI план — карта с бутон към Планера, не целия
                         // текст на плана (иначе чатът се задръства при дълъг план).
                         <View style={styles.planCard}>
-                          <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
+                          {renderMessageText(item, isMe)}
                           <TouchableOpacity
                             style={[styles.planCardBtn, isMe && styles.planCardBtnMe]}
                             onPress={() => onOpenPlan && onOpenPlan(item.plan_id)}
@@ -313,7 +409,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                           </TouchableOpacity>
                         </View>
                       ) : (
-                        <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{item.text}</Text>
+                        renderMessageText(item, isMe)
                       )}
                       <View style={styles.timeLine}>
                         <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>
@@ -448,6 +544,8 @@ const styles = StyleSheet.create({
   planCardBtnTextMe: { color: colors.onBrand },
   msgText: { ...type.body, color: colors.text900 },
   msgTextMe: { color: colors.onBrand },
+  link: { color: colors.brand600, textDecorationLine: "underline" },
+  linkMe: { color: colors.onBrand, textDecorationLine: "underline", fontWeight: "600" },
   timeLine: { flexDirection: "row", justifyContent: "flex-end", marginTop: space.xs },
   msgTime: { fontSize: 12, lineHeight: 16, color: colors.text400 },
   msgTimeMe: { color: colors.onBrandMuted },
