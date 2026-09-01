@@ -651,8 +651,14 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     // догоре за бутона за връщане и чак додолу за действията върху плана.
     // KeyboardAvoidingView около всичко — иначе клавиатурата при писане в
     // полето за корекция застава върху него, вместо да го избутва нагоре.
+    // Включен е само тогава: иначе всяко писане в панела „наоколо" свива целия
+    // екран и трите бутона на футъра се качват насред четивото.
     return (
-      <KeyboardAvoidingView style={styles.flexOne} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <KeyboardAvoidingView
+        style={styles.flexOne}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        enabled={showRefine}
+      >
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.planHeader}>
           <TouchableOpacity onPress={onBack} style={styles.headerBackBtn}>
@@ -1037,15 +1043,16 @@ const styles = StyleSheet.create({
   planTitle: { ...type.title, color: colors.text900, marginBottom: space.lg },
   planBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.xl },
   nearbyBox: { marginBottom: space.lg },
-  nearbyLabel: { fontSize: 13, lineHeight: 18, fontWeight: "700", color: colors.text600 },
+  // Цветовете на чиповете, не на картите — в този екран те значат „натисни ме".
+  nearbyLabel: { fontSize: 15, lineHeight: 20, fontWeight: "700", color: colors.brand600 },
   nearbyToggle: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: colors.surface, borderRadius: radius.control,
-    borderWidth: 0.5, borderColor: colors.border,
+    backgroundColor: colors.brand50, borderRadius: radius.control,
+    borderWidth: 1, borderColor: colors.brand600,
     paddingVertical: space.md, paddingHorizontal: space.lg,
   },
   nearbyToggleOpen: { marginBottom: space.md },
-  nearbyToggleIcon: { fontSize: 13, lineHeight: 18, color: colors.text400 },
+  nearbyToggleIcon: { fontSize: 15, lineHeight: 20, color: colors.brand600, fontWeight: "700" },
   nearbyKindRow: { gap: space.sm, paddingRight: space.xl, paddingBottom: space.sm },
   nearbyKind: {
     borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill,
