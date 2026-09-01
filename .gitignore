@@ -11,3 +11,9 @@ web-build/
 /ios
 
 *.patch
+
+# Таен ключ на Google service account за FCM — качва се само в EAS.
+# google-services.json нарочно НЕ е тук: той съдържа само публични
+# идентификатори и трябва да е в хранилището, за да минава билдът.
+google-service-account*.json
+*-firebase-adminsdk-*.json

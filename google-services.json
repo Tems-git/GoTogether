@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "206945181381",
+    "project_id": "gotogether-8392e",
+    "storage_bucket": "gotogether-8392e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:206945181381:android:cd399cfde37e313c655aac",
+        "android_client_info": {
+          "package_name": "com.temsit.gotogether"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDJVBUd_7nCsH77k7dkt6bppD-n30NxEec"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

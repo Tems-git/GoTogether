@@ -12,6 +12,10 @@ import {
   GolosText_800ExtraBold,
 } from "@expo-google-fonts/golos-text";
 import { supabase } from "./lib/supabase";
+import {
+  configurePushHandler, registerForPush, unregisterPush,
+  addPushTapListener, consumeInitialPush,
+} from "./lib/push";
 import SignInScreen from "./screens/SignInScreen";
 import DashboardScreen from "./screens/DashboardScreen";
 import AIPlannerScreen from "./screens/AIPlannerScreen";
@@ -19,6 +23,11 @@ import DocumentsScreen from "./screens/DocumentsScreen";
 import ExpensesScreen from "./screens/ExpensesScreen";
 import ChatScreen from "./screens/ChatScreen";
 import TripSetupScreen from "./screens/TripSetupScreen";
+
+// Поведението на известията се настройва веднъж, на ниво модул — преди React
+// изобщо да е монтирал нещо. Ако това стане вътре в компонент, първото
+// известие може да пристигне преди настройката.
+configurePushHandler();
 
 // Разпознаваме код от gotogether://join/XXX или exp+gotogether://join/XXX
 function parseInviteCode(url) {
@@ -80,6 +89,10 @@ function AppContent() {
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [inviteInput, setInviteInput] = useState("");
   const [showInviteInput, setShowInviteInput] = useState(false);
+  // Пътуване, чийто чат трябва да се отвори заради тапнато известие. Държим го
+  // отделно, защото известието може да пристигне преди пътуванията да са
+  // заредени — тогава изчакваме и отваряме, щом ги има.
+  const [pendingChatTrip, setPendingChatTrip] = useState(null);
   const appState = useRef(AppState.currentState);
 
   // Auto-update при cold start и при връщане от background.
@@ -116,6 +129,33 @@ function AppContent() {
     return () => sub.remove();
   }, []);
 
+  // Тапнато известие → чатът на съответното пътуване.
+  useEffect(() => {
+    let alive = true;
+
+    // Известие, което е стартирало приложението от нулата.
+    consumeInitialPush().then((data) => {
+      if (alive && data?.tripId) setPendingChatTrip(data.tripId);
+    });
+
+    // Известие, тапнато докато приложението върви или е в background.
+    const off = addPushTapListener((data) => {
+      if (data?.tripId) setPendingChatTrip(data.tripId);
+    });
+
+    return () => { alive = false; off(); };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingChatTrip || !user || allTrips.length === 0) return;
+    const trip = allTrips.find((t) => t.id === pendingChatTrip);
+    if (trip) {
+      setActiveTrip(trip);
+      setScreen("chat");
+    }
+    setPendingChatTrip(null);
+  }, [pendingChatTrip, user, allTrips]);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) handleUser(session.user);
@@ -144,6 +184,11 @@ function AppContent() {
     if (trips.length > 0) setActiveTrip(trips[0]);
     setTripLoading(false);
     setScreen("dashboard");
+
+    // Регистрацията за известия е нарочно последна и без await пред нея —
+    // ако разрешението бъде отказано или FCM не отговори, екранът вече е
+    // показан и нищо не се бави заради това.
+    registerForPush(u.id);
   }
 
   function handleInviteSubmit() {
@@ -250,7 +295,14 @@ function AppContent() {
         user={user}
         trip={activeTrip}
         allTrips={allTrips}
-        onSignOut={() => { supabase.auth.signOut(); setUser(null); setActiveTrip(null); setAllTrips([]); setScreen("home"); }}
+        onSignOut={async () => {
+          // Токенът се маха преди изхода, докато сесията още е валидна —
+          // иначе изтриването на реда се проваля тихо заради RLS и телефонът
+          // продължава да получава известия за чужд акаунт.
+          await unregisterPush(user?.id);
+          supabase.auth.signOut();
+          setUser(null); setActiveTrip(null); setAllTrips([]); setScreen("home");
+        }}
         onAI={() => setScreen("ai")}
         onDocuments={() => setScreen("documents")}
         onExpenses={() => setScreen("expenses")}

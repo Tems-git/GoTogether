@@ -22,6 +22,7 @@
     },
     "android": {
       "package": "com.temsit.gotogether",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0A6B57"
@@ -46,7 +47,15 @@
           "backgroundColor": "#0A6B57"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#0A6B57",
+          "defaultChannel": "messages"
+        }
+      ]
     ],
     "extra": {
       "eas": {

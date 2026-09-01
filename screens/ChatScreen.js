@@ -181,12 +181,25 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     setSending(true);
     setText("");
     try {
-      await supabase.from("messages").insert({
-        trip_id: tripId,
-        user_id: userId,
-        display_name: displayName,
-        text: trimmed,
-      });
+      const { data: inserted } = await supabase
+        .from("messages")
+        .insert({
+          trip_id: tripId,
+          user_id: userId,
+          display_name: displayName,
+          text: trimmed,
+        })
+        .select("id")
+        .single();
+
+      // Известието тръгва след като съобщението е записано и нарочно без
+      // await — ако функцията се забави или се провали, съобщението вече е в
+      // чата. Известието е удобство, не част от изпращането.
+      if (inserted?.id) {
+        supabase.functions
+          .invoke("send-chat-push", { body: { messageId: inserted.id } })
+          .catch(() => {});
+      }
     } catch (e) {
       setText(trimmed);
     } finally {
