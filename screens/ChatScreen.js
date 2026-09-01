@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback,
   FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
-  Linking,
+  Linking, Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageSquare } from "lucide-react-native";
@@ -76,6 +76,8 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const [sending, setSending] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [memberReads, setMemberReads] = useState([]);
+  // Съобщението, за което в момента гледаме кой го е прочел.
+  const [readInfo, setReadInfo] = useState(null);
   const [editingMsg, setEditingMsg] = useState(null);
   const [editText, setEditText] = useState("");
   const [showJump, setShowJump] = useState(false);
@@ -95,7 +97,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const fetchMemberReads = useCallback(async () => {
     const { data } = await supabase
       .from("trip_members")
-      .select("user_id, chat_last_read")
+      .select("user_id, display_name, chat_last_read")
       .eq("trip_id", tripId)
       .neq("user_id", userId);
     setMemberReads(data || []);
@@ -164,7 +166,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   }, [tripId, userId, fetchMessages, fetchMemberReads, markAsRead]);
 
   useEffect(() => {
-    if (messages.length > 0) {
+    // Същото условие като при onContentSizeChange: смъкваме списъка само ако
+    // човекът вече е долу. Този ефект беше пропуснат при предишната поправка и
+    // продължаваше да дърпа екрана надолу при всяко ново съобщение.
+    if (messages.length > 0 && atBottom.current) {
       setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }, [messages]);
@@ -210,6 +215,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   function handleLongPress(msg) {
     if (msg.user_id !== userId) return;
     Alert.alert("Съобщение", undefined, [
+      {
+        text: "👁 Кой е прочел",
+        onPress: () => setReadInfo(msg),
+      },
       {
         text: "✏️ Редактирай",
         onPress: () => { setEditingMsg(msg); setEditText(msg.text); }
@@ -274,6 +283,22 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       (m) => m.chat_last_read && new Date(m.chat_last_read) >= new Date(createdAt)
     );
     return allRead ? "read" : "delivered";
+  }
+
+  // Прочитането се пази като момент, не като списък: chat_last_read на
+  // участника. Съобщение е прочетено от него, ако е било написано преди този
+  // момент. Затова „прочел" не значи, че го е погледнал — значи, че е бил в
+  // чата след него.
+  function readersFor(msg) {
+    const at = new Date(msg.created_at).getTime();
+    const read = [];
+    const pending = [];
+    memberReads.forEach((m) => {
+      const name = m.display_name || "Участник";
+      if (m.chat_last_read && new Date(m.chat_last_read).getTime() >= at) read.push(name);
+      else pending.push(name);
+    });
+    return { read, pending };
   }
 
   function formatTime(iso) {
@@ -461,11 +486,15 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                   </TouchableWithoutFeedback>
                 </View>
                 {readStatus && (
-                  <View style={styles.tickRow}>
+                  <TouchableOpacity
+                    style={styles.tickRow}
+                    onPress={() => setReadInfo(item)}
+                    activeOpacity={0.6}
+                  >
                     <Text style={readStatus === "read" ? styles.tickRead : styles.tickDelivered}>
                       {readStatus === "read" ? "✓✓ Прочетено" : "✓✓ Доставено"}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 )}
               </View>
             );
@@ -538,6 +567,48 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           </TouchableOpacity>
         </View>
       )}
+      <Modal visible={!!readInfo} animationType="fade" transparent onRequestClose={() => setReadInfo(null)}>
+        <TouchableWithoutFeedback onPress={() => setReadInfo(null)}>
+          <View style={styles.readOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={styles.readSheet}>
+                <Text style={styles.readTitle}>Кой е прочел</Text>
+                {readInfo && (
+                  <>
+                    <Text style={styles.readQuote} numberOfLines={2}>„{readInfo.text}"</Text>
+                    {(() => {
+                      const { read, pending } = readersFor(readInfo);
+                      return (
+                        <>
+                          <Text style={styles.readGroupLabel}>
+                            ✓✓ Прочели ({read.length})
+                          </Text>
+                          {read.length === 0
+                            ? <Text style={styles.readEmpty}>Още никой</Text>
+                            : read.map((n) => <Text key={`r-${n}`} style={styles.readName}>{n}</Text>)}
+
+                          <Text style={styles.readGroupLabel}>
+                            Още не ({pending.length})
+                          </Text>
+                          {pending.length === 0
+                            ? <Text style={styles.readEmpty}>Никой не остана</Text>
+                            : pending.map((n) => <Text key={`p-${n}`} style={styles.readNamePending}>{n}</Text>)}
+                        </>
+                      );
+                    })()}
+                    <Text style={styles.readNote}>
+                      „Прочел" значи, че човекът е отварял чата след това съобщение.
+                    </Text>
+                  </>
+                )}
+                <TouchableOpacity style={styles.readClose} onPress={() => setReadInfo(null)}>
+                  <Text style={styles.readCloseText}>Затвори</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -610,6 +681,29 @@ const styles = StyleSheet.create({
   msgTime: { fontSize: 12, lineHeight: 16, color: colors.text400 },
   msgTimeMe: { color: colors.onBrandMuted },
   tickRow: { marginTop: space.xs, marginRight: space.xs },
+  readOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center", justifyContent: "center", padding: space.lg,
+  },
+  readSheet: {
+    width: "100%", maxWidth: 380, backgroundColor: colors.surface,
+    borderRadius: radius.card, padding: space.lg,
+  },
+  readTitle: { ...type.subhead, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.text900 },
+  readQuote: { ...type.body, color: colors.text600, fontStyle: "italic", marginTop: space.xs },
+  readGroupLabel: {
+    fontSize: 12, lineHeight: 16, fontWeight: "700", color: colors.text600,
+    textTransform: "uppercase", letterSpacing: 0.5, marginTop: space.md,
+  },
+  readName: { ...type.body, color: colors.text900, marginTop: space.xs },
+  readNamePending: { ...type.body, color: colors.text400, marginTop: space.xs },
+  readEmpty: { ...type.body, color: colors.text400, fontStyle: "italic", marginTop: space.xs },
+  readNote: { fontSize: 12, lineHeight: 16, color: colors.text400, marginTop: space.md },
+  readClose: {
+    marginTop: space.lg, backgroundColor: colors.brand600,
+    borderRadius: radius.control, padding: space.md, alignItems: "center",
+  },
+  readCloseText: { ...type.label, fontWeight: "700", fontFamily: "GolosText_700Bold", color: colors.onBrand },
   tickRead: { fontSize: 12, lineHeight: 16, color: colors.brand600, fontWeight: "600" },
   tickDelivered: { fontSize: 12, lineHeight: 16, color: colors.text400, fontWeight: "600" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingTop: space.xxxl },
