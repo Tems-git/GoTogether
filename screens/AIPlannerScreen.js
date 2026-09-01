@@ -15,9 +15,16 @@ const COMFORT_OPTIONS = ["без значение", "3+ звезди", "4+ зв�
 // „най-добри" при заведенията не е сортиране (адресът на картите не приема
 // такъв параметър), а подсказка към търсачката, която реално вдига оценените
 // нагоре в резултатите.
+// Подредени по това колко често потрябват, а не по азбучен ред — първата е и
+// избраната по подразбиране. Думите са категории, които картите разпознават,
+// затова работят и в чужбина.
 const NEARBY_KINDS = [
   { key: "sights", label: "🏛 Забележителности", query: "забележителности" },
   { key: "food", label: "🍽 Заведения", query: "най-добри ресторанти и заведения" },
+  { key: "kids", label: "🎠 За деца", query: "атракции за деца" },
+  { key: "shop", label: "🛒 Магазини", query: "супермаркет" },
+  { key: "fuel", label: "⛽ Бензиностанции", query: "бензиностанция" },
+  { key: "pharmacy", label: "💊 Аптеки", query: "аптека" },
 ];
 
 // --- Форматиране на текста на плана -----------------------------------------
@@ -636,7 +643,11 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
           {nearbyPlaces.length > 0 && (
             <View style={styles.nearbyBox}>
               <Text style={styles.nearbyLabel}>📍 Какво има наоколо</Text>
-              <View style={styles.nearbyKindRow}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.nearbyKindRow}
+              >
                 {NEARBY_KINDS.map((kind) => {
                   const active = kind.key === nearbyKind;
                   return (
@@ -651,7 +662,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
                     </TouchableOpacity>
                   );
                 })}
-              </View>
+              </ScrollView>
               <View style={styles.nearbyRow}>
                 {nearbyPlaces.map((place) => (
                   <TouchableOpacity
@@ -956,7 +967,7 @@ const styles = StyleSheet.create({
     fontSize: 13, lineHeight: 18, fontWeight: "700",
     color: colors.text600, marginBottom: space.sm,
   },
-  nearbyKindRow: { flexDirection: "row", gap: space.sm, marginBottom: space.sm },
+  nearbyKindRow: { gap: space.sm, paddingRight: space.xl, paddingBottom: space.sm },
   nearbyKind: {
     borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill,
     paddingVertical: 6, paddingHorizontal: space.md,
