@@ -65,6 +65,57 @@ function splitByLinks(value) {
   return parts.length ? parts : [{ text: source }];
 }
 
+// Телефон: започва с + или с 0, следват цифри, интервали, тирета и скоби.
+// Точки нарочно НЕ се допускат — иначе „01.09.2026" става телефон.
+//
+// Първата група е знакът преди номера. Тя съществува само за да отреже
+// съвпадения по средата на дълга поредица цифри — без нея IBAN-ът
+// „BG80 BNBG 9661 1020 3456 78" се разпознаваше като телефон, защото някъде
+// вътре в него има нула, последвана от достатъчно цифри.
+const PHONE_REGEX = /(^|[^\d+])(\+\d[\d\s\-()]{7,17}\d|0[\d\s\-()]{7,15}\d)/g;
+
+// Броят цифри решава. Международен номер е 8–15 цифри; български, започващ с
+// нула, е 9–12. Всичко извън тези граници е нещо друго — сума, дата, код.
+function looksLikePhone(value) {
+  const digits = value.replace(/\D/g, "");
+  if (value.trim().startsWith("+")) return digits.length >= 8 && digits.length <= 15;
+  return digits.length >= 9 && digits.length <= 12;
+}
+
+// Търси номера само в частите, които не са линк — иначе цифрите в един адрес
+// биха се разпаднали на „телефони".
+function splitPhones(value) {
+  const source = String(value || "");
+  const parts = [];
+  let cursor = 0;
+
+  source.replace(PHONE_REGEX, (match, before, candidate, offset) => {
+    if (!looksLikePhone(candidate)) return match;
+    const clean = candidate.trim();
+    const start = offset + before.length + candidate.indexOf(clean);
+    if (start > cursor) parts.push({ text: source.slice(cursor, start) });
+    parts.push({ text: clean, phone: clean.replace(/[^\d+]/g, "") });
+    cursor = start + clean.length;
+    return match;
+  });
+
+  if (cursor < source.length) parts.push({ text: source.slice(cursor) });
+  return parts.length ? parts : [{ text: source }];
+}
+
+// Първо адресите, после телефоните вътре в останалия текст.
+function splitMessage(value) {
+  const out = [];
+  splitByLinks(value).forEach((part) => {
+    if (part.url) {
+      out.push(part);
+      return;
+    }
+    splitPhones(part.text).forEach((piece) => out.push(piece));
+  });
+  return out;
+}
+
 export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPlan }) {
   // insets дава реалните височини на status bar (top) и navigation bar (bottom)
   // за конкретното устройство. Без тях Android навигационната лента застъпва
@@ -332,6 +383,29 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     flatRef.current?.scrollToEnd({ animated: true });
   }
 
+  // Тапването не звъни само. Показва избор, защото най-често човек иска или
+  // да набере, или да запише номера — а случайно позвъняване е неприятно.
+  function handlePhone(phone) {
+    Alert.alert(phone, undefined, [
+      {
+        text: "📞 Обади се",
+        onPress: () => { Linking.openURL(`tel:${phone}`).catch(() => {}); },
+      },
+      {
+        text: "📋 Копирай",
+        onPress: async () => {
+          try {
+            const Clipboard = require("expo-clipboard");
+            await Clipboard.setStringAsync(phone);
+          } catch {
+            // Няма модула в този билд — тихо пропускаме.
+          }
+        },
+      },
+      { text: "Отказ", style: "cancel" },
+    ]);
+  }
+
   async function openLink(url) {
     try {
       if (MAP_URL.test(url)) {
@@ -362,29 +436,42 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // останалата част от балона — иначе редакцията и изтриването изчезват за
   // съобщения, които са само линк.
   function renderMessageText(item, isMe) {
-    const parts = splitByLinks(item.text);
+    const parts = splitMessage(item.text);
     const textStyle = [styles.msgText, isMe && styles.msgTextMe];
 
-    if (parts.length === 1 && !parts[0].url) {
+    if (parts.length === 1 && !parts[0].url && !parts[0].phone) {
       return <Text style={textStyle}>{item.text}</Text>;
     }
 
     return (
       <Text style={textStyle}>
-        {parts.map((part, i) =>
-          part.url ? (
-            <Text
-              key={`l${i}`}
-              style={[styles.link, isMe && styles.linkMe]}
-              onPress={() => openLink(part.url)}
-              onLongPress={() => handleLongPress(item)}
-            >
-              {part.text}
-            </Text>
-          ) : (
-            part.text
-          )
-        )}
+        {parts.map((part, i) => {
+          if (part.url) {
+            return (
+              <Text
+                key={`l${i}`}
+                style={[styles.link, isMe && styles.linkMe]}
+                onPress={() => openLink(part.url)}
+                onLongPress={() => handleLongPress(item)}
+              >
+                {part.text}
+              </Text>
+            );
+          }
+          if (part.phone) {
+            return (
+              <Text
+                key={`p${i}`}
+                style={[styles.link, isMe && styles.linkMe]}
+                onPress={() => handlePhone(part.phone)}
+                onLongPress={() => handleLongPress(item)}
+              >
+                {part.text}
+              </Text>
+            );
+          }
+          return part.text;
+        })}
       </Text>
     );
   }
