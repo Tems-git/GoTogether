@@ -217,6 +217,8 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   const [nearbyQuery, setNearbyQuery] = useState(NEARBY_KINDS[0].query);
   // Място извън плана — човек рядко се движи точно по написаното.
   const [nearbyPlace, setNearbyPlace] = useState("");
+  // Свито по подразбиране — планът започва веднага под заглавието.
+  const [nearbyOpen, setNearbyOpen] = useState(false);
   // Идентификатор на "родословието" на плана — един и същ за първоначално
   // генерирания план и всички негови последващи корекции (refine), различен
   // за всеки чисто нов план (генериран от празна форма). Ползва се само за
@@ -667,7 +669,15 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
         <ScrollView style={styles.planScroll} contentContainerStyle={styles.planScrollContent}>
           {nearbyPlaces.length > 0 && (
             <View style={styles.nearbyBox}>
-              <Text style={styles.nearbyLabel}>📍 Какво има наоколо</Text>
+              <TouchableOpacity
+                style={[styles.nearbyToggle, nearbyOpen && styles.nearbyToggleOpen]}
+                onPress={() => setNearbyOpen((o) => !o)}
+              >
+                <Text style={styles.nearbyLabel}>📍 Какво има наоколо</Text>
+                <Text style={styles.nearbyToggleIcon}>{nearbyOpen ? "▴" : "▾"}</Text>
+              </TouchableOpacity>
+              {nearbyOpen && (
+              <>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -736,6 +746,8 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
                   </TouchableOpacity>
                 )}
               </View>
+              </>
+              )}
             </View>
           )}
           <View style={styles.planBox}>
@@ -1025,10 +1037,15 @@ const styles = StyleSheet.create({
   planTitle: { ...type.title, color: colors.text900, marginBottom: space.lg },
   planBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.xl },
   nearbyBox: { marginBottom: space.lg },
-  nearbyLabel: {
-    fontSize: 13, lineHeight: 18, fontWeight: "700",
-    color: colors.text600, marginBottom: space.sm,
+  nearbyLabel: { fontSize: 13, lineHeight: 18, fontWeight: "700", color: colors.text600 },
+  nearbyToggle: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: colors.surface, borderRadius: radius.control,
+    borderWidth: 0.5, borderColor: colors.border,
+    paddingVertical: space.md, paddingHorizontal: space.lg,
   },
+  nearbyToggleOpen: { marginBottom: space.md },
+  nearbyToggleIcon: { fontSize: 13, lineHeight: 18, color: colors.text400 },
   nearbyKindRow: { gap: space.sm, paddingRight: space.xl, paddingBottom: space.sm },
   nearbyKind: {
     borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill,
