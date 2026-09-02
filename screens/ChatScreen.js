@@ -174,6 +174,11 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const [photoZoomed, setPhotoZoomed] = useState(false);
   // Пътищата на вече записаните снимки.
   const [savedPhotos, setSavedPhotos] = useState([]);
+  // Пътища, за които хранилището не издава връзка — изтрити файлове.
+  const [missingPhotos, setMissingPhotos] = useState([]);
+  // Пътища, които вече са и в Документите на пътуването.
+  const [inDocuments, setInDocuments] = useState([]);
+  const [savingDoc, setSavingDoc] = useState(false);
   // Търсенето е отворено само когато има какво да се търси.
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
@@ -316,14 +321,67 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       .then(({ data }) => {
         if (!alive || !data) return;
         const next = {};
+        const gone = [];
         data.forEach((row) => {
           if (row.signedUrl && row.path) next[row.path] = row.signedUrl;
+          // Хранилището отказва връзка за файл, който вече го няма. Без това
+          // съобщението остава да се върти в „зарежда се" завинаги.
+          else if (row.path && row.error) gone.push(row.path);
         });
         if (Object.keys(next).length > 0) setPhotoUrls((prev) => ({ ...prev, ...next }));
+        if (gone.length > 0) setMissingPhotos((prev) => [...new Set([...prev, ...gone])]);
       });
 
     return () => { alive = false; };
   }, [messages]);
+
+  // Кои снимки от чата вече стоят и в Документите. Един прочит при отваряне —
+  // списъкът е кратък и се променя рядко.
+  useEffect(() => {
+    if (!tripId) return;
+    let alive = true;
+    supabase
+      .from("documents")
+      .select("file_url")
+      .eq("trip_id", tripId)
+      .then(({ data }) => {
+        if (alive && data) setInDocuments(data.map((d) => d.file_url).filter(Boolean));
+      });
+    return () => { alive = false; };
+  }, [tripId]);
+
+  // Снимката от чата вече лежи в папката на пътуването, тоест в Документи отива
+  // само ред, сочещ същия файл. Без копиране, без второ качване.
+  async function saveToDocuments(msg) {
+    if (!msg?.image_path || savingDoc) return;
+    if (inDocuments.includes(msg.image_path)) {
+      Alert.alert("Вече е там", "Тази снимка е в Документи на пътуването.");
+      return;
+    }
+
+    setSavingDoc(true);
+    try {
+      const when = new Date(msg.created_at);
+      const name = `Снимка от чата ${when.toLocaleDateString("bg-BG")} ${when
+        .toLocaleTimeString("bg-BG", { hour: "2-digit", minute: "2-digit" })}`;
+
+      const { error } = await supabase.from("documents").insert({
+        trip_id: tripId,
+        uploaded_by: userId,
+        name,
+        file_url: msg.image_path,
+        doc_type: "photo",
+      });
+      if (error) throw error;
+
+      setInDocuments((prev) => [...prev, msg.image_path]);
+      Alert.alert("Записано", "Снимката е в Документи на пътуването.");
+    } catch (e) {
+      Alert.alert("Не се записа", e.message);
+    } finally {
+      setSavingDoc(false);
+    }
+  }
 
   // Всички снимки в чата, по реда на чата. Отварянето на една значи заставане
   // на нейното място в тази лента, а не показване на самотен файл.
@@ -473,6 +531,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         supabase.functions
           .invoke("send-chat-push", { body: { messageId: lastId } })
           .catch(() => {});
+
+        // Проверка за място точно тогава, когато току-що сме добавили. Под
+        // прага функцията не прави нищо, затова извикването е безобидно.
+        supabase.functions.invoke("cleanup-storage").catch(() => {});
       }
 
       if (failed > 0) {
@@ -546,7 +608,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           try {
             await supabase.from("messages").delete().eq("id", msg.id).eq("user_id", userId);
             // Редът си отива, файлът остава да заема място — затова и него.
-            if (msg.image_path) {
+            // Освен ако някой не го е сложил в Документи: тогава файлът вече не
+            // принадлежи само на това съобщение и изтриването му би обезсилило
+            // чужд документ.
+            if (msg.image_path && !inDocuments.includes(msg.image_path)) {
               await supabase.storage.from("documents").remove([msg.image_path]).catch(() => {});
             }
             setMessages((prev) => prev.filter((m) => m.id !== msg.id));
@@ -932,6 +997,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                                   style={styles.msgImage}
                                   resizeMode="cover"
                                 />
+                              ) : missingPhotos.includes(item.image_path) ? (
+                                <View style={[styles.msgImage, styles.msgImageLoading]}>
+                                  <Text style={styles.msgImageGone}>
+                                    🖼{"\n"}Снимката вече не е налична
+                                  </Text>
+                                </View>
                               ) : (
                                 <View style={[styles.msgImage, styles.msgImageLoading]}>
                                   <ActivityIndicator color={colors.text400} />
@@ -1095,6 +1166,23 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           <View style={styles.readOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
               <View style={styles.actionSheet}>
+                {msgActions?.image_path && (
+                  inDocuments.includes(msgActions.image_path) ? (
+                    <View style={styles.actionRow}>
+                      <Text style={[styles.actionText, styles.actionDone]}>
+                        ✓ Вече е в Документи
+                      </Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.actionRow}
+                      onPress={() => { const m = msgActions; setMsgActions(null); saveToDocuments(m); }}
+                      disabled={savingDoc}
+                    >
+                      <Text style={styles.actionText}>📁 Запази в Документи</Text>
+                    </TouchableOpacity>
+                  )
+                )}
                 {msgActions?.image_path && (
                   savedPhotos.includes(msgActions.image_path) ? (
                     <View style={styles.actionRow}>
@@ -1345,6 +1433,7 @@ const styles = StyleSheet.create({
     marginBottom: space.xs, backgroundColor: colors.border,
   },
   msgImageLoading: { alignItems: "center", justifyContent: "center" },
+  msgImageGone: { ...type.label, color: colors.text400, textAlign: "center" },
   photoBtn: {
     width: 40, height: 40, borderRadius: 20,
     alignItems: "center", justifyContent: "center", marginRight: space.xs,
