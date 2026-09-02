@@ -181,6 +181,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // Търсенето е отворено само когато има какво да се търси.
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
+  // Съобщението, до което току-що скочихме — свети кратко, за да го хване окото.
+  const [highlightId, setHighlightId] = useState(null);
+  // Докато трае скокът, автоматичното сваляне надолу трябва да мълчи.
+  const jumping = useRef(false);
   const flatRef = useRef(null);
   const editInputRef = useRef(null);
   // Дали в момента сме в дъното на списъка. Държим го в ref, а не в state,
@@ -741,16 +745,47 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       )
     : messages;
 
-  const grouped = [];
+  // Пълният списък се строи винаги — от него се вади и мястото, до което скачаме
+  // след търсене. Филтрирането после е само отсяване на редове.
+  const groupedAll = [];
   let lastDate = null;
-  visible.forEach((msg) => {
+  messages.forEach((msg) => {
     const d = new Date(msg.created_at).toDateString();
     if (d !== lastDate) {
-      grouped.push({ type: "date", date: msg.created_at, key: `date-${msg.created_at}` });
+      groupedAll.push({ type: "date", date: msg.created_at, key: `date-${msg.created_at}` });
       lastDate = d;
     }
-    grouped.push({ type: "msg", ...msg, key: msg.id });
+    groupedAll.push({ type: "msg", ...msg, key: msg.id });
   });
+
+  const matchIds = new Set(visible.map((m) => m.id));
+  const grouped = needle
+    ? groupedAll.filter((item) => item.type === "msg" && matchIds.has(item.id))
+    : groupedAll;
+
+  // От резултат обратно в разговора. Затваряме търсенето, изчакваме списъкът да
+  // се пресъздаде в пълния си вид и чак тогава скачаме — иначе индексът сочи
+  // ред, който още не съществува.
+  function jumpToMessage(msg) {
+    const index = groupedAll.findIndex((item) => item.key === msg.id);
+    if (index < 0) return;
+
+    jumping.current = true;
+    setSearching(false);
+    setQuery("");
+    setHighlightId(msg.id);
+
+    setTimeout(() => {
+      flatRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
+    }, 60);
+
+    // Светенето е кратко: достатъчно да го намериш с око, не толкова, че да
+    // остане да виси на екрана.
+    setTimeout(() => {
+      setHighlightId(null);
+      jumping.current = false;
+    }, 1800);
+  }
 
   return (
     <KeyboardAvoidingView
@@ -793,6 +828,11 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             autoFocus
             returnKeyType="search"
           />
+          {!!query && (
+            <TouchableOpacity style={styles.clearBtn} onPress={() => setQuery("")}>
+              <Text style={styles.clearIcon}>✕</Text>
+            </TouchableOpacity>
+          )}
           {!!needle && (
             <Text style={styles.searchCount}>
               {visible.length === 0 ? "няма" : `${visible.length}`}
@@ -813,13 +853,29 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           contentContainerStyle={styles.list}
           onScroll={handleScroll}
           scrollEventThrottle={64}
+          // Редовете са различни по височина, затова точният скок понякога не
+          // успява от раз. Тогава отиваме приблизително и опитваме пак — вторият
+          // път списъкът вече е измерил дотам.
+          onScrollToIndexFailed={(info) => {
+            flatRef.current?.scrollToOffset({
+              offset: info.averageItemLength * info.index,
+              animated: false,
+            });
+            setTimeout(() => {
+              flatRef.current?.scrollToIndex({
+                index: info.index, animated: false, viewPosition: 0.5,
+              });
+            }, 80);
+          }}
           // Ново съобщение сваля списъка надолу само ако човекът вече е долу.
           // Иначе четенето на стар разговор се прекъсваше от всяко пристигащо
           // съобщение — екранът просто отскачаше.
           onContentSizeChange={() => {
             // При търсене списъкът се сменя изцяло; сваляне надолу тогава значи
             // да гледаш последния резултат вместо първия.
-            if (atBottom.current && !needle) flatRef.current?.scrollToEnd({ animated: false });
+            if (atBottom.current && !needle && !jumping.current) {
+              flatRef.current?.scrollToEnd({ animated: false });
+            }
           }}
           renderItem={({ item }) => {
             if (item.type === "date") {
@@ -842,8 +898,15 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                       </Text>
                     </View>
                   )}
-                  <TouchableWithoutFeedback onLongPress={() => handleLongPress(item)}>
-                    <View style={[styles.bubble, isMe && styles.bubbleMe]}>
+                  <TouchableWithoutFeedback
+                    onLongPress={() => handleLongPress(item)}
+                    onPress={needle ? () => jumpToMessage(item) : undefined}
+                  >
+                    <View style={[
+                      styles.bubble,
+                      isMe && styles.bubbleMe,
+                      highlightId === item.id && styles.bubbleFound,
+                    ]}>
                       {!isMe && <Text style={styles.senderName}>{item.display_name}</Text>}
                       {item.plan_id ? (
                         // Споделен AI план — карта с бутон към Планера, не целия
@@ -1117,17 +1180,16 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             )}
           />
 
-          {photoList.length > 1 && (
-            <View style={styles.photoCounter}>
-              <Text style={styles.photoCloseText}>
-                {(photoIndex || 0) + 1} / {photoList.length}
-              </Text>
-            </View>
-          )}
-
-          <TouchableOpacity style={styles.photoClose} onPress={() => setPhotoIndex(null)}>
-            <Text style={styles.photoCloseText}>Затвори</Text>
-          </TouchableOpacity>
+          {/* Лента, а не плаващ бутон: плаващият стоеше на постоянни 44 пиксела
+              от ръба и на iPhone с изрез попадаше под него. */}
+          <View style={[styles.photoBar, { paddingTop: insets.top + space.sm }]}>
+            <Text style={styles.photoCloseText}>
+              {photoList.length > 1 ? `${(photoIndex || 0) + 1} / ${photoList.length}` : ""}
+            </Text>
+            <TouchableOpacity style={styles.photoCloseBtn} onPress={() => setPhotoIndex(null)}>
+              <Text style={styles.photoCloseText}>✕ Затвори</Text>
+            </TouchableOpacity>
+          </View>
 
           {canSaveToGallery() && currentPhoto && (
             savedPhotos.includes(currentPhoto.image_path) ? (
@@ -1231,6 +1293,8 @@ const styles = StyleSheet.create({
     padding: space.md, paddingBottom: space.sm,
     shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
   },
+  // Кратко просветване след скок от търсенето.
+  bubbleFound: { borderWidth: 2, borderColor: colors.brand600 },
   bubbleMe: {
     backgroundColor: colors.brand600,
     borderBottomLeftRadius: radius.card, borderBottomRightRadius: 4,
@@ -1296,18 +1360,20 @@ const styles = StyleSheet.create({
     paddingVertical: space.sm, paddingHorizontal: space.xl,
     borderRadius: radius.pill, backgroundColor: "rgba(0,0,0,0.55)",
   },
-  photoClose: {
-    position: "absolute", top: 44, right: space.lg,
-    paddingVertical: space.sm, paddingHorizontal: space.lg,
-    borderRadius: radius.pill, backgroundColor: "rgba(0,0,0,0.55)",
-  },
   photoCloseText: { ...type.label, color: "#FFFFFF" },
   photoSaved: { backgroundColor: "rgba(10,107,87,0.75)" },
-  photoCounter: {
-    position: "absolute", top: 44, left: space.lg,
-    paddingVertical: space.sm, paddingHorizontal: space.lg,
-    borderRadius: radius.pill, backgroundColor: "rgba(0,0,0,0.55)",
+  photoBar: {
+    position: "absolute", top: 0, left: 0, right: 0,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: space.lg, paddingBottom: space.sm,
+    backgroundColor: "rgba(0,0,0,0.55)",
   },
+  photoCloseBtn: { paddingVertical: space.sm, paddingHorizontal: space.md },
+  clearBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: "center", justifyContent: "center",
+  },
+  clearIcon: { fontSize: 15, color: colors.text400 },
   actionDone: { color: colors.brand600 },
   msgTextMe: { color: colors.onBrand },
   jumpBtn: {

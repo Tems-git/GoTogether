@@ -731,14 +731,26 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
                   );
                 })}
               </ScrollView>
-              <TextInput
-                style={styles.nearbyInput}
-                value={nearbyQuery}
-                onChangeText={setNearbyQuery}
-                placeholder="какво да търся"
-                placeholderTextColor={colors.text400}
-                returnKeyType="done"
-              />
+              <View style={styles.nearbyInputRow}>
+                <TextInput
+                  style={styles.nearbyInput}
+                  value={nearbyQuery}
+                  onChangeText={setNearbyQuery}
+                  placeholder="какво да търся"
+                  placeholderTextColor={colors.text400}
+                  returnKeyType="done"
+                />
+                {/* Изчистване с едно тапване. Изтриването буква по буква на
+                    „най-добри ресторанти и заведения" е двайсет натискания. */}
+                {!!nearbyQuery && (
+                  <TouchableOpacity
+                    style={styles.nearbyClear}
+                    onPress={() => setNearbyQuery("")}
+                  >
+                    <Text style={styles.nearbyClearText}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               <View style={styles.nearbyRow}>
                 {nearbyPlaces.map((place) => (
                   <TouchableOpacity
@@ -1087,11 +1099,19 @@ const styles = StyleSheet.create({
   nearbyKindOn: { backgroundColor: colors.brand600, borderColor: colors.brand600 },
   nearbyKindText: { fontSize: 13, lineHeight: 17, color: colors.text600, fontWeight: "600" },
   nearbyKindTextOn: { color: "#FFFFFF" },
-  nearbyInput: {
+  nearbyInputRow: {
+    flexDirection: "row", alignItems: "center",
     backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border,
-    borderRadius: radius.control, paddingVertical: space.sm, paddingHorizontal: space.md,
-    fontSize: 14, lineHeight: 18, color: colors.text900, marginBottom: space.sm,
+    borderRadius: radius.control, marginBottom: space.sm, paddingRight: space.xs,
   },
+  nearbyInput: {
+    flex: 1, paddingVertical: space.sm, paddingHorizontal: space.md,
+    fontSize: 14, color: colors.text900,
+  },
+  nearbyClear: {
+    width: 32, height: 32, alignItems: "center", justifyContent: "center",
+  },
+  nearbyClearText: { fontSize: 15, color: colors.text400 },
   nearbyRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   nearbyChip: {
     backgroundColor: colors.brand50, borderWidth: 1, borderColor: colors.brand600,
