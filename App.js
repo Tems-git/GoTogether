@@ -148,13 +148,26 @@ function AppContent() {
   const goBackRef = useRef(goBack);
   goBackRef.current = goBack;
 
+  // Къде е паднал пръстът. Не ползваме x0 от жеста: то се попълва при ПОЕМАНЕ
+  // на жеста, а ние решаваме преди това. На Android излизаше вярно по случайност,
+  // на iOS е нула — тоест „тръгнал от ръба" беше винаги истина и връщаше назад
+  // при всяко плъзгане, включително от средата на екрана.
+  const touchStartX = useRef(9999);
+
   // Плъзгане от левия ръб. Хваща се със capture, за да изпревари списъците
   // вътре — но само при жест, тръгнал от самия ръб и явно хоризонтален.
   const edgeBack = useRef(
     PanResponder.create({
+      // Връща false — не поемаме нищо при допир, само запомняме откъде започва.
+      onStartShouldSetPanResponderCapture: (e) => {
+        touchStartX.current = e.nativeEvent.pageX;
+        return false;
+      },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponderCapture: (_e, g) =>
-        g.x0 <= EDGE_WIDTH && g.dx > 16 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+        touchStartX.current <= EDGE_WIDTH &&
+        g.dx > 16 &&
+        Math.abs(g.dx) > Math.abs(g.dy) * 2,
       onPanResponderRelease: (_e, g) => {
         if (g.dx > BACK_DISTANCE || (g.dx > 40 && g.vx > 0.4)) goBackRef.current();
       },
