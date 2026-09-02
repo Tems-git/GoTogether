@@ -1180,34 +1180,51 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             )}
           />
 
-          {/* Лента, а не плаващ бутон: плаващият стоеше на постоянни 44 пиксела
-              от ръба и на iPhone с изрез попадаше под него. */}
-          <View style={[styles.photoBar, { paddingTop: insets.top + space.sm }]}>
-            <Text style={styles.photoCloseText}>
-              {photoList.length > 1 ? `${(photoIndex || 0) + 1} / ${photoList.length}` : ""}
-            </Text>
-            <TouchableOpacity style={styles.photoCloseBtn} onPress={() => setPhotoIndex(null)}>
+          {/* Броячът е само надпис — нищо за натискане горе, където системните
+              жестове на iPhone спорят с нас. */}
+          {photoList.length > 1 && (
+            <View
+              style={[styles.photoTop, { paddingTop: Math.max(insets.top, 28) + space.xs }]}
+              pointerEvents="none"
+            >
+              <Text style={styles.photoCloseText}>
+                {(photoIndex || 0) + 1} / {photoList.length}
+              </Text>
+            </View>
+          )}
+
+          {/* Всичко за натискане е долу: там няма изрез, няма статуслента и
+              няма системен жест, който да отнеме допира. */}
+          <View style={[styles.photoBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <TouchableOpacity
+              style={styles.photoBarBtn}
+              onPress={() => setPhotoIndex(null)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
               <Text style={styles.photoCloseText}>✕ Затвори</Text>
             </TouchableOpacity>
-          </View>
 
-          {canSaveToGallery() && currentPhoto && (
-            savedPhotos.includes(currentPhoto.image_path) ? (
-              <View style={[styles.photoSave, styles.photoSaved]}>
-                <Text style={styles.photoCloseText}>✓ В галерията ти</Text>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.photoSave}
-                onPress={() => savePhotoFrom(currentPhoto)}
-                disabled={savingPhoto}
-              >
-                <Text style={styles.photoCloseText}>
-                  {savingPhoto ? "Записвам…" : "⬇️ Запази"}
-                </Text>
-              </TouchableOpacity>
-            )
-          )}
+            {canSaveToGallery() && currentPhoto && (
+              savedPhotos.includes(currentPhoto.image_path) ? (
+                <View style={styles.photoBarBtn}>
+                  <Text style={[styles.photoCloseText, styles.photoSavedText]}>
+                    ✓ В галерията ти
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.photoBarBtn}
+                  onPress={() => savePhotoFrom(currentPhoto)}
+                  disabled={savingPhoto}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <Text style={styles.photoCloseText}>
+                    {savingPhoto ? "Записвам…" : "⬇️ Запази"}
+                  </Text>
+                </TouchableOpacity>
+              )
+            )}
+          </View>
         </View>
       </Modal>
 
@@ -1355,20 +1372,19 @@ const styles = StyleSheet.create({
   },
   actionQualityText: { ...type.body, color: colors.brand600, fontWeight: "600" },
   actionQualityHint: { ...type.label, color: colors.text400, marginTop: 2 },
-  photoSave: {
-    position: "absolute", bottom: 44, alignSelf: "center",
-    paddingVertical: space.sm, paddingHorizontal: space.xl,
-    borderRadius: radius.pill, backgroundColor: "rgba(0,0,0,0.55)",
-  },
   photoCloseText: { ...type.label, color: "#FFFFFF" },
-  photoSaved: { backgroundColor: "rgba(10,107,87,0.75)" },
-  photoBar: {
+  photoTop: {
     position: "absolute", top: 0, left: 0, right: 0,
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: space.lg, paddingBottom: space.sm,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center", paddingBottom: space.sm,
   },
-  photoCloseBtn: { paddingVertical: space.sm, paddingHorizontal: space.md },
+  photoBar: {
+    position: "absolute", bottom: 0, left: 0, right: 0,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: space.lg, paddingTop: space.md,
+    backgroundColor: "rgba(0,0,0,0.65)",
+  },
+  photoBarBtn: { paddingVertical: space.md, paddingHorizontal: space.md },
+  photoSavedText: { color: "#8FD3C0" },
   clearBtn: {
     width: 32, height: 32, borderRadius: 16,
     alignItems: "center", justifyContent: "center",
