@@ -55,6 +55,14 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "GoTogether записва снимка в галерията ти само когато сам поискаш.",
+          "photosPermission": "GoTogether записва снимка в галерията ти само когато сам поискаш.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
         "expo-share-intent",
         {
           "androidIntentFilters": ["text/*"]

@@ -9,6 +9,9 @@ import { MessageSquare } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../lib/supabase";
 import ZoomableImage from "../components/ZoomableImage";
+import { saveToGallery, canSaveToGallery } from "../lib/gallery";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { shrinkPhoto, presetFor, PHOTO_PRESETS } from "../lib/image";
 import { colors, space, radius, type } from "../theme/tokens";
 
 // Цветът на аватара се избира по user_id, а не по мястото в списъка. Така
@@ -19,10 +22,9 @@ import { colors, space, radius, type } from "../theme/tokens";
 // се скролва напред-назад и не искаме връзките да умират под пръстите.
 const PHOTO_URL_SECONDS = 3600;
 
-// Качеството при качване. Пълна снимка от телефон е 3-5 MB; в чат това е
-// разхищение на място и на нечий мобилен интернет. Половин качество се вижда
-// еднакво на екран.
-const PHOTO_QUALITY = 0.5;
+// Къде се помни изборът на качество. На телефона, не в базата — това е
+// предпочитание на човека, не на пътуването.
+const PHOTO_QUALITY_KEY = "gotogether.photoQuality";
 
 // Предпазител срещу нещо огромно, което да изяде мястото на всички.
 const PHOTO_MAX_MB = 8;
@@ -156,6 +158,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const [sendingPhoto, setSendingPhoto] = useState(false);
   // „3/7" докато върви многото; празно при една снимка.
   const [photoProgress, setPhotoProgress] = useState("");
+  // Съобщението, чието меню с действия е отворено.
+  const [msgActions, setMsgActions] = useState(null);
+  const [savingPhoto, setSavingPhoto] = useState(false);
+  const [photoQuality, setPhotoQuality] = useState("normal");
+  // Менюто за нова снимка: откъде и с какво качество.
+  const [photoMenu, setPhotoMenu] = useState(false);
   // Снимката, отворена на цял екран.
   const [photoView, setPhotoView] = useState(null);
   const flatRef = useRef(null);
@@ -257,6 +265,18 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     }
   }, [editingMsg]);
 
+  useEffect(() => {
+    AsyncStorage.getItem(PHOTO_QUALITY_KEY)
+      .then((value) => { if (value) setPhotoQuality(value); })
+      .catch(() => {});
+  }, []);
+
+  function switchQuality() {
+    const next = photoQuality === "high" ? "normal" : "high";
+    setPhotoQuality(next);
+    AsyncStorage.setItem(PHOTO_QUALITY_KEY, next).catch(() => {});
+  }
+
   // Временните връзки се издават на групи, за всички нови снимки наведнъж.
   useEffect(() => {
     const missing = messages
@@ -284,11 +304,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // снима на място, но понякога човек праща нещо отпреди малко.
   function handlePhoto() {
     if (sendingPhoto) return;
-    Alert.alert("Снимка", undefined, [
-      { text: "📷 Снимай", onPress: () => pickPhoto("camera") },
-      { text: "🖼 От галерията", onPress: () => pickPhoto("library") },
-      { text: "Отказ", style: "cancel" },
-    ]);
+    setPhotoMenu(true);
   }
 
   async function pickPhoto(source) {
@@ -301,7 +317,8 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         return;
       }
 
-      const options = { quality: PHOTO_QUALITY, mediaTypes: ["images"] };
+      const preset = presetFor(photoQuality);
+      const options = { quality: preset.pick, mediaTypes: ["images"] };
       const result = source === "camera"
         ? await ImagePicker.launchCameraAsync(options)
         : await ImagePicker.launchImageLibraryAsync({
@@ -320,7 +337,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // Качва една снимка и връща id-то на съобщението. Хвърля при провал —
   // извикващият решава дали да спре, или да продължи с останалите.
   async function uploadOnePhoto(asset, caption) {
-    const response = await fetch(asset.uri);
+    // Смаляването е преди четенето на байтовете — иначе четем мегабайти, за да
+    // ги изхвърлим веднага след това.
+    const uri = await shrinkPhoto(asset.uri, asset.width, presetFor(photoQuality));
+    const response = await fetch(uri);
     const arrayBuffer = await response.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
 
@@ -433,24 +453,38 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     }
   }
 
+  // Задържането отваря собствен прозорец, а не Alert: Android показва най-много
+  // три бутона в Alert, а действията вече са повече. И се отваря за всяко
+  // съобщение, не само за свое — запазването на снимка е точно за чуждите.
   function handleLongPress(msg) {
-    if (msg.user_id !== userId) return;
-    Alert.alert("Съобщение", undefined, [
-      {
-        text: "👁 Кой е прочел",
-        onPress: () => setReadInfo(msg),
-      },
-      {
-        text: "✏️ Редактирай",
-        onPress: () => { setEditingMsg(msg); setEditText(msg.text); }
-      },
-      {
-        text: "🗑 Изтрий",
-        style: "destructive",
-        onPress: () => handleDelete(msg),
-      },
-      { text: "Отказ", style: "cancel" },
-    ]);
+    const isMine = msg.user_id === userId;
+    const hasPhoto = !!msg.image_path;
+    if (!isMine && !hasPhoto) return;
+    setMsgActions(msg);
+  }
+
+  async function handleSavePhoto(msg) {
+    const url = msg.image_path ? photoUrls[msg.image_path] : null;
+    if (!url || savingPhoto) return;
+
+    setSavingPhoto(true);
+    const result = await saveToGallery(url);
+    setSavingPhoto(false);
+    setMsgActions(null);
+
+    if (result.ok) {
+      Alert.alert("Записано", "Снимката е в галерията ти.");
+      return;
+    }
+    if (result.reason === "unsupported") {
+      Alert.alert("Още не мога", "Записването в галерията идва със следващата версия на приложението.");
+      return;
+    }
+    if (result.reason === "denied") {
+      Alert.alert("Няма достъп", "Без разрешение за галерията не мога да запиша снимката.");
+      return;
+    }
+    Alert.alert("Не се записа", "Опитай пак.");
   }
 
   async function handleDelete(msg) {
@@ -858,12 +892,124 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           </TouchableOpacity>
         </View>
       )}
+      <Modal visible={photoMenu} animationType="fade" transparent onRequestClose={() => setPhotoMenu(false)}>
+        <TouchableWithoutFeedback onPress={() => setPhotoMenu(false)}>
+          <View style={styles.readOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={styles.actionSheet}>
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={() => { setPhotoMenu(false); pickPhoto("camera"); }}
+                >
+                  <Text style={styles.actionText}>📷 Снимай</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={() => { setPhotoMenu(false); pickPhoto("library"); }}
+                >
+                  <Text style={styles.actionText}>🖼 От галерията</Text>
+                </TouchableOpacity>
+
+                {/* Не затваря менюто — сменяш и виждаш новото, преди да избереш. */}
+                <TouchableOpacity style={[styles.actionRow, styles.actionQuality]} onPress={switchQuality}>
+                  <Text style={styles.actionQualityText}>
+                    Качество: {PHOTO_PRESETS[photoQuality]?.label || "Обикновено"}
+                  </Text>
+                  <Text style={styles.actionQualityHint}>
+                    {photoQuality === "high"
+                      ? "по-едри файлове, за снимки, които ще пазиш"
+                      : "по-малки файлове, достатъчно за екран"}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.actionRow} onPress={() => setPhotoMenu(false)}>
+                  <Text style={[styles.actionText, styles.actionCancel]}>Отказ</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <Modal visible={!!msgActions} animationType="fade" transparent onRequestClose={() => setMsgActions(null)}>
+        <TouchableWithoutFeedback onPress={() => setMsgActions(null)}>
+          <View style={styles.readOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={styles.actionSheet}>
+                {msgActions?.image_path && (
+                  <TouchableOpacity
+                    style={styles.actionRow}
+                    onPress={() => handleSavePhoto(msgActions)}
+                    disabled={savingPhoto}
+                  >
+                    <Text style={styles.actionText}>
+                      {savingPhoto ? "Записвам…" : "⬇️ Запази в галерията"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {msgActions?.user_id === userId && (
+                  <>
+                    <TouchableOpacity
+                      style={styles.actionRow}
+                      onPress={() => { const m = msgActions; setMsgActions(null); setReadInfo(m); }}
+                    >
+                      <Text style={styles.actionText}>👁 Кой е прочел</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.actionRow}
+                      onPress={() => {
+                        const m = msgActions;
+                        setMsgActions(null);
+                        setEditingMsg(m);
+                        setEditText(m.text);
+                      }}
+                    >
+                      <Text style={styles.actionText}>
+                        {msgActions?.image_path ? "✏️ Редактирай подписа" : "✏️ Редактирай"}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.actionRow}
+                      onPress={() => { const m = msgActions; setMsgActions(null); handleDelete(m); }}
+                    >
+                      <Text style={[styles.actionText, styles.actionDanger]}>🗑 Изтрий</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+                <TouchableOpacity style={styles.actionRow} onPress={() => setMsgActions(null)}>
+                  <Text style={[styles.actionText, styles.actionCancel]}>Отказ</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
       <Modal visible={!!photoView} animationType="fade" onRequestClose={() => setPhotoView(null)}>
         <View style={styles.photoFull}>
           {photoView && <ZoomableImage uri={photoView} />}
           <TouchableOpacity style={styles.photoClose} onPress={() => setPhotoView(null)}>
             <Text style={styles.photoCloseText}>Затвори</Text>
           </TouchableOpacity>
+          {canSaveToGallery() && (
+            <TouchableOpacity
+              style={styles.photoSave}
+              onPress={async () => {
+                setSavingPhoto(true);
+                const result = await saveToGallery(photoView);
+                setSavingPhoto(false);
+                Alert.alert(
+                  result.ok ? "Записано" : "Не се записа",
+                  result.ok ? "Снимката е в галерията ти." : "Опитай пак."
+                );
+              }}
+              disabled={savingPhoto}
+            >
+              <Text style={styles.photoCloseText}>
+                {savingPhoto ? "Записвам…" : "⬇️ Запази"}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </Modal>
 
@@ -977,6 +1123,25 @@ const styles = StyleSheet.create({
   photoIcon: { fontSize: 22 },
   photoIconBusy: { fontSize: 13, fontWeight: "700", color: colors.text600 },
   photoFull: { flex: 1, backgroundColor: "#000" },
+  actionSheet: {
+    backgroundColor: colors.bg, borderRadius: radius.card,
+    paddingVertical: space.sm, width: "100%", maxWidth: 420,
+  },
+  actionRow: { paddingVertical: space.lg, paddingHorizontal: space.xl },
+  actionText: { ...type.body, color: colors.text900 },
+  actionDanger: { color: "#D64545" },
+  actionCancel: { color: colors.text400 },
+  actionQuality: {
+    borderTopWidth: 0.5, borderTopColor: colors.border,
+    marginTop: space.sm, paddingTop: space.lg,
+  },
+  actionQualityText: { ...type.body, color: colors.brand600, fontWeight: "600" },
+  actionQualityHint: { ...type.label, color: colors.text400, marginTop: 2 },
+  photoSave: {
+    position: "absolute", bottom: 44, alignSelf: "center",
+    paddingVertical: space.sm, paddingHorizontal: space.xl,
+    borderRadius: radius.pill, backgroundColor: "rgba(0,0,0,0.55)",
+  },
   photoClose: {
     position: "absolute", top: 44, right: space.lg,
     paddingVertical: space.sm, paddingHorizontal: space.lg,
