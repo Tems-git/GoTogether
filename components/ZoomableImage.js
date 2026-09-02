@@ -30,7 +30,7 @@ function touchDistance(touches) {
   return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
 }
 
-export default function ZoomableImage({ uri, onZoomChange }) {
+export default function ZoomableImage({ uri, onZoomChange, onSingleTap }) {
   const scale = useRef(new Animated.Value(1)).current;
   const tx = useRef(new Animated.Value(0)).current;
   const ty = useRef(new Animated.Value(0)).current;
@@ -72,15 +72,34 @@ export default function ZoomableImage({ uri, onZoomChange }) {
     ]).start();
   }
 
+  // Единично и двойно тапване се различават само по чакане: второто тапване
+  // отменя вече насроченото единично.
+  const singleTapTimer = useRef(null);
+
   function handleTap() {
     const now = Date.now();
+
     if (now - lastTap.current < DOUBLE_TAP_MS) {
       lastTap.current = 0;
+      if (singleTapTimer.current) {
+        clearTimeout(singleTapTimer.current);
+        singleTapTimer.current = null;
+      }
       if (cur.current.scale > 1.05) animateTo(1);
       else animateTo(DOUBLE_TAP_ZOOM);
       return;
     }
+
     lastTap.current = now;
+
+    // Единичното действие има смисъл само при неувеличена снимка — иначе
+    // тапването докато разглеждаш отблизо би я затворило под пръста ти.
+    if (!onSingleTap) return;
+    if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
+    singleTapTimer.current = setTimeout(() => {
+      singleTapTimer.current = null;
+      if (cur.current.scale <= 1.05) onSingleTap();
+    }, DOUBLE_TAP_MS + 20);
   }
 
   const responder = useRef(

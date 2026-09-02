@@ -22,10 +22,6 @@ import { colors, space, radius, type } from "../theme/tokens";
 // се скролва напред-назад и не искаме връзките да умират под пръстите.
 const PHOTO_URL_SECONDS = 3600;
 
-// Къде се помни изборът на качество. На телефона, не в базата — това е
-// предпочитание на човека, не на пътуването.
-const PHOTO_QUALITY_KEY = "gotogether.photoQuality";
-
 // Кои снимки вече са записани в галерията на ТОЗИ телефон. На телефона, защото
 // въпросът е „аз имам ли я", а не „изпратена ли е". Пази се ограничен брой —
 // списъкът няма причина да расте вечно.
@@ -285,10 +281,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   }, [editingMsg]);
 
   useEffect(() => {
-    AsyncStorage.getItem(PHOTO_QUALITY_KEY)
-      .then((value) => { if (value) setPhotoQuality(value); })
-      .catch(() => {});
-
     AsyncStorage.getItem(SAVED_PHOTOS_KEY)
       .then((value) => {
         const list = value ? JSON.parse(value) : [];
@@ -307,9 +299,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   }
 
   function switchQuality() {
-    const next = photoQuality === "high" ? "normal" : "high";
-    setPhotoQuality(next);
-    AsyncStorage.setItem(PHOTO_QUALITY_KEY, next).catch(() => {});
+    setPhotoQuality((prev) => (prev === "high" ? "normal" : "high"));
   }
 
   // Временните връзки се издават на групи, за всички нови снимки наведнъж.
@@ -375,6 +365,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // снима на място, но понякога човек праща нещо отпреди малко.
   function handlePhoto() {
     if (sendingPhoto) return;
+    // Всяко отваряне тръгва от обикновено качество. Високото е съзнателен
+    // избор за конкретната снимка, а не режим, в който човек забравя, че е.
+    setPhotoQuality("normal");
     setPhotoMenu(true);
   }
 
@@ -1068,13 +1061,18 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
 
                 {/* Не затваря менюто — сменяш и виждаш новото, преди да избереш. */}
                 <TouchableOpacity style={[styles.actionRow, styles.actionQuality]} onPress={switchQuality}>
-                  <Text style={styles.actionQualityText}>
-                    Качество: {PHOTO_PRESETS[photoQuality]?.label || "Обикновено"}
-                  </Text>
+                  <View style={styles.qualityLine}>
+                    <Text style={styles.actionQualityText}>Качество:</Text>
+                    <View style={[styles.qualityTag, photoQuality === "high" && styles.qualityTagHigh]}>
+                      <Text style={[styles.qualityTagText, photoQuality === "high" && styles.qualityTagTextHigh]}>
+                        {photoQuality === "high" ? "★ Високо" : "Обикновено"}
+                      </Text>
+                    </View>
+                  </View>
                   <Text style={styles.actionQualityHint}>
                     {photoQuality === "high"
                       ? "по-едри файлове, за снимки, които ще пазиш"
-                      : "по-малки файлове, достатъчно за екран"}
+                      : "по-малки файлове, достатъчно за екран — тапни за високо"}
                   </Text>
                 </TouchableOpacity>
 
@@ -1175,7 +1173,11 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             }}
             renderItem={({ item }) => (
               <View style={{ width: windowWidth }}>
-                <ZoomableImage uri={photoUrls[item.image_path]} onZoomChange={setPhotoZoomed} />
+                <ZoomableImage
+                  uri={photoUrls[item.image_path]}
+                  onZoomChange={setPhotoZoomed}
+                  onSingleTap={() => setPhotoIndex(null)}
+                />
               </View>
             )}
           />
@@ -1370,15 +1372,25 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.5, borderTopColor: colors.border,
     marginTop: space.sm, paddingTop: space.lg,
   },
-  actionQualityText: { ...type.body, color: colors.brand600, fontWeight: "600" },
+  actionQualityText: { ...type.body, color: colors.text600 },
+  qualityLine: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  qualityTag: {
+    borderRadius: radius.pill, paddingVertical: 3, paddingHorizontal: space.md,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  qualityTagHigh: { backgroundColor: colors.brand600, borderColor: colors.brand600 },
+  qualityTagText: { ...type.label, color: colors.text600, fontWeight: "600" },
+  qualityTagTextHigh: { color: "#FFFFFF", fontWeight: "700" },
   actionQualityHint: { ...type.label, color: colors.text400, marginTop: 2 },
   photoCloseText: { ...type.label, color: "#FFFFFF" },
+  // zIndex и elevation изрично: снимката вътре носи transform, а трансформиран
+  // изглед на iOS може да се нарисува върху съседите си и да поеме допира им.
   photoTop: {
-    position: "absolute", top: 0, left: 0, right: 0,
+    position: "absolute", top: 0, left: 0, right: 0, zIndex: 10, elevation: 10,
     alignItems: "center", paddingBottom: space.sm,
   },
   photoBar: {
-    position: "absolute", bottom: 0, left: 0, right: 0,
+    position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 10, elevation: 10,
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: space.lg, paddingTop: space.md,
     backgroundColor: "rgba(0,0,0,0.65)",
