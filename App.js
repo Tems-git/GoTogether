@@ -1,5 +1,8 @@
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, Linking, AppState } from "react-native";
+import {
+  StyleSheet, Text, View, TouchableOpacity, TextInput, Linking, AppState,
+  BackHandler, PanResponder,
+} from "react-native";
 import { useState, useEffect, useRef } from "react";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Updates from "expo-updates";
@@ -30,6 +33,13 @@ import TripSetupScreen from "./screens/TripSetupScreen";
 // изобщо да е монтирал нещо. Ако това стане вътре в компонент, първото
 // известие може да пристигне преди настройката.
 configurePushHandler();
+
+// Плъзгането назад се хваща само ако пръстът е тръгнал от този край на екрана.
+// По-широка зона би отнемала жестове на хоризонталните списъци вътре.
+const EDGE_WIDTH = 28;
+// Колко трябва да е изтеглено, за да се брои за връщане. По-късото е случайно
+// докосване при скролване.
+const BACK_DISTANCE = 70;
 
 // Разпознаваме код от gotogether://join/XXX или exp+gotogether://join/XXX
 function parseInviteCode(url) {
@@ -103,6 +113,54 @@ function AppContent() {
   // загуби.
   const { hasShareIntent, shareIntent, resetShareIntent } = useIncomingShare();
   const sharedText = hasShareIntent ? sharedTextOf(shareIntent) : "";
+
+  // Едно място решава какво значи „назад" от всеки екран. Връща true, ако
+  // наистина е върнало — по това системният бутон разбира дали да излезе от
+  // приложението, или да остави нас да се справим.
+  function goBack() {
+    if (screen === "ai") {
+      setOpenPlanId(null);
+      setScreen(user ? "dashboard" : "home");
+      return true;
+    }
+    if (screen === "documents" || screen === "expenses" || screen === "chat" || screen === "newtrip") {
+      setScreen("dashboard");
+      return true;
+    }
+    if (screen === "signin") {
+      setScreen("home");
+      return true;
+    }
+    // Табло и начален екран са дъното — оттам „назад" значи изход от
+    // приложението и това е работа на системата, не наша.
+    return false;
+  }
+
+  // Хардуерният бутон на Android. Досега не беше вързан за нищо, тоест
+  // затваряше приложението дори от чата.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", goBack);
+    return () => sub.remove();
+  }, [screen, user]);
+
+  // Жестът се създава веднъж и би запомнил първата версия на goBack.
+  // Референцията го държи актуален, без да пресъздаваме жеста при всеки екран.
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
+
+  // Плъзгане от левия ръб. Хваща се със capture, за да изпревари списъците
+  // вътре — но само при жест, тръгнал от самия ръб и явно хоризонтален.
+  const edgeBack = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponderCapture: (_e, g) =>
+        g.x0 <= EDGE_WIDTH && g.dx > 16 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+      onPanResponderRelease: (_e, g) => {
+        if (g.dx > BACK_DISTANCE || (g.dx > 40 && g.vx > 0.4)) goBackRef.current();
+      },
+      onPanResponderTerminationRequest: () => false,
+    })
+  ).current;
 
   function finishShare(trip) {
     resetShareIntent();
@@ -231,7 +289,7 @@ function AppContent() {
 
   if (screen === "ai") return (
     <AIPlannerScreen
-      onBack={() => { setOpenPlanId(null); setScreen(user ? "dashboard" : "home"); }}
+      onBack={goBack}
       trip={activeTrip}
       userId={user?.id}
       openPlanId={openPlanId}
@@ -241,7 +299,7 @@ function AppContent() {
   if (screen === "documents") {
     return (
       <DocumentsScreen
-        onBack={() => setScreen("dashboard")}
+        onBack={goBack}
         tripId={activeTrip?.id}
         userId={user?.id}
       />
@@ -251,7 +309,7 @@ function AppContent() {
   if (screen === "expenses") {
     return (
       <ExpensesScreen
-        onBack={() => setScreen("dashboard")}
+        onBack={goBack}
         tripId={activeTrip?.id}
         userId={user?.id}
         devMode={false}
@@ -262,7 +320,7 @@ function AppContent() {
   if (screen === "chat") {
     return (
       <ChatScreen
-        onBack={() => setScreen("dashboard")}
+        onBack={goBack}
         tripId={activeTrip?.id}
         userId={user?.id}
         tripName={activeTrip?.name}
@@ -285,7 +343,7 @@ function AppContent() {
       <TripSetupScreen
         user={user}
         pendingInviteCode={null}
-        onBack={() => setScreen("dashboard")}
+        onBack={goBack}
         onTripReady={(trip) => {
           setActiveTrip(trip);
           setAllTrips((prev) => [trip, ...prev.filter((t) => t.id !== trip.id)]);
@@ -383,7 +441,9 @@ function AppContent() {
 
   return (
     <>
-      {renderScreen()}
+      <View style={styles.flexOne} {...edgeBack.panHandlers}>
+        {renderScreen()}
+      </View>
       <ShareToTrip
         visible={!!sharedText && !!user && allTrips.length > 0}
         text={sharedText}
@@ -396,6 +456,7 @@ function AppContent() {
 }
 
 const styles = StyleSheet.create({
+  flexOne: { flex: 1 },
   loading: { flex: 1, backgroundColor: "#1D9E75", alignItems: "center", justifyContent: "center" },
   loadingEmoji: { fontSize: 64 },
   loadingText: { fontSize: 24, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: "#fff", marginTop: 12 },
