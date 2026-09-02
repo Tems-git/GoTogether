@@ -27,6 +27,10 @@ const PHOTO_QUALITY = 0.5;
 // Предпазител срещу нещо огромно, което да изяде мястото на всички.
 const PHOTO_MAX_MB = 8;
 
+// Колко снимки наведнъж. Не заради код, а заради чакането: качват се една по
+// една, а на мобилен интернет десет вече са минута с телефон в ръка.
+const PHOTO_MAX_COUNT = 10;
+
 const AVATAR_COLORS = [
   "#0A6B57", "#B4531F", "#3D5A98", "#7A3E9D",
   "#177A6B", "#9B2C46", "#4C6B1A", "#2B5F7A",
@@ -150,6 +154,8 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // връзка при всяко превъртане на списъка.
   const [photoUrls, setPhotoUrls] = useState({});
   const [sendingPhoto, setSendingPhoto] = useState(false);
+  // „3/7" докато върви многото; празно при една снимка.
+  const [photoProgress, setPhotoProgress] = useState("");
   // Снимката, отворена на цял екран.
   const [photoView, setPhotoView] = useState(null);
   const flatRef = useRef(null);
@@ -298,62 +304,100 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       const options = { quality: PHOTO_QUALITY, mediaTypes: ["images"] };
       const result = source === "camera"
         ? await ImagePicker.launchCameraAsync(options)
-        : await ImagePicker.launchImageLibraryAsync(options);
+        : await ImagePicker.launchImageLibraryAsync({
+            ...options,
+            allowsMultipleSelection: true,
+            selectionLimit: PHOTO_MAX_COUNT,
+          });
       if (result.canceled) return;
 
-      await sendPhoto(result.assets[0]);
+      await sendPhotos(result.assets || []);
     } catch (e) {
       Alert.alert("Грешка", e.message);
     }
   }
 
-  async function sendPhoto(asset) {
-    // Текстът от полето става подпис на снимката — едно съобщение, не две.
+  // Качва една снимка и връща id-то на съобщението. Хвърля при провал —
+  // извикващият решава дали да спре, или да продължи с останалите.
+  async function uploadOnePhoto(asset, caption) {
+    const response = await fetch(asset.uri);
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+
+    if (bytes.byteLength > PHOTO_MAX_MB * 1024 * 1024) {
+      throw new Error(`Снимка над ${PHOTO_MAX_MB} MB.`);
+    }
+
+    // Папката е пътуването — така важат същите правила за достъп, както при
+    // документите. Подпапката „chat" ги държи настрани от Документи.
+    // Случайното окончание пази две снимки в една и съща милисекунда да не се
+    // презапишат — при избор на няколко това е напълно възможно.
+    const suffix = Math.random().toString(36).slice(2, 8);
+    const path = `${tripId}/chat/${Date.now()}_${suffix}.jpg`;
+    const { error: uploadError } = await supabase.storage
+      .from("documents")
+      .upload(path, bytes, { contentType: "image/jpeg" });
+    if (uploadError) throw uploadError;
+
+    const { data: inserted, error } = await supabase
+      .from("messages")
+      .insert({
+        trip_id: tripId,
+        user_id: userId,
+        display_name: displayName,
+        text: caption,
+        image_path: path,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return inserted?.id || null;
+  }
+
+  async function sendPhotos(assets) {
+    if (assets.length === 0) return;
+
+    // Текстът от полето става подпис — но само на първата снимка. Иначе един и
+    // същи ред се повтаря под всяка и чатът заприличва на заяждаща плоча.
     const caption = text.trim();
     setSendingPhoto(true);
     setText("");
-    try {
-      const response = await fetch(asset.uri);
-      const arrayBuffer = await response.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
 
-      if (bytes.byteLength > PHOTO_MAX_MB * 1024 * 1024) {
-        Alert.alert("Снимката е твърде голяма", `Над ${PHOTO_MAX_MB} MB.`);
-        setText(caption);
-        return;
+    let lastId = null;
+    let failed = 0;
+
+    try {
+      for (let i = 0; i < assets.length; i += 1) {
+        setPhotoProgress(assets.length > 1 ? `${i + 1}/${assets.length}` : "");
+        try {
+          const id = await uploadOnePhoto(assets[i], i === 0 ? caption : "");
+          if (id) lastId = id;
+        } catch {
+          // Една провалена снимка не бива да спира останалите — на слаба мрежа
+          // това е разликата между „нищо не тръгна" и „едната не мина".
+          failed += 1;
+        }
       }
 
-      // Папката е пътуването — така важат същите правила за достъп, както при
-      // документите. Подпапката „chat" ги държи настрани от Документи.
-      const path = `${tripId}/chat/${Date.now()}.jpg`;
-      const { error: uploadError } = await supabase.storage
-        .from("documents")
-        .upload(path, bytes, { contentType: "image/jpeg" });
-      if (uploadError) throw uploadError;
-
-      const { data: inserted, error } = await supabase
-        .from("messages")
-        .insert({
-          trip_id: tripId,
-          user_id: userId,
-          display_name: displayName,
-          text: caption,
-          image_path: path,
-        })
-        .select("id")
-        .single();
-      if (error) throw error;
-
-      if (inserted?.id) {
+      // Едно известие за целия избор, не по едно на снимка.
+      if (lastId) {
         supabase.functions
-          .invoke("send-chat-push", { body: { messageId: inserted.id } })
+          .invoke("send-chat-push", { body: { messageId: lastId } })
           .catch(() => {});
       }
-    } catch (e) {
-      setText(caption);
-      Alert.alert("Снимката не се изпрати", e.message);
+
+      if (failed > 0) {
+        if (!lastId) setText(caption);
+        Alert.alert(
+          "Не всички снимки тръгнаха",
+          failed === assets.length
+            ? "Нито една не се изпрати. Провери мрежата."
+            : `${failed} от ${assets.length} не се изпратиха.`
+        );
+      }
     } finally {
       setSendingPhoto(false);
+      setPhotoProgress("");
     }
   }
 
@@ -791,7 +835,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             onPress={handlePhoto}
             disabled={sendingPhoto}
           >
-            <Text style={styles.photoIcon}>{sendingPhoto ? "…" : "📷"}</Text>
+            <Text style={[styles.photoIcon, sendingPhoto && styles.photoIconBusy]}>
+              {sendingPhoto ? (photoProgress || "…") : "📷"}
+            </Text>
           </TouchableOpacity>
           <TextInput
             style={styles.input}
@@ -929,6 +975,7 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", marginRight: space.xs,
   },
   photoIcon: { fontSize: 22 },
+  photoIconBusy: { fontSize: 13, fontWeight: "700", color: colors.text600 },
   photoFull: { flex: 1, backgroundColor: "#000" },
   photoClose: {
     position: "absolute", top: 44, right: space.lg,
