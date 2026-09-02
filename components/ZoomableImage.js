@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { View, Animated, PanResponder, StyleSheet } from "react-native";
+import { View, Animated, PanResponder, TouchableWithoutFeedback, StyleSheet } from "react-native";
 
 // Увеличаване с два пръста, местене с един и двойно тапване за бързо
 // приближаване. Написано на PanResponder и Animated, тоест само с това, което
@@ -8,6 +8,12 @@ import { View, Animated, PanResponder, StyleSheet } from "react-native";
 //
 // Живее тук, а не в екрана на документите, защото същото гледане на снимка
 // трябва и в чата. Един компонент, две места.
+//
+// Важното при жестовете: докато снимката е в естествен размер, компонентът НЕ
+// поема допира. Иначе прелистването между снимките в чата никога не би тръгнало
+// — родителският списък не може да скролира, ако дете е взело жеста. Затова
+// двойното тапване е на отделен touchable, а PanResponder се събужда само при
+// два пръста или когато вече сме увеличили.
 
 // Максимално увеличение при разглеждане на снимка. Над четири пъти няма какво
 // повече да се види — снимките от телефон свършват като разделителна способност.
@@ -24,7 +30,7 @@ function touchDistance(touches) {
   return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
 }
 
-export default function ZoomableImage({ uri }) {
+export default function ZoomableImage({ uri, onZoomChange }) {
   const scale = useRef(new Animated.Value(1)).current;
   const tx = useRef(new Animated.Value(0)).current;
   const ty = useRef(new Animated.Value(0)).current;
@@ -36,6 +42,17 @@ export default function ZoomableImage({ uri }) {
   const pan = useRef({ x: 0, y: 0 });
   const box = useRef({ width: 0, height: 0 });
   const lastTap = useRef(0);
+  const wasZoomed = useRef(false);
+
+  // Родителят трябва да знае кога да спре прелистването — но само при промяна,
+  // не при всяко движение на пръста.
+  function reportZoom() {
+    const zoomed = cur.current.scale > 1.01;
+    if (zoomed !== wasZoomed.current) {
+      wasZoomed.current = zoomed;
+      onZoomChange && onZoomChange(zoomed);
+    }
+  }
 
   // Границите на местенето: колкото по-увеличена е снимката, толкова повече
   // има какво да се покаже извън екрана.
@@ -47,6 +64,7 @@ export default function ZoomableImage({ uri }) {
   function animateTo(nextScale, x = 0, y = 0) {
     cur.current = { scale: nextScale, x, y };
     pan.current = { x, y };
+    reportZoom();
     Animated.parallel([
       Animated.timing(scale, { toValue: nextScale, duration: 180, useNativeDriver: true }),
       Animated.timing(tx, { toValue: x, duration: 180, useNativeDriver: true }),
@@ -54,26 +72,32 @@ export default function ZoomableImage({ uri }) {
     ]).start();
   }
 
+  function handleTap() {
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_MS) {
+      lastTap.current = 0;
+      if (cur.current.scale > 1.05) animateTo(1);
+      else animateTo(DOUBLE_TAP_ZOOM);
+      return;
+    }
+    lastTap.current = now;
+  }
+
   const responder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_e, g) =>
-        g.numberActiveTouches === 2 || Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
+      // При допир не поемаме нищо — иначе списъкът отгоре не може да прелиства.
+      onStartShouldSetPanResponder: () => false,
 
-      onPanResponderGrant: (e) => {
+      // Събуждаме се само при щипка с два пръста или когато вече е увеличено.
+      onMoveShouldSetPanResponder: (_e, g) => {
+        if (g.numberActiveTouches === 2) return true;
+        if (cur.current.scale <= 1.01) return false;
+        return Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2;
+      },
+
+      onPanResponderGrant: () => {
         pinch.current = { active: false, dist: 0, scale: cur.current.scale };
         pan.current = { x: cur.current.x, y: cur.current.y };
-
-        if (e.nativeEvent.touches.length === 1) {
-          const now = Date.now();
-          if (now - lastTap.current < DOUBLE_TAP_MS) {
-            lastTap.current = 0;
-            if (cur.current.scale > 1.05) animateTo(1);
-            else animateTo(DOUBLE_TAP_ZOOM);
-          } else {
-            lastTap.current = now;
-          }
-        }
       },
 
       onPanResponderMove: (e, g) => {
@@ -93,6 +117,7 @@ export default function ZoomableImage({ uri }) {
           scale.setValue(next);
           tx.setValue(cur.current.x);
           ty.setValue(cur.current.y);
+          reportZoom();
           return;
         }
 
@@ -115,6 +140,7 @@ export default function ZoomableImage({ uri }) {
         pinch.current.active = false;
         pan.current = { x: cur.current.x, y: cur.current.y };
         if (cur.current.scale <= 1.02) animateTo(1);
+        else reportZoom();
       },
       onPanResponderTerminate: () => {
         pinch.current.active = false;
@@ -125,20 +151,22 @@ export default function ZoomableImage({ uri }) {
   ).current;
 
   return (
-    <View
-      style={styles.wrap}
-      onLayout={(e) => { box.current = e.nativeEvent.layout; }}
-      {...responder.panHandlers}
-    >
-      <Animated.Image
-        source={{ uri }}
-        resizeMode="contain"
-        style={[
-          styles.image,
-          { transform: [{ translateX: tx }, { translateY: ty }, { scale }] },
-        ]}
-      />
-    </View>
+    <TouchableWithoutFeedback onPress={handleTap}>
+      <View
+        style={styles.wrap}
+        onLayout={(e) => { box.current = e.nativeEvent.layout; }}
+        {...responder.panHandlers}
+      >
+        <Animated.Image
+          source={{ uri }}
+          resizeMode="contain"
+          style={[
+            styles.image,
+            { transform: [{ translateX: tx }, { translateY: ty }, { scale }] },
+          ]}
+        />
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 

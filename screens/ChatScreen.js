@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback,
   FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
-  Linking, Modal, Image,
+  Linking, Modal, Image, useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageSquare } from "lucide-react-native";
@@ -25,6 +25,12 @@ const PHOTO_URL_SECONDS = 3600;
 // Къде се помни изборът на качество. На телефона, не в базата — това е
 // предпочитание на човека, не на пътуването.
 const PHOTO_QUALITY_KEY = "gotogether.photoQuality";
+
+// Кои снимки вече са записани в галерията на ТОЗИ телефон. На телефона, защото
+// въпросът е „аз имам ли я", а не „изпратена ли е". Пази се ограничен брой —
+// списъкът няма причина да расте вечно.
+const SAVED_PHOTOS_KEY = "gotogether.savedPhotos";
+const SAVED_PHOTOS_MAX = 500;
 
 // Предпазител срещу нещо огромно, което да изяде мястото на всички.
 const PHOTO_MAX_MB = 8;
@@ -141,6 +147,8 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // за конкретното устройство. Без тях Android навигационната лента застъпва
   // полето за писане — тапването задейства системните бутони вместо input-а.
   const insets = useSafeAreaInsets();
+  // Ширината на страница при прелистването на снимките.
+  const { width: windowWidth } = useWindowDimensions();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -164,8 +172,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const [photoQuality, setPhotoQuality] = useState("normal");
   // Менюто за нова снимка: откъде и с какво качество.
   const [photoMenu, setPhotoMenu] = useState(false);
-  // Снимката, отворена на цял екран.
-  const [photoView, setPhotoView] = useState(null);
+  // Мястото в лентата със снимки, отворена на цял екран. null значи затворена.
+  const [photoIndex, setPhotoIndex] = useState(null);
+  // Докато снимката е увеличена, прелистването настрани трябва да спре.
+  const [photoZoomed, setPhotoZoomed] = useState(false);
+  // Пътищата на вече записаните снимки.
+  const [savedPhotos, setSavedPhotos] = useState([]);
   const flatRef = useRef(null);
   const editInputRef = useRef(null);
   // Дали в момента сме в дъното на списъка. Държим го в ref, а не в state,
@@ -269,7 +281,23 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     AsyncStorage.getItem(PHOTO_QUALITY_KEY)
       .then((value) => { if (value) setPhotoQuality(value); })
       .catch(() => {});
+
+    AsyncStorage.getItem(SAVED_PHOTOS_KEY)
+      .then((value) => {
+        const list = value ? JSON.parse(value) : [];
+        if (Array.isArray(list)) setSavedPhotos(list);
+      })
+      .catch(() => {});
   }, []);
+
+  function rememberSaved(path) {
+    setSavedPhotos((prev) => {
+      if (prev.includes(path)) return prev;
+      const next = [...prev, path].slice(-SAVED_PHOTOS_MAX);
+      AsyncStorage.setItem(SAVED_PHOTOS_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }
 
   function switchQuality() {
     const next = photoQuality === "high" ? "normal" : "high";
@@ -299,6 +327,42 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
 
     return () => { alive = false; };
   }, [messages]);
+
+  // Всички снимки в чата, по реда на чата. Отварянето на една значи заставане
+  // на нейното място в тази лента, а не показване на самотен файл.
+  const photoList = messages.filter((m) => m.image_path && photoUrls[m.image_path]);
+  const openPhoto = (msg) => {
+    const index = photoList.findIndex((m) => m.id === msg.id);
+    if (index >= 0) {
+      setPhotoZoomed(false);
+      setPhotoIndex(index);
+    }
+  };
+  const currentPhoto = photoIndex != null ? photoList[photoIndex] : null;
+
+  async function savePhotoFrom(msg) {
+    const url = msg?.image_path ? photoUrls[msg.image_path] : null;
+    if (!url || savingPhoto) return;
+
+    setSavingPhoto(true);
+    const result = await saveToGallery(url);
+    setSavingPhoto(false);
+
+    if (result.ok) {
+      rememberSaved(msg.image_path);
+      Alert.alert("Записано", "Снимката е в галерията ти.");
+      return;
+    }
+    if (result.reason === "unsupported") {
+      Alert.alert("Още не мога", "Записването в галерията идва със следващата версия на приложението.");
+      return;
+    }
+    if (result.reason === "denied") {
+      Alert.alert("Няма достъп", "Без разрешение за галерията не мога да запиша снимката.");
+      return;
+    }
+    Alert.alert("Не се записа", "Опитай пак.");
+  }
 
   // Питаме откъде идва снимката, вместо да налагаме едното. На път по-често се
   // снима на място, но понякога човек праща нещо отпреди малко.
@@ -464,27 +528,8 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   }
 
   async function handleSavePhoto(msg) {
-    const url = msg.image_path ? photoUrls[msg.image_path] : null;
-    if (!url || savingPhoto) return;
-
-    setSavingPhoto(true);
-    const result = await saveToGallery(url);
-    setSavingPhoto(false);
     setMsgActions(null);
-
-    if (result.ok) {
-      Alert.alert("Записано", "Снимката е в галерията ти.");
-      return;
-    }
-    if (result.reason === "unsupported") {
-      Alert.alert("Още не мога", "Записването в галерията идва със следващата версия на приложението.");
-      return;
-    }
-    if (result.reason === "denied") {
-      Alert.alert("Няма достъп", "Без разрешение за галерията не мога да запиша снимката.");
-      return;
-    }
-    Alert.alert("Не се записа", "Опитай пак.");
+    await savePhotoFrom(msg);
   }
 
   async function handleDelete(msg) {
@@ -773,7 +818,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                           {item.image_path && (
                             <TouchableOpacity
                               activeOpacity={0.9}
-                              onPress={() => photoUrls[item.image_path] && setPhotoView(photoUrls[item.image_path])}
+                              onPress={() => photoUrls[item.image_path] && openPhoto(item)}
                               onLongPress={() => handleLongPress(item)}
                             >
                               {photoUrls[item.image_path] ? (
@@ -937,15 +982,23 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             <TouchableWithoutFeedback onPress={() => {}}>
               <View style={styles.actionSheet}>
                 {msgActions?.image_path && (
-                  <TouchableOpacity
-                    style={styles.actionRow}
-                    onPress={() => handleSavePhoto(msgActions)}
-                    disabled={savingPhoto}
-                  >
-                    <Text style={styles.actionText}>
-                      {savingPhoto ? "Записвам…" : "⬇️ Запази в галерията"}
-                    </Text>
-                  </TouchableOpacity>
+                  savedPhotos.includes(msgActions.image_path) ? (
+                    <View style={styles.actionRow}>
+                      <Text style={[styles.actionText, styles.actionDone]}>
+                        ✓ Вече е в галерията ти
+                      </Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.actionRow}
+                      onPress={() => handleSavePhoto(msgActions)}
+                      disabled={savingPhoto}
+                    >
+                      <Text style={styles.actionText}>
+                        {savingPhoto ? "Записвам…" : "⬇️ Запази в галерията"}
+                      </Text>
+                    </TouchableOpacity>
+                  )
                 )}
                 {msgActions?.user_id === userId && (
                   <>
@@ -985,30 +1038,65 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         </TouchableWithoutFeedback>
       </Modal>
 
-      <Modal visible={!!photoView} animationType="fade" onRequestClose={() => setPhotoView(null)}>
+      <Modal
+        visible={photoIndex != null}
+        animationType="fade"
+        onRequestClose={() => setPhotoIndex(null)}
+      >
         <View style={styles.photoFull}>
-          {photoView && <ZoomableImage uri={photoView} />}
-          <TouchableOpacity style={styles.photoClose} onPress={() => setPhotoView(null)}>
+          <FlatList
+            data={photoList}
+            horizontal
+            pagingEnabled
+            scrollEnabled={!photoZoomed}
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => item.id}
+            initialScrollIndex={photoIndex || 0}
+            getItemLayout={(_d, index) => ({
+              length: windowWidth, offset: windowWidth * index, index,
+            })}
+            onMomentumScrollEnd={(e) => {
+              const next = Math.round(e.nativeEvent.contentOffset.x / windowWidth);
+              if (next !== photoIndex) {
+                setPhotoZoomed(false);
+                setPhotoIndex(next);
+              }
+            }}
+            renderItem={({ item }) => (
+              <View style={{ width: windowWidth }}>
+                <ZoomableImage uri={photoUrls[item.image_path]} onZoomChange={setPhotoZoomed} />
+              </View>
+            )}
+          />
+
+          {photoList.length > 1 && (
+            <View style={styles.photoCounter}>
+              <Text style={styles.photoCloseText}>
+                {(photoIndex || 0) + 1} / {photoList.length}
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.photoClose} onPress={() => setPhotoIndex(null)}>
             <Text style={styles.photoCloseText}>Затвори</Text>
           </TouchableOpacity>
-          {canSaveToGallery() && (
-            <TouchableOpacity
-              style={styles.photoSave}
-              onPress={async () => {
-                setSavingPhoto(true);
-                const result = await saveToGallery(photoView);
-                setSavingPhoto(false);
-                Alert.alert(
-                  result.ok ? "Записано" : "Не се записа",
-                  result.ok ? "Снимката е в галерията ти." : "Опитай пак."
-                );
-              }}
-              disabled={savingPhoto}
-            >
-              <Text style={styles.photoCloseText}>
-                {savingPhoto ? "Записвам…" : "⬇️ Запази"}
-              </Text>
-            </TouchableOpacity>
+
+          {canSaveToGallery() && currentPhoto && (
+            savedPhotos.includes(currentPhoto.image_path) ? (
+              <View style={[styles.photoSave, styles.photoSaved]}>
+                <Text style={styles.photoCloseText}>✓ В галерията ти</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.photoSave}
+                onPress={() => savePhotoFrom(currentPhoto)}
+                disabled={savingPhoto}
+              >
+                <Text style={styles.photoCloseText}>
+                  {savingPhoto ? "Записвам…" : "⬇️ Запази"}
+                </Text>
+              </TouchableOpacity>
+            )
           )}
         </View>
       </Modal>
@@ -1148,6 +1236,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill, backgroundColor: "rgba(0,0,0,0.55)",
   },
   photoCloseText: { ...type.label, color: "#FFFFFF" },
+  photoSaved: { backgroundColor: "rgba(10,107,87,0.75)" },
+  photoCounter: {
+    position: "absolute", top: 44, left: space.lg,
+    paddingVertical: space.sm, paddingHorizontal: space.lg,
+    borderRadius: radius.pill, backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  actionDone: { color: colors.brand600 },
   msgTextMe: { color: colors.onBrand },
   jumpBtn: {
     position: "absolute", right: space.lg,
