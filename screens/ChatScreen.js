@@ -436,12 +436,18 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
 
   async function pickPhoto(source) {
     try {
-      const permission = source === "camera"
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert("Няма достъп", "Без разрешение не мога да взема снимката.");
-        return;
+      // Разрешение иска само камерата. Изборът от галерията минава през
+      // системния избирач — той показва снимките сам и връща само това, което
+      // човек е посочил, тоест приложението никога не вижда галерията.
+      // Излишното искане беше вредно: на iOS отказ или ограничен достъп го
+      // спираше още тук, при положение че самият избор изобщо не се нуждае от
+      // него.
+      if (source === "camera") {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert("Няма достъп", "Без разрешение за камерата не мога да снимам.");
+          return;
+        }
       }
 
       const preset = presetFor(photoQuality);
