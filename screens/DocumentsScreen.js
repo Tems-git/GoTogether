@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
   ScrollView, ActivityIndicator, Alert, Linking, Modal,
-  Animated, PanResponder,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import { FileText, Plus } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
+import ZoomableImage from "../components/ZoomableImage";
 import { colors, space, radius, type } from "../theme/tokens";
 
 const DOC_TYPES = {
@@ -28,143 +28,6 @@ const MAX_UPLOAD_MB = 25;
 // Колко дълго важи връзката към файла. Достатъчно, за да се отвори и разгледа,
 // но не толкова, че препратена връзка да остане жива с дни.
 const SIGNED_URL_SECONDS = 300;
-
-// Максимално увеличение при разглеждане на снимка. Над четири пъти няма какво
-// повече да се види — снимките от телефон свършват като разделителна способност.
-const MAX_ZOOM = 4;
-const DOUBLE_TAP_ZOOM = 2.5;
-const DOUBLE_TAP_MS = 280;
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function touchDistance(touches) {
-  const [a, b] = touches;
-  return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
-}
-
-// Увеличаване с два пръста, местене с един и двойно тапване за бързо
-// приближаване. Написано на PanResponder и Animated, тоест само с това, което
-// React Native носи — библиотека за жестове би значела нов нативен билд, а
-// така поправката пътува като обикновен ъпдейт.
-function ZoomableImage({ uri }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const tx = useRef(new Animated.Value(0)).current;
-  const ty = useRef(new Animated.Value(0)).current;
-
-  // Animated.Value не се чете синхронно, а по време на жест трябва да знаем
-  // откъде сме тръгнали — затова държим и числено копие.
-  const cur = useRef({ scale: 1, x: 0, y: 0 });
-  const pinch = useRef({ active: false, dist: 0, scale: 1 });
-  const pan = useRef({ x: 0, y: 0 });
-  const box = useRef({ width: 0, height: 0 });
-  const lastTap = useRef(0);
-
-  // Границите на местенето: колкото по-увеличена е снимката, толкова повече
-  // има какво да се покаже извън екрана.
-  function limit(value, size, s) {
-    const max = Math.max(0, (size * (s - 1)) / 2);
-    return clamp(value, -max, max);
-  }
-
-  function animateTo(nextScale, x = 0, y = 0) {
-    cur.current = { scale: nextScale, x, y };
-    pan.current = { x, y };
-    Animated.parallel([
-      Animated.timing(scale, { toValue: nextScale, duration: 180, useNativeDriver: true }),
-      Animated.timing(tx, { toValue: x, duration: 180, useNativeDriver: true }),
-      Animated.timing(ty, { toValue: y, duration: 180, useNativeDriver: true }),
-    ]).start();
-  }
-
-  const responder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_e, g) =>
-        g.numberActiveTouches === 2 || Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
-
-      onPanResponderGrant: (e) => {
-        pinch.current = { active: false, dist: 0, scale: cur.current.scale };
-        pan.current = { x: cur.current.x, y: cur.current.y };
-
-        if (e.nativeEvent.touches.length === 1) {
-          const now = Date.now();
-          if (now - lastTap.current < DOUBLE_TAP_MS) {
-            lastTap.current = 0;
-            if (cur.current.scale > 1.05) animateTo(1);
-            else animateTo(DOUBLE_TAP_ZOOM);
-          } else {
-            lastTap.current = now;
-          }
-        }
-      },
-
-      onPanResponderMove: (e, g) => {
-        const touches = e.nativeEvent.touches;
-        const size = box.current;
-
-        if (touches.length === 2) {
-          const d = touchDistance(touches);
-          if (!pinch.current.active) {
-            pinch.current = { active: true, dist: d, scale: cur.current.scale };
-            return;
-          }
-          const next = clamp((pinch.current.scale * d) / pinch.current.dist, 1, MAX_ZOOM);
-          cur.current.scale = next;
-          cur.current.x = limit(cur.current.x, size.width, next);
-          cur.current.y = limit(cur.current.y, size.height, next);
-          scale.setValue(next);
-          tx.setValue(cur.current.x);
-          ty.setValue(cur.current.y);
-          return;
-        }
-
-        if (touches.length === 1) {
-          // Вдигането на втория пръст не бива да мести снимката рязко —
-          // затова наместваме основата спрямо натрупаното dx/dy.
-          if (pinch.current.active) {
-            pinch.current.active = false;
-            pan.current = { x: cur.current.x - g.dx, y: cur.current.y - g.dy };
-          }
-          if (cur.current.scale <= 1.01) return;
-          cur.current.x = limit(pan.current.x + g.dx, size.width, cur.current.scale);
-          cur.current.y = limit(pan.current.y + g.dy, size.height, cur.current.scale);
-          tx.setValue(cur.current.x);
-          ty.setValue(cur.current.y);
-        }
-      },
-
-      onPanResponderRelease: () => {
-        pinch.current.active = false;
-        pan.current = { x: cur.current.x, y: cur.current.y };
-        if (cur.current.scale <= 1.02) animateTo(1);
-      },
-      onPanResponderTerminate: () => {
-        pinch.current.active = false;
-        pan.current = { x: cur.current.x, y: cur.current.y };
-      },
-      onPanResponderTerminationRequest: () => false,
-    })
-  ).current;
-
-  return (
-    <View
-      style={styles.previewImageWrap}
-      onLayout={(e) => { box.current = e.nativeEvent.layout; }}
-      {...responder.panHandlers}
-    >
-      <Animated.Image
-        source={{ uri }}
-        resizeMode="contain"
-        style={[
-          styles.previewImage,
-          { transform: [{ translateX: tx }, { translateY: ty }, { scale }] },
-        ]}
-      />
-    </View>
-  );
-}
 
 function isImage(name = "") {
   return IMAGE_REGEX.test(name.trim());
@@ -488,8 +351,6 @@ const styles = StyleSheet.create({
   previewName: { ...type.body, color: "#fff", flex: 1 },
   previewClose: { paddingVertical: space.sm, paddingHorizontal: space.md },
   previewCloseText: { ...type.body, color: "#fff", fontWeight: "bold", fontFamily: "GolosText_700Bold" },
-  previewImageWrap: { flex: 1, width: "100%", overflow: "hidden" },
-  previewImage: { flex: 1, width: "100%" },
   previewHint: {
     position: "absolute", left: 0, right: 0, bottom: space.xl,
     textAlign: "center", fontSize: 13, lineHeight: 18,

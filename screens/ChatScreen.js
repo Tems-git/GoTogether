@@ -2,17 +2,31 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback,
   FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
-  Linking, Modal,
+  Linking, Modal, Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageSquare } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../lib/supabase";
+import ZoomableImage from "../components/ZoomableImage";
 import { colors, space, radius, type } from "../theme/tokens";
 
 // Цветът на аватара се избира по user_id, а не по мястото в списъка. Така
 // един и същи човек е с един и същи цвят при всяко отваряне, на всяко
 // устройство и при всички участници — иначе цветовете щяха да скачат при
 // зареждане на по-стари съобщения.
+// Колко дълго важи връзката към снимка. По-дълго от документите, защото в чата
+// се скролва напред-назад и не искаме връзките да умират под пръстите.
+const PHOTO_URL_SECONDS = 3600;
+
+// Качеството при качване. Пълна снимка от телефон е 3-5 MB; в чат това е
+// разхищение на място и на нечий мобилен интернет. Половин качество се вижда
+// еднакво на екран.
+const PHOTO_QUALITY = 0.5;
+
+// Предпазител срещу нещо огромно, което да изяде мястото на всички.
+const PHOTO_MAX_MB = 8;
+
 const AVATAR_COLORS = [
   "#0A6B57", "#B4531F", "#3D5A98", "#7A3E9D",
   "#177A6B", "#9B2C46", "#4C6B1A", "#2B5F7A",
@@ -132,6 +146,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const [editingMsg, setEditingMsg] = useState(null);
   const [editText, setEditText] = useState("");
   const [showJump, setShowJump] = useState(false);
+  // Пътят на снимка → временна връзка към нея. Пази се, за да не издаваме нова
+  // връзка при всяко превъртане на списъка.
+  const [photoUrls, setPhotoUrls] = useState({});
+  const [sendingPhoto, setSendingPhoto] = useState(false);
+  // Снимката, отворена на цял екран.
+  const [photoView, setPhotoView] = useState(null);
   const flatRef = useRef(null);
   const editInputRef = useRef(null);
   // Дали в момента сме в дъното на списъка. Държим го в ref, а не в state,
@@ -231,6 +251,112 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     }
   }, [editingMsg]);
 
+  // Временните връзки се издават на групи, за всички нови снимки наведнъж.
+  useEffect(() => {
+    const missing = messages
+      .map((m) => m.image_path)
+      .filter((p) => p && !photoUrls[p]);
+    if (missing.length === 0) return;
+
+    let alive = true;
+    supabase.storage
+      .from("documents")
+      .createSignedUrls([...new Set(missing)], PHOTO_URL_SECONDS)
+      .then(({ data }) => {
+        if (!alive || !data) return;
+        const next = {};
+        data.forEach((row) => {
+          if (row.signedUrl && row.path) next[row.path] = row.signedUrl;
+        });
+        if (Object.keys(next).length > 0) setPhotoUrls((prev) => ({ ...prev, ...next }));
+      });
+
+    return () => { alive = false; };
+  }, [messages]);
+
+  // Питаме откъде идва снимката, вместо да налагаме едното. На път по-често се
+  // снима на място, но понякога човек праща нещо отпреди малко.
+  function handlePhoto() {
+    if (sendingPhoto) return;
+    Alert.alert("Снимка", undefined, [
+      { text: "📷 Снимай", onPress: () => pickPhoto("camera") },
+      { text: "🖼 От галерията", onPress: () => pickPhoto("library") },
+      { text: "Отказ", style: "cancel" },
+    ]);
+  }
+
+  async function pickPhoto(source) {
+    try {
+      const permission = source === "camera"
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Няма достъп", "Без разрешение не мога да взема снимката.");
+        return;
+      }
+
+      const options = { quality: PHOTO_QUALITY, mediaTypes: ["images"] };
+      const result = source === "camera"
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
+      if (result.canceled) return;
+
+      await sendPhoto(result.assets[0]);
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    }
+  }
+
+  async function sendPhoto(asset) {
+    // Текстът от полето става подпис на снимката — едно съобщение, не две.
+    const caption = text.trim();
+    setSendingPhoto(true);
+    setText("");
+    try {
+      const response = await fetch(asset.uri);
+      const arrayBuffer = await response.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+
+      if (bytes.byteLength > PHOTO_MAX_MB * 1024 * 1024) {
+        Alert.alert("Снимката е твърде голяма", `Над ${PHOTO_MAX_MB} MB.`);
+        setText(caption);
+        return;
+      }
+
+      // Папката е пътуването — така важат същите правила за достъп, както при
+      // документите. Подпапката „chat" ги държи настрани от Документи.
+      const path = `${tripId}/chat/${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from("documents")
+        .upload(path, bytes, { contentType: "image/jpeg" });
+      if (uploadError) throw uploadError;
+
+      const { data: inserted, error } = await supabase
+        .from("messages")
+        .insert({
+          trip_id: tripId,
+          user_id: userId,
+          display_name: displayName,
+          text: caption,
+          image_path: path,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+
+      if (inserted?.id) {
+        supabase.functions
+          .invoke("send-chat-push", { body: { messageId: inserted.id } })
+          .catch(() => {});
+      }
+    } catch (e) {
+      setText(caption);
+      Alert.alert("Снимката не се изпрати", e.message);
+    } finally {
+      setSendingPhoto(false);
+    }
+  }
+
   async function handleSend() {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -291,6 +417,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         onPress: async () => {
           try {
             await supabase.from("messages").delete().eq("id", msg.id).eq("user_id", userId);
+            // Редът си отива, файлът остава да заема място — затова и него.
+            if (msg.image_path) {
+              await supabase.storage.from("documents").remove([msg.image_path]).catch(() => {});
+            }
             setMessages((prev) => prev.filter((m) => m.id !== msg.id));
           } catch (e) {
             Alert.alert("Грешка", e.message);
@@ -561,7 +691,28 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                           </TouchableOpacity>
                         </View>
                       ) : (
-                        renderMessageText(item, isMe)
+                        <>
+                          {item.image_path && (
+                            <TouchableOpacity
+                              activeOpacity={0.9}
+                              onPress={() => photoUrls[item.image_path] && setPhotoView(photoUrls[item.image_path])}
+                              onLongPress={() => handleLongPress(item)}
+                            >
+                              {photoUrls[item.image_path] ? (
+                                <Image
+                                  source={{ uri: photoUrls[item.image_path] }}
+                                  style={styles.msgImage}
+                                  resizeMode="cover"
+                                />
+                              ) : (
+                                <View style={[styles.msgImage, styles.msgImageLoading]}>
+                                  <ActivityIndicator color={colors.text400} />
+                                </View>
+                              )}
+                            </TouchableOpacity>
+                          )}
+                          {!!item.text && renderMessageText(item, isMe)}
+                        </>
                       )}
                       <View style={styles.timeLine}>
                         <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>
@@ -635,6 +786,13 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         </View>
       ) : (
         <View style={[styles.inputRow, { paddingBottom: insets.bottom + 10 }]}>
+          <TouchableOpacity
+            style={styles.photoBtn}
+            onPress={handlePhoto}
+            disabled={sendingPhoto}
+          >
+            <Text style={styles.photoIcon}>{sendingPhoto ? "…" : "📷"}</Text>
+          </TouchableOpacity>
           <TextInput
             style={styles.input}
             placeholder="Напиши съобщение..."
@@ -654,6 +812,15 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           </TouchableOpacity>
         </View>
       )}
+      <Modal visible={!!photoView} animationType="fade" onRequestClose={() => setPhotoView(null)}>
+        <View style={styles.photoFull}>
+          {photoView && <ZoomableImage uri={photoView} />}
+          <TouchableOpacity style={styles.photoClose} onPress={() => setPhotoView(null)}>
+            <Text style={styles.photoCloseText}>Затвори</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
       <Modal visible={!!readInfo} animationType="fade" transparent onRequestClose={() => setReadInfo(null)}>
         <TouchableWithoutFeedback onPress={() => setReadInfo(null)}>
           <View style={styles.readOverlay}>
@@ -752,6 +919,23 @@ const styles = StyleSheet.create({
   planCardBtnText: { fontSize: 13, lineHeight: 18, fontWeight: "700", color: colors.brand600 },
   planCardBtnTextMe: { color: colors.onBrand },
   msgText: { ...type.body, color: colors.text900 },
+  msgImage: {
+    width: 220, height: 220, borderRadius: radius.control,
+    marginBottom: space.xs, backgroundColor: colors.border,
+  },
+  msgImageLoading: { alignItems: "center", justifyContent: "center" },
+  photoBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: "center", justifyContent: "center", marginRight: space.xs,
+  },
+  photoIcon: { fontSize: 22 },
+  photoFull: { flex: 1, backgroundColor: "#000" },
+  photoClose: {
+    position: "absolute", top: 44, right: space.lg,
+    paddingVertical: space.sm, paddingHorizontal: space.lg,
+    borderRadius: radius.pill, backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  photoCloseText: { ...type.label, color: "#FFFFFF" },
   msgTextMe: { color: colors.onBrand },
   jumpBtn: {
     position: "absolute", right: space.lg,
