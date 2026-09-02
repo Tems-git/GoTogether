@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sparkles } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
+import { currentCoords } from "../lib/location";
 import DatePicker from "../components/DatePicker";
 import { colors, space, radius, type } from "../theme/tokens";
 
@@ -219,6 +220,8 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   const [nearbyPlace, setNearbyPlace] = useState("");
   // Свито по подразбиране — планът започва веднага под заглавието.
   const [nearbyOpen, setNearbyOpen] = useState(false);
+  // Намирането на позиция отнема миг — бутонът трябва да го показва.
+  const [locating, setLocating] = useState(false);
   // Идентификатор на "родословието" на плана — един и същ за първоначално
   // генерирания план и всички негови последващи корекции (refine), различен
   // за всеки чисто нов план (генериран от празна форма). Ползва се само за
@@ -388,22 +391,44 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   }
 
   // Двете части — какво и къде — са независими; всяка може да е празна.
+  // Търсене около назовано място. Тук картите се справят сами — името им
+  // казва къде да гледат.
   function openNearby(place) {
     const what = nearbyQuery.trim();
     const where = String(place || "").trim();
     if (!what && !where) return;
+    openMapsWeb([what, where].filter(Boolean).join(" "));
+  }
 
-    // Без място значи „около мен". На Android има адрес точно с това значение:
-    // geo: с координати 0,0 казва „нямам точка, използвай текущото място".
-    // Не иска разрешение от нас — картите питат за местоположение сами и почти
-    // винаги вече имат отговора. Ако телефонът не разбира такъв адрес, падаме
-    // назад към уеб търсенето.
-    if (!where && Platform.OS === "android") {
-      Linking.openURL(`geo:0,0?q=${encodeURIComponent(what)}`).catch(() => openMapsWeb(what));
+  // Търсене около телефона. Без координати картите избираха сами докъде да
+  // гледат и при широки думи като „забележителности" отваряха цял регион.
+  // С точка и мащаб резултатът е еднакъв за всяка дума.
+  async function openAroundMe() {
+    const what = nearbyQuery.trim();
+    if (!what || locating) return;
+
+    setLocating(true);
+    const coords = await currentCoords();
+    setLocating(false);
+
+    if (!coords) {
+      // Отказано разрешение, изключен GPS или стар билд без модула. Оставяме
+      // стария път — по-широко, но все пак работещо.
+      if (Platform.OS === "android") {
+        Linking.openURL(`geo:0,0?q=${encodeURIComponent(what)}`).catch(() => openMapsWeb(what));
+      } else {
+        openMapsWeb(what);
+      }
       return;
     }
 
-    openMapsWeb([what, where].filter(Boolean).join(" "));
+    // Форматът с /@широчина,дължина,мащаб е този, който самите карти правят при
+    // търсене. 13z е квартал-град — достатъчно широко за забележителност,
+    // достатъчно тясно да не отвори половин област.
+    const url =
+      `https://www.google.com/maps/search/${encodeURIComponent(what)}` +
+      `/@${coords.latitude},${coords.longitude},13z`;
+    Linking.openURL(url).catch(() => openMapsWeb(what));
   }
 
   // Местата идват от служебния ред на плана. Планове отпреди тази версия го
@@ -726,10 +751,11 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
                 ))}
                 <TouchableOpacity
                   style={[styles.nearbyChip, styles.nearbyChipMe]}
-                  onPress={() => openNearby(null)}
+                  onPress={openAroundMe}
+                  disabled={locating}
                 >
                   <Text style={[styles.nearbyChipText, styles.nearbyChipTextMe]}>
-                    📍 Около мен
+                    {locating ? "📍 Търся те…" : "📍 Около мен"}
                   </Text>
                 </TouchableOpacity>
                 <TextInput

@@ -16,6 +16,8 @@ import {
   configurePushHandler, registerForPush, unregisterPush,
   addPushTapListener, consumeInitialPush,
 } from "./lib/push";
+import { useIncomingShare, sharedTextOf } from "./lib/shareIntent";
+import ShareToTrip from "./components/ShareToTrip";
 import SignInScreen from "./screens/SignInScreen";
 import DashboardScreen from "./screens/DashboardScreen";
 import AIPlannerScreen from "./screens/AIPlannerScreen";
@@ -94,6 +96,21 @@ function AppContent() {
   // заредени — тогава изчакваме и отваряме, щом ги има.
   const [pendingChatTrip, setPendingChatTrip] = useState(null);
   const appState = useRef(AppState.currentState);
+
+  // Съдържание, споделено към GoTogether от друго приложение. Изборът се
+  // показва чак когато има и потребител, и заредени пътувания — ако някой
+  // сподели, преди да е влязъл, споделеното изчаква логването вместо да се
+  // загуби.
+  const { hasShareIntent, shareIntent, resetShareIntent } = useIncomingShare();
+  const sharedText = hasShareIntent ? sharedTextOf(shareIntent) : "";
+
+  function finishShare(trip) {
+    resetShareIntent();
+    if (trip) {
+      setActiveTrip(trip);
+      setScreen("chat");
+    }
+  }
 
   // Auto-update при cold start и при връщане от background.
   // Целта: тестерите не трябва да рестартират ръчно приложението, за да
@@ -200,6 +217,9 @@ function AppContent() {
     setScreen("signin");
   }
 
+  // Избира кой екран се показва. Изнесено от тялото на компонента само за да
+  // може прозорецът за споделяне да стои над всички екрани наведнъж.
+  function renderScreen() {
   if (!fontsLoaded || loading || tripLoading) {
     return (
       <View style={styles.loading}>
@@ -358,6 +378,20 @@ function AppContent() {
       )}
       <StatusBar style="light" />
     </View>
+  );
+  }
+
+  return (
+    <>
+      {renderScreen()}
+      <ShareToTrip
+        visible={!!sharedText && !!user && allTrips.length > 0}
+        text={sharedText}
+        trips={allTrips}
+        userId={user?.id}
+        onDone={finishShare}
+      />
+    </>
   );
 }
 

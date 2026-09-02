@@ -49,6 +49,18 @@
       ],
       "expo-web-browser",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "GoTogether ползва местоположението само когато натиснеш „Около мен“, за да покаже какво има около теб на картата."
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["text/*"]
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
