@@ -337,6 +337,11 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   };
   const currentPhoto = photoIndex != null ? photoList[photoIndex] : null;
 
+  function closePhoto() {
+    setPhotoZoomed(false);
+    setPhotoIndex(null);
+  }
+
   async function savePhotoFrom(msg) {
     const url = msg?.image_path ? photoUrls[msg.image_path] : null;
     if (!url || savingPhoto) return;
@@ -1150,7 +1155,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       <Modal
         visible={photoIndex != null}
         animationType="fade"
-        onRequestClose={() => setPhotoIndex(null)}
+        onRequestClose={closePhoto}
       >
         <View style={styles.photoFull}>
           <FlatList
@@ -1165,6 +1170,11 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
               length: windowWidth, offset: windowWidth * index, index,
             })}
             onMomentumScrollEnd={(e) => {
+              // Затварящ се прозорец не бива да се отваря сам. При изчезването
+              // си лентата се преразмерява и на iOS изстрелва още едно събитие
+              // за спряло движение; без този изход то пресмята „снимка 0" и я
+              // записва обратно, тоест прозорецът се отваря наново в същия миг.
+              if (photoIndex == null) return;
               const next = Math.round(e.nativeEvent.contentOffset.x / windowWidth);
               if (next !== photoIndex) {
                 setPhotoZoomed(false);
@@ -1176,7 +1186,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                 <ZoomableImage
                   uri={photoUrls[item.image_path]}
                   onZoomChange={setPhotoZoomed}
-                  onSingleTap={() => setPhotoIndex(null)}
+                  onSingleTap={closePhoto}
                 />
               </View>
             )}
@@ -1200,7 +1210,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           <View style={[styles.photoBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <TouchableOpacity
               style={styles.photoBarBtn}
-              onPress={() => setPhotoIndex(null)}
+              onPress={closePhoto}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
               <Text style={styles.photoCloseText}>✕ Затвори</Text>
