@@ -426,6 +426,27 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
 
   // Питаме откъде идва снимката, вместо да налагаме едното. На път по-често се
   // снима на място, но понякога човек праща нещо отпреди малко.
+  // iOS не позволява да се отвори системен екран, докато друг се затваря —
+  // камерата и избирачът просто не се появяват, без грешка. Затова изборът се
+  // запомня, менюто се затваря и чак после се пуска.
+  const pendingPick = useRef(null);
+
+  function runPendingPick() {
+    const source = pendingPick.current;
+    if (!source) return;
+    pendingPick.current = null;
+    pickPhoto(source);
+  }
+
+  function choosePick(source) {
+    pendingPick.current = source;
+    setPhotoMenu(false);
+    // onDismiss го вика на iOS веднага щом прозорецът наистина си отиде; на
+    // Android такова събитие няма, затова има и резервен път. Пазачът вътре
+    // гарантира, че се изпълнява само веднъж.
+    setTimeout(runPendingPick, 350);
+  }
+
   function handlePhoto() {
     if (sendingPhoto) return;
     // Всяко отваряне тръгва от обикновено качество. Високото е съзнателен
@@ -1123,20 +1144,26 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           </TouchableOpacity>
         </View>
       )}
-      <Modal visible={photoMenu} animationType="fade" transparent onRequestClose={() => setPhotoMenu(false)}>
+      <Modal
+        visible={photoMenu}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setPhotoMenu(false)}
+        onDismiss={runPendingPick}
+      >
         <TouchableWithoutFeedback onPress={() => setPhotoMenu(false)}>
           <View style={styles.readOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
               <View style={styles.actionSheet}>
                 <TouchableOpacity
                   style={styles.actionRow}
-                  onPress={() => { setPhotoMenu(false); pickPhoto("camera"); }}
+                  onPress={() => choosePick("camera")}
                 >
                   <Text style={styles.actionText}>📷 Снимай</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.actionRow}
-                  onPress={() => { setPhotoMenu(false); pickPhoto("library"); }}
+                  onPress={() => choosePick("library")}
                 >
                   <Text style={styles.actionText}>🖼 От галерията</Text>
                 </TouchableOpacity>
