@@ -178,6 +178,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const [photoZoomed, setPhotoZoomed] = useState(false);
   // Пътищата на вече записаните снимки.
   const [savedPhotos, setSavedPhotos] = useState([]);
+  // Търсенето е отворено само когато има какво да се търси.
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState("");
   const flatRef = useRef(null);
   const editInputRef = useRef(null);
   // Дали в момента сме в дъното на списъка. Държим го в ref, а не в state,
@@ -729,9 +732,18 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     );
   }
 
+  // Търси и в текста, и в името на изпращача — „какво писа Иван" е също толкова
+  // честo, колкото „къде беше линкът". Малки/главни букви не значат нищо.
+  const needle = query.trim().toLowerCase();
+  const visible = needle
+    ? messages.filter((m) =>
+        `${m.text || ""} ${m.display_name || ""}`.toLowerCase().includes(needle)
+      )
+    : messages;
+
   const grouped = [];
   let lastDate = null;
-  messages.forEach((msg) => {
+  visible.forEach((msg) => {
     const d = new Date(msg.created_at).toDateString();
     if (d !== lastDate) {
       grouped.push({ type: "date", date: msg.created_at, key: `date-${msg.created_at}` });
@@ -757,7 +769,37 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           </View>
           <Text style={styles.headerSub}>{tripName}</Text>
         </View>
+        <TouchableOpacity
+          style={styles.searchBtn}
+          onPress={() => {
+            // Затварянето изчиства търсенето — иначе човек се връща в чат, в
+            // който липсват съобщения, и не помни защо.
+            setSearching((open) => !open);
+            setQuery("");
+          }}
+        >
+          <Text style={styles.searchIcon}>{searching ? "✕" : "🔍"}</Text>
+        </TouchableOpacity>
       </View>
+
+      {searching && (
+        <View style={styles.searchRow}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Търси в чата"
+            placeholderTextColor={colors.text400}
+            value={query}
+            onChangeText={setQuery}
+            autoFocus
+            returnKeyType="search"
+          />
+          {!!needle && (
+            <Text style={styles.searchCount}>
+              {visible.length === 0 ? "няма" : `${visible.length}`}
+            </Text>
+          )}
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.center}>
@@ -775,7 +817,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           // Иначе четенето на стар разговор се прекъсваше от всяко пристигащо
           // съобщение — екранът просто отскачаше.
           onContentSizeChange={() => {
-            if (atBottom.current) flatRef.current?.scrollToEnd({ animated: false });
+            // При търсене списъкът се сменя изцяло; сваляне надолу тогава значи
+            // да гледаш последния резултат вместо първия.
+            if (atBottom.current && !needle) flatRef.current?.scrollToEnd({ animated: false });
           }}
           renderItem={({ item }) => {
             if (item.type === "date") {
@@ -862,8 +906,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           }}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.emptyEmoji}>💬</Text>
-              <Text style={styles.emptyText}>Няма съобщения още.{"\n"}Бъди първият!</Text>
+              <Text style={styles.emptyEmoji}>{needle ? "🔍" : "💬"}</Text>
+              <Text style={styles.emptyText}>
+                {needle
+                  ? `Нищо не намерих за „${query.trim()}".`
+                  : `Няма съобщения още.\nБъди първият!`}
+              </Text>
             </View>
           }
         />
@@ -1209,6 +1257,24 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", marginRight: space.xs,
   },
   photoIcon: { fontSize: 22 },
+  searchBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: "center", justifyContent: "center",
+  },
+  searchIcon: { fontSize: 20 },
+  searchRow: {
+    flexDirection: "row", alignItems: "center", gap: space.sm,
+    paddingHorizontal: space.lg, paddingBottom: space.md,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 0.5, borderBottomColor: colors.border,
+  },
+  searchInput: {
+    flex: 1, backgroundColor: colors.surface,
+    borderRadius: radius.control, borderWidth: 0.5, borderColor: colors.border,
+    paddingVertical: space.sm, paddingHorizontal: space.md,
+    fontSize: 15, color: colors.text900,
+  },
+  searchCount: { ...type.label, color: colors.text400, minWidth: 36, textAlign: "right" },
   photoIconBusy: { fontSize: 13, fontWeight: "700", color: colors.text600 },
   photoFull: { flex: 1, backgroundColor: "#000" },
   actionSheet: {
