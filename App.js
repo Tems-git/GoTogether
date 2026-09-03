@@ -14,11 +14,15 @@ import {
   GolosText_700Bold,
   GolosText_800ExtraBold,
 } from "@expo-google-fonts/golos-text";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "./lib/supabase";
 import {
   configurePushHandler, registerForPush, unregisterPush,
   addPushTapListener, consumeInitialPush,
 } from "./lib/push";
+// Последното отворено пътуване. Само id — самото пътуване се чете от базата.
+const LAST_TRIP_KEY = "gotogether.lastTrip";
+
 import { useIncomingShare, sharedTextOf } from "./lib/shareIntent";
 import ShareToTrip from "./components/ShareToTrip";
 import SignInScreen from "./screens/SignInScreen";
@@ -113,6 +117,14 @@ function AppContent() {
   // загуби.
   const { hasShareIntent, shareIntent, resetShareIntent } = useIncomingShare();
   const sharedText = hasShareIntent ? sharedTextOf(shareIntent) : "";
+
+  // Запомняме при всяка смяна, а не на всяко място, откъдето се сменя —
+  // превключвателят, споделянето, тапнатото известие и отварянето на план
+  // минават през едно и също състояние.
+  useEffect(() => {
+    if (!activeTrip?.id) return;
+    AsyncStorage.setItem(LAST_TRIP_KEY, activeTrip.id).catch(() => {});
+  }, [activeTrip?.id]);
 
   // Едно място решава какво значи „назад" от всеки екран. Връща true, ако
   // наистина е върнало — по това системният бутон разбира дали да излезе от
@@ -252,7 +264,8 @@ function AppContent() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) handleUser(session.user);
-      else { setUser(null); setActiveTrip(null); setAllTrips([]); }
+      else { setUser(null); setActiveTrip(null); setAllTrips([]);
+        AsyncStorage.removeItem(LAST_TRIP_KEY).catch(() => {}); }
     });
 
     return () => subscription.unsubscribe();
@@ -269,7 +282,18 @@ function AppContent() {
 
     const trips = (data || []).map((d) => d.trips).filter(Boolean);
     setAllTrips(trips);
-    if (trips.length > 0) setActiveTrip(trips[0]);
+
+    if (trips.length > 0) {
+      // Последното, което си гледал — а ако го няма (напуснато, изтрито, друг
+      // акаунт), последното, към което си се присъединил.
+      let remembered = null;
+      try {
+        remembered = await AsyncStorage.getItem(LAST_TRIP_KEY);
+      } catch {
+        // Липсващата памет не е повод да не се отвори нищо.
+      }
+      setActiveTrip(trips.find((t) => t.id === remembered) || trips[0]);
+    }
     setTripLoading(false);
     setScreen("dashboard");
 
@@ -393,6 +417,7 @@ function AppContent() {
           await unregisterPush(user?.id);
           supabase.auth.signOut();
           setUser(null); setActiveTrip(null); setAllTrips([]); setScreen("home");
+          AsyncStorage.removeItem(LAST_TRIP_KEY).catch(() => {});
         }}
         onAI={() => setScreen("ai")}
         onDocuments={() => setScreen("documents")}
