@@ -25,10 +25,6 @@ const PHOTO_URL_SECONDS = 3600;
 // Кои снимки вече са записани в галерията на ТОЗИ телефон. На телефона, защото
 // въпросът е „аз имам ли я", а не „изпратена ли е". Пази се ограничен брой —
 // списъкът няма причина да расте вечно.
-// ВРЕМЕННО: показва на екрана какво точно се случва при избор на снимка.
-// Махни го, щом причината се изясни — един ред е.
-const DEBUG_PICKER = true;
-
 const SAVED_PHOTOS_KEY = "gotogether.savedPhotos";
 const SAVED_PHOTOS_MAX = 500;
 
@@ -459,22 +455,13 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   }
 
   async function pickPhoto(source) {
-    // Всяка стъпка се записва, за да се види докъде стига и къде спира.
-    const steps = [`източник: ${source}`];
-    const report = () => { if (DEBUG_PICKER) Alert.alert("Диагностика", steps.join("\n")); };
-
     try {
-      steps.push(`модул: ${typeof ImagePicker}`);
-      steps.push(`галерия: ${typeof ImagePicker?.launchImageLibraryAsync}`);
-      steps.push(`камера: ${typeof ImagePicker?.launchCameraAsync}`);
-
       // Разрешение иска само камерата. Изборът от галерията минава през
-      // системния избирач — той показва снимките сам и връща само посоченото.
+      // системния избирач — той показва снимките сам и връща само посоченото,
+      // тоест приложението никога не вижда галерията.
       if (source === "camera") {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
-        steps.push(`разрешение: ${permission?.status} granted=${permission?.granted}`);
         if (!permission.granted) {
-          report();
           Alert.alert("Няма достъп", "Без разрешение за камерата не мога да снимам.");
           return;
         }
@@ -482,7 +469,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
 
       const preset = presetFor(photoQuality);
       const options = { quality: preset.pick, mediaTypes: ["images"] };
-      steps.push("пускам избирача…");
 
       const result = source === "camera"
         ? await ImagePicker.launchCameraAsync(options)
@@ -492,19 +478,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             selectionLimit: PHOTO_MAX_COUNT,
           });
 
-      steps.push(`върна: canceled=${result?.canceled} брой=${result?.assets?.length ?? 0}`);
-      if (result?.assets?.[0]) {
-        const a = result.assets[0];
-        steps.push(`първа: ${a.width}x${a.height} ${String(a.uri).slice(0, 40)}`);
-      }
-      report();
-
       if (result.canceled) return;
       await sendPhotos(result.assets || []);
     } catch (e) {
-      steps.push(`ГРЕШКА: ${e?.message || String(e)}`);
-      report();
-      if (!DEBUG_PICKER) Alert.alert("Грешка", e.message);
+      Alert.alert("Грешка", e.message);
     }
   }
 
