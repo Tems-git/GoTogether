@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, ScrollView,
-  Modal, TextInput, ActivityIndicator, Alert, FlatList,
+  Modal, TextInput, ActivityIndicator, Alert, FlatList, AppState,
 } from "react-native";import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CreditCard, Plus } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
@@ -112,6 +112,21 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [settleVisible, setSettleVisible] = useState(false);
   const [settling, setSettling] = useState(null);
+  // Брояч на събужданията. Стои в зависимостите на ефекта, който чете сумите —
+  // тоест връщането на преден план ги прочита наново. Живата връзка не
+  // преживява заспиването, а екран с пари не бива да зависи само от нея.
+  const [resumeTick, setResumeTick] = useState(0);
+
+  useEffect(() => {
+    let last = AppState.currentState;
+    const sub = AppState.addEventListener("change", (next) => {
+      if (last.match(/inactive|background/) && next === "active") {
+        setResumeTick((n) => n + 1);
+      }
+      last = next;
+    });
+    return () => sub.remove();
+  }, []);
 
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
@@ -225,7 +240,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [fetchAll, fetchRatesAndCurrencies, tripId, devMode]);
+  }, [fetchAll, fetchRatesAndCurrencies, tripId, devMode, resumeTick]);
 
   function openModal() {
     setSplitWith(members.map((m) => m.user_id));
