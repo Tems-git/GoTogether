@@ -1,8 +1,8 @@
-name: EAS Update
+﻿name: EAS Update
 on:
   push:
     branches:
-      - master
+      - main
     paths-ignore:
       - 'README.md'
       - '**.md'
