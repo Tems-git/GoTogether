@@ -115,6 +115,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [planCount, setPlanCount] = useState(0);
   const [expenses, setExpenses] = useState([]);
   const [expenseSplits, setExpenseSplits] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [rates, setRates] = useState(null);
 
   // Edit trip modal state (само за организатора).
@@ -381,8 +382,12 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         .from("expense_splits").select("user_id, share, expense_id, is_settled").in("expense_id", expenseIds);
       sData = data || [];
     }
+    const { data: pData } = await supabase
+      .from("settlements").select("from_key, to_key, amount_eur").eq("trip_id", trip.id);
+
     setExpenses(eData || []);
     setExpenseSplits(sData);
+    setPayments(pData || []);
   }, [trip?.id]);
 
   useEffect(() => {
@@ -397,6 +402,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         () => fetchExpensesData()
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "expense_splits" },
+        () => fetchExpensesData()
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "settlements", filter: `trip_id=eq.${trip.id}` },
         () => fetchExpensesData()
       )
       .subscribe();
@@ -430,8 +438,16 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         else if (owerKey === myKey) net -= eur;
       });
     });
+
+    // Плащанията гасят дълга — същото правило като в екрана с разходите.
+    payments.forEach((p) => {
+      const amt = Number(p.amount_eur) || 0;
+      if (p.from_key === myKey) net += amt;
+      else if (p.to_key === myKey) net -= amt;
+    });
+
     return net;
-  }, [expenses, expenseSplits, rates, user.id, members]);
+  }, [expenses, expenseSplits, payments, rates, user.id, members]);
 
   async function handleSaveName() {
     const name = newName.trim();
@@ -557,38 +573,44 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   // И двете посоки трябва да са изчистени, преди да позволим деблокиране —
   // иначе старите задължения "оживяват" автоматично в активните изчисления
   // на ExpensesScreen след повторно присъединяване.
+  // Дали този участник може да си тръгне, без да остави висящи сметки.
+  // Смята се по същото правило като баланса горе — дялове минус плащания, на
+  // ниво домакинство — иначе проверката би блокирала човек, чиито сметки вече
+  // са уредени с превод.
   async function checkOutstandingBalances(memberUserId) {
-    // Дългове, които ТОЙ дължи (split, в който той е участник, не платец, неуреден)
-    const { data: owesData } = await supabase
-      .from("expense_splits")
-      .select("share, expense_id")
-      .eq("user_id", memberUserId)
-      .eq("is_settled", false);
+    const householdOf = {};
+    members.forEach((m) => { if (m.household) householdOf[m.user_id] = m.household; });
+    const keyOf = (uid) => householdOf[uid] || uid;
+    const hisKey = keyOf(memberUserId);
 
-    // Разходи, които ТОЙ Е ПЛАТИЛ — после намираме неуредени splits на други хора по тях
-    const { data: paidExpenses } = await supabase
-      .from("expenses")
-      .select("id")
-      .eq("trip_id", trip.id)
-      .eq("paid_by", memberUserId);
+    let owesTotal = 0;
+    let owedToHimTotal = 0;
 
-    const paidExpenseIds = (paidExpenses || []).map((e) => e.id);
-    let owedToHimData = [];
-    if (paidExpenseIds.length > 0) {
-      const { data } = await supabase
-        .from("expense_splits")
-        .select("share, expense_id")
-        .in("expense_id", paidExpenseIds)
-        .neq("user_id", memberUserId)
-        .eq("is_settled", false);
-      owedToHimData = data || [];
-    }
+    expenses.forEach((exp) => {
+      const cur = exp.currency || "EUR";
+      const payerKey = keyOf(exp.paid_by);
+      expenseSplits.forEach((s) => {
+        if (s.expense_id !== exp.id || s.is_settled) return;
+        const owerKey = keyOf(s.user_id);
+        if (owerKey === payerKey) return;
+        const eur = toEUR(Number(s.share), cur, rates);
+        if (owerKey === hisKey) owesTotal += eur;
+        else if (payerKey === hisKey) owedToHimTotal += eur;
+      });
+    });
 
-    const owesTotal = (owesData || []).reduce((s, x) => s + Number(x.share), 0);
-    const owedToHimTotal = owedToHimData.reduce((s, x) => s + Number(x.share), 0);
+    payments.forEach((p) => {
+      const amt = Number(p.amount_eur) || 0;
+      if (p.from_key === hisKey) owesTotal -= amt;
+      else if (p.to_key === hisKey) owedToHimTotal -= amt;
+    });
+
+    owesTotal = Math.max(owesTotal, 0);
+    owedToHimTotal = Math.max(owedToHimTotal, 0);
+    const net = owedToHimTotal - owesTotal;
 
     return {
-      clear: owesTotal < 0.01 && owedToHimTotal < 0.01,
+      clear: Math.abs(net) < 0.01,
       owesTotal,
       owedToHimTotal,
     };

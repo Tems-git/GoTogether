@@ -37,7 +37,7 @@ function toEUR(amount, currency, rates) {
   return amount / rate;
 }
 
-function calcSettlements(allParticipants, expenses, splits, rates, keyOf = (uid) => uid) {
+function calcSettlements(allParticipants, expenses, splits, rates, keyOf = (uid) => uid, payments = []) {
   const expenseById = {};
   expenses.forEach((e) => { expenseById[e.id] = e; });
 
@@ -62,6 +62,14 @@ function calcSettlements(allParticipants, expenses, splits, rates, keyOf = (uid)
   Object.entries(balance).forEach(([uid, amt]) => {
     const key = keyOf(uid);
     grouped[key] = (grouped[key] || 0) + amt;
+  });
+
+  // Плащанията гасят дълга, вместо да пренаписват дяловете. Платецът излиза
+  // на плюс с изплатеното, получателят — на минус със същото.
+  payments.forEach((p) => {
+    const amt = Number(p.amount_eur) || 0;
+    grouped[p.from_key] = (grouped[p.from_key] || 0) + amt;
+    grouped[p.to_key] = (grouped[p.to_key] || 0) - amt;
   });
 
   const creditors = [], debtors = [];
@@ -96,6 +104,8 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   const insets = useSafeAreaInsets();
   const [expenses, setExpenses] = useState([]);
   const [splits, setSplits] = useState([]);
+  // Потвърдени преводи. Балансът е дялове минус тях.
+  const [payments, setPayments] = useState([]);
   const [members, setMembers] = useState(devMode ? DEV_MEMBERS : []);
   const [allNames, setAllNames] = useState({});
   const [loading, setLoading] = useState(!devMode);
@@ -159,6 +169,13 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       setAllNames(namesMap);
       setExpenses(eData || []);
       setSplits(sData);
+
+      const { data: pData } = await supabase
+        .from("settlements")
+        .select("*")
+        .eq("trip_id", tripId)
+        .order("created_at", { ascending: false });
+      setPayments(pData || []);
     } catch (e) {
       setMembers(DEV_MEMBERS);
     }
@@ -197,6 +214,9 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         () => fetchAll()
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "expense_splits" },
+        () => fetchAll()
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "settlements", filter: `trip_id=eq.${tripId}` },
         () => fetchAll()
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "trip_members", filter: `trip_id=eq.${tripId}` },
@@ -293,26 +313,17 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         text: "Да, потвърждавам!", onPress: async () => {
           setSettling(index);
           try {
-            // Преводът е между домакинства, значи и дяловете, които се
-            // уреждат, са на всички от групата — иначе плащането минава, а
-            // дългът на съпругата остава да виси.
-            const fromIds = groupMembers(settlement.from);
-            const toIds = groupMembers(settlement.to);
-            const relevantExpenseIds = expenses
-              .filter((e) => toIds.includes(e.paid_by))
-              .map((e) => e.id);
-            const splitsToSettle = splits.filter(
-              (s) => fromIds.includes(s.user_id) &&
-                relevantExpenseIds.includes(s.expense_id) &&
-                !s.is_settled
-            );
-            if (splitsToSettle.length > 0) {
-              await supabase
-                .from("expense_splits")
-                .update({ is_settled: true })
-                .in("expense_id", splitsToSettle.map((s) => s.expense_id))
-                .in("user_id", fromIds);
-            }
+            // Записваме плащането, а дяловете не се пипат. Дяловете казват
+            // кой какво дължи по разходите — това не се променя от факта, че
+            // някой е дал пари.
+            const { error } = await supabase.from("settlements").insert({
+              trip_id: tripId,
+              from_key: settlement.from,
+              to_key: settlement.to,
+              amount_eur: Number(settlement.amount.toFixed(2)),
+              confirmed_by: userId,
+            });
+            if (error) throw error;
             await fetchAll();
           } catch (e) {
             Alert.alert("Грешка", e.message);
@@ -322,6 +333,29 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         }
       },
     ]);
+  }
+
+  // Грешно потвърждение иначе е невъзвратимо от приложението. Маха го този,
+  // който го е направил, или организаторът — правилото е същото и в базата.
+  async function handleUndoPayment(p) {
+    Alert.alert(
+      "Отмени превода",
+      `${groupName(p.from_key)} → ${groupName(p.to_key)}, ${formatMoney(Number(p.amount_eur), "EUR")}`,
+      [
+        { text: "Не", style: "cancel" },
+        {
+          text: "Отмени", style: "destructive", onPress: async () => {
+            try {
+              const { error } = await supabase.from("settlements").delete().eq("id", p.id);
+              if (error) throw error;
+              await fetchAll();
+            } catch (e) {
+              Alert.alert("Не се отмени", e.message);
+            }
+          }
+        },
+      ]
+    );
   }
 
   async function handleSave() {
@@ -375,27 +409,27 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   // докато изравняването отдолу казва, че семейството ти дължи 10.
   const myKey = keyOf(userId);
 
-  // Едно минаване през неуредените дялове дава и двете посоки. Дял, при който
-  // платецът и дължащият са в едно домакинство, се прескача — той не е дълг.
-  const { iOweEUR, owedToMeEUR } = expenses.reduce(
-    (acc, exp) => {
-      const payerKey = keyOf(exp.paid_by);
-      splits.forEach((s) => {
-        if (s.expense_id !== exp.id || s.is_settled) return;
-        const owerKey = keyOf(s.user_id);
-        if (owerKey === payerKey) return;
-        const eur = toEUR(Number(s.share), exp.currency || "EUR", rates);
-        if (owerKey === myKey) acc.iOweEUR += eur;
-        else if (payerKey === myKey) acc.owedToMeEUR += eur;
-      });
-      return acc;
-    },
-    { iOweEUR: 0, owedToMeEUR: 0 }
-  );
-
-  // Едно число, което отговаря на въпроса „в крайна сметка какво". Същото,
-  // което показва таблото, и същото, което излиза в изравняването.
-  const myNetEUR = owedToMeEUR - iOweEUR;
+  // Едно число, което отговаря на въпроса „в крайна сметка какво". Смята се по
+  // същия път като изравняването — дялове минус плащания — за да не могат
+  // двете да си противоречат.
+  const myNetEUR = expenses.reduce((sum, exp) => {
+    const payerKey = keyOf(exp.paid_by);
+    let net = sum;
+    splits.forEach((s) => {
+      if (s.expense_id !== exp.id || s.is_settled) return;
+      const owerKey = keyOf(s.user_id);
+      if (owerKey === payerKey) return;
+      const eur = toEUR(Number(s.share), exp.currency || "EUR", rates);
+      if (payerKey === myKey) net += eur;
+      else if (owerKey === myKey) net -= eur;
+    });
+    return net;
+  }, 0) + payments.reduce((sum, p) => {
+    const amt = Number(p.amount_eur) || 0;
+    if (p.from_key === myKey) return sum + amt;
+    if (p.to_key === myKey) return sum - amt;
+    return sum;
+  }, 0);
   const iAmGrouped = groupMembers(myKey).length > 1;
 
   const spentByMember = Object.entries(allNames).map(([uid, name]) => ({
@@ -406,8 +440,8 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   const allParticipants = Object.keys(allNames).map((uid) => ({ user_id: uid }));
   const settlements = useMemo(
-    () => calcSettlements(allParticipants, expenses, splits, rates, keyOf),
-    [expenses, splits, rates, JSON.stringify(allParticipants), JSON.stringify(householdOf)]
+    () => calcSettlements(allParticipants, expenses, splits, rates, keyOf, payments),
+    [expenses, splits, payments, rates, JSON.stringify(allParticipants), JSON.stringify(householdOf)]
   );
 
   const catInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[4];
@@ -423,8 +457,11 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   }
 
   function isExpenseSettled(exp) {
-    // Делът на съжител не се брои: вътре в домакинството няма какво да се
-    // урежда, а иначе такъв разход би стоял вечно „неуреден".
+    // След преминаването към плащания „уреден разход" вече няма собствен
+    // смисъл — плащанията гасят общия баланс, а не конкретен разход. Затова:
+    // уреден е, когато цялото пътуване е изравнено, или когато старите записи
+    // казват, че е (данни отпреди тази промяна).
+    if (settlements.length === 0 && (expenses.length > 0 || payments.length > 0)) return true;
     const payerKey = keyOf(exp.paid_by);
     const nonPayerSplits = splits.filter(
       (s) => s.expense_id === exp.id && keyOf(s.user_id) !== payerKey
@@ -492,13 +529,6 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                 ? (iAmGrouped ? "дължат на вас" : "дължат ти")
                 : (iAmGrouped ? "дължите" : "дължиш")}
           </Text>
-          {/* Брутните числа не изчезват — само слизат едно ниво надолу, там
-              където са подробност, а не отговор. */}
-          {iOweEUR > 0.01 && owedToMeEUR > 0.01 && (
-            <Text style={styles.summaryDetail}>
-              {formatMoney(iOweEUR, "EUR")} навън · {formatMoney(owedToMeEUR, "EUR")} навътре
-            </Text>
-          )}
         </View>
       </View>
 
@@ -801,6 +831,27 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                 </View>
               );
             })}
+            {payments.length > 0 && (
+              <View style={styles.paymentsBlock}>
+                <Text style={styles.paymentsTitle}>Потвърдени преводи</Text>
+                {payments.map((p) => {
+                  const canUndo = p.confirmed_by === userId || isOwner;
+                  return (
+                    <View key={p.id} style={styles.paymentRow}>
+                      <Text style={styles.paymentText}>
+                        {groupName(p.from_key)} → {groupName(p.to_key)} · {formatMoney(Number(p.amount_eur), "EUR")}
+                      </Text>
+                      {canUndo && (
+                        <TouchableOpacity onPress={() => handleUndoPayment(p)}>
+                          <Text style={styles.paymentUndo}>отмени</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
             <TouchableOpacity style={[styles.btnSave, { marginTop: space.sm }]} onPress={() => setSettleVisible(false)}>
               <Text style={styles.btnSaveText}>Затвори</Text>
             </TouchableOpacity>
@@ -824,7 +875,14 @@ const styles = StyleSheet.create({
   summaryItem: { flex: 1, alignItems: "center" },
   summaryVal: { ...type.body, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.onBrand, fontVariant: ["tabular-nums"] },
   summaryLbl: { fontSize: 12, lineHeight: 16, color: colors.onBrandMuted, marginTop: space.xs },
-  summaryDetail: { fontSize: 11, lineHeight: 15, color: colors.onBrandMuted, marginTop: 2, opacity: 0.8 },
+  paymentsBlock: { marginTop: space.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: space.md },
+  paymentsTitle: { ...type.label, color: colors.text600, marginBottom: space.sm },
+  paymentRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingVertical: space.xs, gap: space.sm,
+  },
+  paymentText: { ...type.label, color: colors.text900, flex: 1 },
+  paymentUndo: { ...type.label, color: colors.owe600, fontWeight: "600" },
   divider: { width: 0.5, backgroundColor: "rgba(255,255,255,0.3)" },
   spentRow: { flexDirection: "row", marginBottom: space.lg },
   spentChip: {
