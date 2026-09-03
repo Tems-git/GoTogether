@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity, TouchableWithoutFeedback,
   FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
-  Linking, Modal, Image, useWindowDimensions,
+  Linking, Modal, Image, useWindowDimensions, AppState,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageSquare } from "lucide-react-native";
@@ -193,6 +193,23 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // на скрола, където state би бил стар.
   const atBottom = useRef(true);
 
+  // Брояч на събужданията. Стои в зависимостите на ефекта долу, тоест всяко
+  // връщане на преден план пресъздава каналите и препрочита съобщенията.
+  const [resumeTick, setResumeTick] = useState(0);
+
+  useEffect(() => {
+    let last = AppState.currentState;
+    const sub = AppState.addEventListener("change", (next) => {
+      // Само истинското връщане отвън. Кратките „inactive" при падащо меню или
+      // при звънене не бива да пресъздават връзката всеки път.
+      if (last.match(/inactive|background/) && next === "active") {
+        setResumeTick((n) => n + 1);
+      }
+      last = next;
+    });
+    return () => sub.remove();
+  }, []);
+
   const markAsRead = useCallback(async () => {
     await supabase.from("trip_members")
       .update({ chat_last_read: new Date().toISOString() })
@@ -269,7 +286,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       supabase.removeChannel(msgChannel);
       supabase.removeChannel(membersChannel);
     };
-  }, [tripId, userId, fetchMessages, fetchMemberReads, markAsRead]);
+  }, [tripId, userId, resumeTick, fetchMessages, fetchMemberReads, markAsRead]);
 
   // Тук стоеше ефект, който смъкваше списъка при всяко ново съобщение. В
   // обърнат списък новото влиза откъм дъното, тоест точно там, където гледаш,
