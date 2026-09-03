@@ -37,7 +37,7 @@ function toEUR(amount, currency, rates) {
   return amount / rate;
 }
 
-function calcSettlements(allParticipants, expenses, splits, rates) {
+function calcSettlements(allParticipants, expenses, splits, rates, keyOf = (uid) => uid) {
   const expenseById = {};
   expenses.forEach((e) => { expenseById[e.id] = e; });
 
@@ -53,8 +53,19 @@ function calcSettlements(allParticipants, expenses, splits, rates) {
       balance[s.user_id] = (balance[s.user_id] || 0) - shareEUR;
     });
   });
-  const creditors = [], debtors = [];
+
+  // Балансите на едно домакинство се събират, преди да се търсят преводи. Ако
+  // никой не е групиран, keyOf връща самия човек и това е тъждествено на
+  // старото поведение. Вътрешните дългове се самоунищожават тук: платилият е
+  // на плюс, съжителят му на минус, сборът е нула.
+  const grouped = {};
   Object.entries(balance).forEach(([uid, amt]) => {
+    const key = keyOf(uid);
+    grouped[key] = (grouped[key] || 0) + amt;
+  });
+
+  const creditors = [], debtors = [];
+  Object.entries(grouped).forEach(([uid, amt]) => {
     if (amt > 0.01) creditors.push({ uid, amt });
     else if (amt < -0.01) debtors.push({ uid, amt: -amt });
   });
@@ -112,7 +123,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
     if (devMode) return;
     try {
       const { data: mData } = await supabase
-        .from("trip_members").select("user_id, display_name, weight, role").eq("trip_id", tripId);
+        .from("trip_members").select("user_id, display_name, weight, role, household").eq("trip_id", tripId);
       const activeMembers = (mData && mData.length > 0) ? mData : DEV_MEMBERS;
 
       const { data: tripData } = await supabase
@@ -227,6 +238,28 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   const memberName = (uid) => allNames[uid] || "Непознат";
 
+  // Кой в кое домакинство е. Липсващо домакинство значи „сам за себе си", тоест
+  // ключът е самият човек — така целият код по-долу не прави разлика между
+  // групиран и негрупиран участник.
+  const householdOf = {};
+  members.forEach((m) => { if (m.household) householdOf[m.user_id] = m.household; });
+  const keyOf = (uid) => householdOf[uid] || uid;
+
+  // Кои хора влизат в едно домакинство. Бивши участници нямат домакинство,
+  // затова ключът им е самите те и групата е от един човек.
+  const groupMembers = (key) => {
+    const ids = members.filter((m) => keyOf(m.user_id) === key).map((m) => m.user_id);
+    return ids.length > 0 ? ids : [key];
+  };
+
+  // „Иван и Мария" вместо два отделни реда. Имената идват от allNames, тоест
+  // работят и за напуснали участници.
+  const groupName = (key) => {
+    const ids = groupMembers(key);
+    if (ids.length <= 1) return memberName(ids[0] || key);
+    return ids.map(memberName).join(" и ");
+  };
+
   const activeIds = new Set(members.map((m) => m.user_id));
   const isOwner = members.find((m) => m.user_id === userId)?.role === "owner";
 
@@ -251,8 +284,8 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   async function handleMarkSettled(settlement, index, asAdmin = false) {
     const msg = asAdmin
-      ? `Потвърди като организатор, че преводът ${formatMoney(settlement.amount, "EUR")} от ${memberName(settlement.from)} към ${memberName(settlement.to)} е уреден?`
-      : `Получи ли ${formatMoney(settlement.amount, "EUR")} от ${memberName(settlement.from)}?`;
+      ? `Потвърди като организатор, че преводът ${formatMoney(settlement.amount, "EUR")} от ${groupName(settlement.from)} към ${groupName(settlement.to)} е уреден?`
+      : `Получи ли ${formatMoney(settlement.amount, "EUR")} от ${groupName(settlement.from)}?`;
 
     Alert.alert("Потвърди", msg, [
       { text: "Не", style: "cancel" },
@@ -260,11 +293,16 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
         text: "Да, потвърждавам!", onPress: async () => {
           setSettling(index);
           try {
+            // Преводът е между домакинства, значи и дяловете, които се
+            // уреждат, са на всички от групата — иначе плащането минава, а
+            // дългът на съпругата остава да виси.
+            const fromIds = groupMembers(settlement.from);
+            const toIds = groupMembers(settlement.to);
             const relevantExpenseIds = expenses
-              .filter((e) => e.paid_by === settlement.to)
+              .filter((e) => toIds.includes(e.paid_by))
               .map((e) => e.id);
             const splitsToSettle = splits.filter(
-              (s) => s.user_id === settlement.from &&
+              (s) => fromIds.includes(s.user_id) &&
                 relevantExpenseIds.includes(s.expense_id) &&
                 !s.is_settled
             );
@@ -273,7 +311,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                 .from("expense_splits")
                 .update({ is_settled: true })
                 .in("expense_id", splitsToSettle.map((s) => s.expense_id))
-                .eq("user_id", settlement.from);
+                .in("user_id", fromIds);
             }
             await fetchAll();
           } catch (e) {
@@ -332,8 +370,12 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   // в смесени валути — сборуването на суровите числа би било безсмислено.
   const totalEUR = expenses.reduce((s, e) => s + toEUR(Number(e.amount), e.currency || "EUR", rates), 0);
 
+  // Дълг към някого от собственото домакинство не е дълг. Затова и двете суми
+  // горе сравняват домакинства, а не хора.
+  const myKey = keyOf(userId);
+
   const iOweEUR = expenses.reduce((sum, exp) => {
-    if (exp.paid_by === userId) return sum;
+    if (keyOf(exp.paid_by) === myKey) return sum;
     const mySplit = splits.find((s) => s.expense_id === exp.id && s.user_id === userId && !s.is_settled);
     if (!mySplit) return sum;
     return sum + toEUR(Number(mySplit.share), exp.currency || "EUR", rates);
@@ -341,7 +383,9 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   const owedToMeEUR = expenses.reduce((sum, exp) => {
     if (exp.paid_by !== userId) return sum;
-    const unsettled = splits.filter((s) => s.expense_id === exp.id && s.user_id !== userId && !s.is_settled);
+    const unsettled = splits.filter(
+      (s) => s.expense_id === exp.id && keyOf(s.user_id) !== myKey && !s.is_settled
+    );
     return sum + unsettled.reduce((s, x) => s + toEUR(Number(x.share), exp.currency || "EUR", rates), 0);
   }, 0);
 
@@ -353,8 +397,8 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
 
   const allParticipants = Object.keys(allNames).map((uid) => ({ user_id: uid }));
   const settlements = useMemo(
-    () => calcSettlements(allParticipants, expenses, splits, rates),
-    [expenses, splits, rates, JSON.stringify(allParticipants)]
+    () => calcSettlements(allParticipants, expenses, splits, rates, keyOf),
+    [expenses, splits, rates, JSON.stringify(allParticipants), JSON.stringify(householdOf)]
   );
 
   const catInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[4];
@@ -370,8 +414,13 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   }
 
   function isExpenseSettled(exp) {
-    const nonPayerSplits = splits.filter((s) => s.expense_id === exp.id && s.user_id !== exp.paid_by);
-    if (nonPayerSplits.length === 0) return false;
+    // Делът на съжител не се брои: вътре в домакинството няма какво да се
+    // урежда, а иначе такъв разход би стоял вечно „неуреден".
+    const payerKey = keyOf(exp.paid_by);
+    const nonPayerSplits = splits.filter(
+      (s) => s.expense_id === exp.id && keyOf(s.user_id) !== payerKey
+    );
+    if (nonPayerSplits.length === 0) return true;
     return nonPayerSplits.every((s) => s.is_settled);
   }
 
@@ -669,9 +718,11 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
               <Text style={styles.settleRatesNote}>Курсове от {ratesDate} (ECB)</Text>
             )}
             {settlements.map((s, i) => {
-              const iAmReceiver = s.to === userId;
-              const iAmSender = s.from === userId;
-              const receiverLeft = !activeIds.has(s.to);
+              // Всеки от домакинството може да потвърди получаването —
+              // парите така или иначе влизат в общия джоб.
+              const iAmReceiver = s.to === myKey;
+              const iAmSender = s.from === myKey;
+              const receiverLeft = !groupMembers(s.to).some((id) => activeIds.has(id));
               // Организаторът може да потвърди когато получателят е напуснал
               // — включително когато самият организатор е изпращачът
               const iAmAdminForThis = isOwner && receiverLeft && !iAmReceiver;
@@ -680,10 +731,10 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
               return (
                 <View key={i} style={styles.settleRow}>
                   <View style={styles.settleTop}>
-                    <Text style={[styles.settleFrom, { color: memberColor(s.from) }]}>{memberName(s.from)}</Text>
+                    <Text style={[styles.settleFrom, { color: memberColor(s.from) }]}>{groupName(s.from)}</Text>
                     <Text style={styles.settleArrow}>→</Text>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.settleTo, { color: memberColor(s.to) }]}>{memberName(s.to)}</Text>
+                      <Text style={[styles.settleTo, { color: memberColor(s.to) }]}>{groupName(s.to)}</Text>
                       {receiverLeft && <Text style={styles.settleLeftLabel}>напуснал</Text>}
                     </View>
                     <View style={styles.settleAmtCol}>
@@ -715,7 +766,7 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
                     </TouchableOpacity>
                   ) : iAmSender ? (
                     <View style={styles.settlePending}>
-                      <Text style={styles.settlePendingText}>⏳ Изпрати {formatMoney(s.amount, "EUR")} на {memberName(s.to)}</Text>
+                      <Text style={styles.settlePendingText}>⏳ Изпрати {formatMoney(s.amount, "EUR")} на {groupName(s.to)}</Text>
                     </View>
                   ) : (
                     <View style={styles.settlePending}>

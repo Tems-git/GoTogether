@@ -75,6 +75,8 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [copied, setCopied] = useState(false);
   const [tripPickerVisible, setTripPickerVisible] = useState(false);
   const [membersModalVisible, setMembersModalVisible] = useState(false);
+  // Кой участник в момента избира с кого е в едно домакинство.
+  const [householdFor, setHouseholdFor] = useState(null);
   const [members, setMembers] = useState([]);
   const [removedMembers, setRemovedMembers] = useState([]);
   const [displayName, setDisplayName] = useState("");
@@ -131,7 +133,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     if (!trip?.id) return;
     const { data } = await supabase
       .from("trip_members")
-      .select("user_id, display_name, role, weight, children, joined_at")
+      .select("user_id, display_name, role, weight, children, household, joined_at")
       .eq("trip_id", trip.id)
       .order("joined_at", { ascending: true });
 
@@ -447,6 +449,24 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   // нито един ред. Затова искаме обновените редове обратно и ако са нула,
   // третираме го като отказ; иначе екранът показва стойност, която базата не
   // пази, и тя се връща обратно при следващо отваряне.
+  // Домакинството се обозначава с user_id на един от членовете му — котвата.
+  // Така групата се образува без да се генерира случаен номер на телефона, а
+  // ключът е стабилен, докато този човек е в пътуването.
+  async function joinHousehold(memberId, targetId) {
+    const target = members.find((m) => m.user_id === targetId);
+    const key = target?.household || targetId;
+    // Ако човекът, към когото се присъединяваме, още няма домакинство, той
+    // става котвата — тоест записваме и него.
+    if (!target?.household) await updateMemberCounts(targetId, { household: key });
+    await updateMemberCounts(memberId, { household: key });
+    setHouseholdFor(null);
+  }
+
+  async function leaveHousehold(memberId) {
+    await updateMemberCounts(memberId, { household: null });
+    setHouseholdFor(null);
+  }
+
   async function updateMemberCounts(memberId, patch) {
     try {
       const { data, error } = await supabase.from("trip_members")
@@ -1040,6 +1060,59 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                   {!canEditCounts && (
                     <Text style={styles.counterLocked}>Само {m.display_name} или организаторът може да променя тези числа</Text>
                   )}
+
+                  {/* Домакинство: няколко участници, които не си дължат
+                      помежду си. Показва се само когато има с кого — при един
+                      участник редът е безсмислен. */}
+                  {members.length > 1 && (() => {
+                    const mates = members.filter(
+                      (o) => o.user_id !== m.user_id && m.household && o.household === m.household
+                    );
+                    const picking = householdFor === m.user_id;
+                    return (
+                      <View style={styles.householdBlock}>
+                        <TouchableOpacity
+                          style={styles.householdRow}
+                          onPress={() => isOwner && setHouseholdFor(picking ? null : m.user_id)}
+                          disabled={!isOwner}
+                        >
+                          <Text style={styles.householdLabel}>🏠 Домакинство</Text>
+                          <Text style={styles.householdValue}>
+                            {mates.length > 0
+                              ? `с ${mates.map((o) => o.display_name).join(", ")}`
+                              : "самостоятелно"}
+                          </Text>
+                          {isOwner && <Text style={styles.householdChevron}>{picking ? "▴" : "▾"}</Text>}
+                        </TouchableOpacity>
+
+                        {picking && (
+                          <View style={styles.householdPicker}>
+                            {members
+                              .filter((o) => o.user_id !== m.user_id)
+                              .map((o) => {
+                                const together = m.household && o.household === m.household;
+                                return (
+                                  <TouchableOpacity
+                                    key={o.user_id}
+                                    style={styles.householdOption}
+                                    onPress={() => together ? leaveHousehold(m.user_id) : joinHousehold(m.user_id, o.user_id)}
+                                  >
+                                    <Text style={[styles.householdOptionText, together && styles.householdOptionOn]}>
+                                      {together ? "✓ " : ""}{o.display_name}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            {mates.length > 0 && (
+                              <TouchableOpacity style={styles.householdOption} onPress={() => leaveHousehold(m.user_id)}>
+                                <Text style={styles.householdLeave}>Отдели от домакинството</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })()}
                 </View>
               );
             })}
@@ -1069,6 +1142,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
             )}
 
             <Text style={styles.weightHint}>💡 Възрастни + деца дават общия брой, по който се делят разходите</Text>
+            <Text style={styles.weightHint}>🏠 Участници в едно домакинство не си дължат помежду си и излизат като един ред при изравняването. Делът им не се променя.</Text>
             <TouchableOpacity style={styles.modalClose} onPress={() => setMembersModalVisible(false)}>
               <Text style={styles.modalCloseText}>Готово</Text>
             </TouchableOpacity>
@@ -1377,6 +1451,22 @@ const styles = StyleSheet.create({
   memberYou: { fontSize: 12, lineHeight: 16, color: colors.brand600, backgroundColor: colors.brand50, paddingHorizontal: space.sm, paddingVertical: space.xs, borderRadius: radius.control },
   memberOwner: { fontSize: 12, lineHeight: 16, color: colors.text600, backgroundColor: colors.bg, paddingHorizontal: space.sm, paddingVertical: space.xs, borderRadius: radius.control },
   weightControl: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  householdBlock: { marginTop: space.sm },
+  householdRow: {
+    flexDirection: "row", alignItems: "center", gap: space.sm,
+    paddingVertical: space.xs,
+  },
+  householdLabel: { ...type.label, color: colors.text600 },
+  householdValue: { ...type.label, color: colors.text900, flex: 1, fontWeight: "600" },
+  householdChevron: { ...type.label, color: colors.text400 },
+  householdPicker: {
+    backgroundColor: colors.bg, borderRadius: radius.control,
+    paddingVertical: space.xs, marginTop: space.xs,
+  },
+  householdOption: { paddingVertical: space.sm, paddingHorizontal: space.md },
+  householdOptionText: { ...type.body, color: colors.text900 },
+  householdOptionOn: { color: colors.brand600, fontWeight: "700" },
+  householdLeave: { ...type.body, color: colors.owe600 },
   weightBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.border, alignItems: "center", justifyContent: "center" },
   weightBtnText: { fontSize: 18, fontWeight: "bold", color: colors.brand600, lineHeight: 22 },
   weightBtnTextOff: { color: colors.text400 },
