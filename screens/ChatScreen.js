@@ -11,7 +11,7 @@ import { supabase } from "../lib/supabase";
 import ZoomableImage from "../components/ZoomableImage";
 import { saveToGallery, canSaveToGallery } from "../lib/gallery";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { shrinkPhoto, presetFor, PHOTO_PRESETS } from "../lib/image";
+import { shrinkPhoto, makeThumb, presetFor, PHOTO_PRESETS } from "../lib/image";
 import { colors, space, radius, type } from "../theme/tokens";
 
 // Цветът на аватара се избира по user_id, а не по мястото в списъка. Така
@@ -188,12 +188,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const jumping = useRef(false);
   const flatRef = useRef(null);
   const editInputRef = useRef(null);
-  // Дали в момента сме в дъното на списъка. Държим го в ref, а не в state,
-  // защото се чете вътре в onContentSizeChange, където state би бил стар.
+  // Дали гледаме дъното на списъка. Ref, а не state — чете се от обработчика
+  // на скрола, където state би бил стар.
   const atBottom = useRef(true);
-  // Докато е вдигнат, списъкът се държи долу безусловно. Смъква се при първото
-  // докосване от човека или след като редовете спрат да се преизмерват.
-  const settling = useRef(true);
 
   const markAsRead = useCallback(async () => {
     await supabase.from("trip_members")
@@ -229,11 +226,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       .eq("user_id", userId)
       .maybeSingle()
       .then(({ data }) => setDisplayName(data?.display_name || "Непознат"));
-
-    // Нагласянето трае, докато редовете се измерват — при снимки това става на
-    // няколко стъпки. След това списъкът слуша човека.
-    settling.current = true;
-    const settleTimer = setTimeout(() => { settling.current = false; }, 1500);
 
     fetchMessages();
     fetchMemberReads();
@@ -275,18 +267,13 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     return () => {
       supabase.removeChannel(msgChannel);
       supabase.removeChannel(membersChannel);
-      clearTimeout(settleTimer);
     };
   }, [tripId, userId, fetchMessages, fetchMemberReads, markAsRead]);
 
-  useEffect(() => {
-    // Същото условие като при onContentSizeChange: смъкваме списъка само ако
-    // човекът вече е долу. Този ефект беше пропуснат при предишната поправка и
-    // продължаваше да дърпа екрана надолу при всяко ново съобщение.
-    if (messages.length > 0 && (settling.current || atBottom.current)) {
-      setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 100);
-    }
-  }, [messages]);
+  // Тук стоеше ефект, който смъкваше списъка при всяко ново съобщение. В
+  // обърнат списък новото влиза откъм дъното, тоест точно там, където гледаш,
+  // ако си долу — и не мърда екрана, ако четеш нещо по-нагоре. Смъкване не
+  // трябва.
 
   useEffect(() => {
     if (editingMsg) {
@@ -318,8 +305,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
 
   // Временните връзки се издават на групи, за всички нови снимки наведнъж.
   useEffect(() => {
+    // И двата пътя: умаленото за списъка, голямото за цял екран и за записване.
     const missing = messages
-      .map((m) => m.image_path)
+      .flatMap((m) => [m.thumb_path, m.image_path])
       .filter((p) => p && !photoUrls[p]);
     if (missing.length === 0) return;
 
@@ -508,6 +496,19 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       throw new Error(`Снимка над ${PHOTO_MAX_MB} MB.`);
     }
 
+    // Умаленото копие се прави от оригинала, не от вече смалената — едно
+    // компресиране вместо две.
+    let thumbBytes = null;
+    try {
+      const thumbUri = await makeThumb(asset.uri);
+      if (thumbUri) {
+        const tRes = await fetch(thumbUri);
+        thumbBytes = new Uint8Array(await tRes.arrayBuffer());
+      }
+    } catch {
+      // Без умалено копие чатът показва голямата снимка, както преди.
+    }
+
     // Папката е пътуването — така важат същите правила за достъп, както при
     // документите. Подпапката „chat" ги държи настрани от Документи.
     // Случайното окончание пази две снимки в една и съща милисекунда да не се
@@ -519,6 +520,17 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       .upload(path, bytes, { contentType: "image/jpeg" });
     if (uploadError) throw uploadError;
 
+    // Провалът тук не бива да проваля съобщението — по-добре без умалено копие,
+    // отколкото без снимка.
+    let thumbPath = null;
+    if (thumbBytes) {
+      const candidate = path.replace(/\.jpg$/, "_t.jpg");
+      const { error: thumbError } = await supabase.storage
+        .from("documents")
+        .upload(candidate, thumbBytes, { contentType: "image/jpeg" });
+      if (!thumbError) thumbPath = candidate;
+    }
+
     const { data: inserted, error } = await supabase
       .from("messages")
       .insert({
@@ -527,6 +539,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         display_name: displayName,
         text: caption,
         image_path: path,
+        thumb_path: thumbPath,
       })
       .select("id")
       .single();
@@ -610,6 +623,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           .invoke("send-chat-push", { body: { messageId: inserted.id } })
           .catch(() => {});
       }
+
+      // Едно изключение от „не мърдай екрана": ако си писал нагоре в разговора,
+      // собственото ти съобщение те връща долу при него.
+      if (!atBottom.current) jumpToLatest();
     } catch (e) {
       setText(trimmed);
     } finally {
@@ -645,7 +662,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             // принадлежи само на това съобщение и изтриването му би обезсилило
             // чужд документ.
             if (msg.image_path && !inDocuments.includes(msg.image_path)) {
-              await supabase.storage.from("documents").remove([msg.image_path]).catch(() => {});
+              const files = [msg.image_path, msg.thumb_path].filter(Boolean);
+              await supabase.storage.from("documents").remove(files).catch(() => {});
+            } else if (msg.thumb_path) {
+              // Голямата остава заради Документите, но умаленото копие няма кой
+              // да го ползва.
+              await supabase.storage.from("documents").remove([msg.thumb_path]).catch(() => {});
             }
             setMessages((prev) => prev.filter((m) => m.id !== msg.id));
           } catch (e) {
@@ -723,26 +745,19 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     return `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}`;
   }
 
-  // Две различни разстояния нарочно: списъкът се влачи надолу сам само ако
-  // сме почти долу, а бутонът се появява доста по-късно — иначе би мигал при
-  // всяко леко превъртане.
+  // В обърнат списък нулата е долу, при последното съобщение — разстоянието до
+  // дъното е самото отместване. Два различни прага нарочно: бутонът „надолу" се
+  // появява много по-късно, иначе би мигал при всяко леко превъртане.
   function handleScroll(e) {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    const fromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-    // По време на нагласянето собственото ни смъкване ражда междинни събития за
-    // скрол. Ако ги приемем за истина, решаваме, че човекът е някъде по средата,
-    // спираме да смъкваме и чатът остава заседнал там — точно това се случваше
-    // при отваряне на разговор със снимки.
-    if (!settling.current) {
-      atBottom.current = fromBottom < 120;
-    }
-    setShowJump(fromBottom > 400);
+    const y = e.nativeEvent.contentOffset.y;
+    atBottom.current = y < 120;
+    setShowJump(y > 400);
   }
 
   function jumpToLatest() {
     atBottom.current = true;
     setShowJump(false);
-    flatRef.current?.scrollToEnd({ animated: true });
+    flatRef.current?.scrollToOffset({ offset: 0, animated: true });
   }
 
   // Тапването не звъни само. Показва избор, защото най-често човек иска или
@@ -865,12 +880,18 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     ? groupedAll.filter((item) => item.type === "msg" && matchIds.has(item.id))
     : groupedAll;
 
+  // Списъкът е обърнат, значи и редът е обърнат: първо най-новото. Разделителите
+  // за дата се обръщат заедно със съобщенията си и пак излизат над тях.
+  const listData = [...grouped].reverse();
+
   // От резултат обратно в разговора. Затваряме търсенето, изчакваме списъкът да
   // се пресъздаде в пълния си вид и чак тогава скачаме — иначе индексът сочи
   // ред, който още не съществува.
   function jumpToMessage(msg) {
-    const index = groupedAll.findIndex((item) => item.key === msg.id);
-    if (index < 0) return;
+    const found = groupedAll.findIndex((item) => item.key === msg.id);
+    if (found < 0) return;
+    // Индексът в обърнатия списък се брои от другия край.
+    const index = groupedAll.length - 1 - found;
 
     jumping.current = true;
     setSearching(false);
@@ -950,13 +971,18 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       ) : (
         <FlatList
           ref={flatRef}
-          data={grouped}
+          // Обърнат списък: рисува се отдолу нагоре и в покой стои на последното
+          // съобщение. Оттук идва отварянето в дъното — без смъкване, без
+          // изчакване, без надпревара с рисуването.
+          inverted
+          data={listData}
           keyExtractor={(item) => item.key}
           contentContainerStyle={styles.list}
           onScroll={handleScroll}
           scrollEventThrottle={64}
-          // Докосването на списъка значи, че човекът поема управлението.
-          onScrollBeginDrag={() => { settling.current = false; }}
+          // На Android изрязването на невидимите редове в обърнат списък оставя
+          // празни и черни правоъгълници при бързо превъртане.
+          removeClippedSubviews={false}
           // Редовете са различни по височина, затова точният скок понякога не
           // успява от раз. Тогава отиваме приблизително и опитваме пак — вторият
           // път списъкът вече е измерил дотам.
@@ -970,16 +996,6 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                 index: info.index, animated: false, viewPosition: 0.5,
               });
             }, 80);
-          }}
-          // Ново съобщение сваля списъка надолу само ако човекът вече е долу.
-          // Иначе четенето на стар разговор се прекъсваше от всяко пристигащо
-          // съобщение — екранът просто отскачаше.
-          onContentSizeChange={() => {
-            // При търсене списъкът се сменя изцяло; сваляне надолу тогава значи
-            // да гледаш последния резултат вместо първия.
-            if ((settling.current || atBottom.current) && !needle && !jumping.current) {
-              flatRef.current?.scrollToEnd({ animated: false });
-            }
           }}
           renderItem={({ item }) => {
             if (item.type === "date") {
@@ -1032,9 +1048,11 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                               onPress={() => photoUrls[item.image_path] && openPhoto(item)}
                               onLongPress={() => handleLongPress(item)}
                             >
-                              {photoUrls[item.image_path] ? (
+                              {(photoUrls[item.thumb_path] || photoUrls[item.image_path]) ? (
                                 <Image
-                                  source={{ uri: photoUrls[item.image_path] }}
+                                  source={{
+                                    uri: photoUrls[item.thumb_path] || photoUrls[item.image_path],
+                                  }}
                                   style={styles.msgImage}
                                   resizeMode="cover"
                                 />
@@ -1433,7 +1451,8 @@ const styles = StyleSheet.create({
   headerTitle: { ...type.subhead, fontWeight: "bold", color: colors.text900, fontFamily: "GolosText_700Bold" },
   headerSub: { fontSize: 12, lineHeight: 16, color: colors.text600, marginTop: space.xs },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  list: { padding: space.lg, paddingBottom: space.sm },
+  // Обърнат списък: горното отстояние излиза долу и обратно.
+  list: { padding: space.lg, paddingTop: space.sm },
   dateSep: { alignItems: "center", marginVertical: space.md },
   dateText: {
     fontSize: 12, lineHeight: 16, color: colors.text600, backgroundColor: colors.border,
