@@ -191,6 +191,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // Дали в момента сме в дъното на списъка. Държим го в ref, а не в state,
   // защото се чете вътре в onContentSizeChange, където state би бил стар.
   const atBottom = useRef(true);
+  // Докато е вдигнат, списъкът се държи долу безусловно. Смъква се при първото
+  // докосване от човека или след като редовете спрат да се преизмерват.
+  const settling = useRef(true);
 
   const markAsRead = useCallback(async () => {
     await supabase.from("trip_members")
@@ -226,6 +229,11 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       .eq("user_id", userId)
       .maybeSingle()
       .then(({ data }) => setDisplayName(data?.display_name || "Непознат"));
+
+    // Нагласянето трае, докато редовете се измерват — при снимки това става на
+    // няколко стъпки. След това списъкът слуша човека.
+    settling.current = true;
+    const settleTimer = setTimeout(() => { settling.current = false; }, 1500);
 
     fetchMessages();
     fetchMemberReads();
@@ -267,6 +275,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     return () => {
       supabase.removeChannel(msgChannel);
       supabase.removeChannel(membersChannel);
+      clearTimeout(settleTimer);
     };
   }, [tripId, userId, fetchMessages, fetchMemberReads, markAsRead]);
 
@@ -274,7 +283,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     // Същото условие като при onContentSizeChange: смъкваме списъка само ако
     // човекът вече е долу. Този ефект беше пропуснат при предишната поправка и
     // продължаваше да дърпа екрана надолу при всяко ново съобщение.
-    if (messages.length > 0 && atBottom.current) {
+    if (messages.length > 0 && (settling.current || atBottom.current)) {
       setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }, [messages]);
@@ -720,7 +729,13 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   function handleScroll(e) {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     const fromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-    atBottom.current = fromBottom < 120;
+    // По време на нагласянето собственото ни смъкване ражда междинни събития за
+    // скрол. Ако ги приемем за истина, решаваме, че човекът е някъде по средата,
+    // спираме да смъкваме и чатът остава заседнал там — точно това се случваше
+    // при отваряне на разговор със снимки.
+    if (!settling.current) {
+      atBottom.current = fromBottom < 120;
+    }
     setShowJump(fromBottom > 400);
   }
 
@@ -940,6 +955,8 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           contentContainerStyle={styles.list}
           onScroll={handleScroll}
           scrollEventThrottle={64}
+          // Докосването на списъка значи, че човекът поема управлението.
+          onScrollBeginDrag={() => { settling.current = false; }}
           // Редовете са различни по височина, затова точният скок понякога не
           // успява от раз. Тогава отиваме приблизително и опитваме пак — вторият
           // път списъкът вече е измерил дотам.
@@ -960,7 +977,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           onContentSizeChange={() => {
             // При търсене списъкът се сменя изцяло; сваляне надолу тогава значи
             // да гледаш последния резултат вместо първия.
-            if (atBottom.current && !needle && !jumping.current) {
+            if ((settling.current || atBottom.current) && !needle && !jumping.current) {
               flatRef.current?.scrollToEnd({ animated: false });
             }
           }}
