@@ -1,5 +1,8 @@
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, Linking, AppState } from "react-native";
+import {
+  StyleSheet, Text, View, TouchableOpacity, TextInput, Linking, AppState,
+  BackHandler, PanResponder,
+} from "react-native";
 import { useState, useEffect, useRef } from "react";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Updates from "expo-updates";
@@ -12,6 +15,12 @@ import {
   GolosText_800ExtraBold,
 } from "@expo-google-fonts/golos-text";
 import { supabase } from "./lib/supabase";
+import {
+  configurePushHandler, registerForPush, unregisterPush,
+  addPushTapListener, consumeInitialPush,
+} from "./lib/push";
+import { useIncomingShare, sharedTextOf } from "./lib/shareIntent";
+import ShareToTrip from "./components/ShareToTrip";
 import SignInScreen from "./screens/SignInScreen";
 import DashboardScreen from "./screens/DashboardScreen";
 import AIPlannerScreen from "./screens/AIPlannerScreen";
@@ -19,6 +28,18 @@ import DocumentsScreen from "./screens/DocumentsScreen";
 import ExpensesScreen from "./screens/ExpensesScreen";
 import ChatScreen from "./screens/ChatScreen";
 import TripSetupScreen from "./screens/TripSetupScreen";
+
+// Поведението на известията се настройва веднъж, на ниво модул — преди React
+// изобщо да е монтирал нещо. Ако това стане вътре в компонент, първото
+// известие може да пристигне преди настройката.
+configurePushHandler();
+
+// Плъзгането назад се хваща само ако пръстът е тръгнал от този край на екрана.
+// По-широка зона би отнемала жестове на хоризонталните списъци вътре.
+const EDGE_WIDTH = 28;
+// Колко трябва да е изтеглено, за да се брои за връщане. По-късото е случайно
+// докосване при скролване.
+const BACK_DISTANCE = 70;
 
 // Разпознаваме код от gotogether://join/XXX или exp+gotogether://join/XXX
 function parseInviteCode(url) {
@@ -80,7 +101,87 @@ function AppContent() {
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [inviteInput, setInviteInput] = useState("");
   const [showInviteInput, setShowInviteInput] = useState(false);
+  // Пътуване, чийто чат трябва да се отвори заради тапнато известие. Държим го
+  // отделно, защото известието може да пристигне преди пътуванията да са
+  // заредени — тогава изчакваме и отваряме, щом ги има.
+  const [pendingChatTrip, setPendingChatTrip] = useState(null);
   const appState = useRef(AppState.currentState);
+
+  // Съдържание, споделено към GoTogether от друго приложение. Изборът се
+  // показва чак когато има и потребител, и заредени пътувания — ако някой
+  // сподели, преди да е влязъл, споделеното изчаква логването вместо да се
+  // загуби.
+  const { hasShareIntent, shareIntent, resetShareIntent } = useIncomingShare();
+  const sharedText = hasShareIntent ? sharedTextOf(shareIntent) : "";
+
+  // Едно място решава какво значи „назад" от всеки екран. Връща true, ако
+  // наистина е върнало — по това системният бутон разбира дали да излезе от
+  // приложението, или да остави нас да се справим.
+  function goBack() {
+    if (screen === "ai") {
+      setOpenPlanId(null);
+      setScreen(user ? "dashboard" : "home");
+      return true;
+    }
+    if (screen === "documents" || screen === "expenses" || screen === "chat" || screen === "newtrip") {
+      setScreen("dashboard");
+      return true;
+    }
+    if (screen === "signin") {
+      setScreen("home");
+      return true;
+    }
+    // Табло и начален екран са дъното — оттам „назад" значи изход от
+    // приложението и това е работа на системата, не наша.
+    return false;
+  }
+
+  // Хардуерният бутон на Android. Досега не беше вързан за нищо, тоест
+  // затваряше приложението дори от чата.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", goBack);
+    return () => sub.remove();
+  }, [screen, user]);
+
+  // Жестът се създава веднъж и би запомнил първата версия на goBack.
+  // Референцията го държи актуален, без да пресъздаваме жеста при всеки екран.
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
+
+  // Къде е паднал пръстът. Не ползваме x0 от жеста: то се попълва при ПОЕМАНЕ
+  // на жеста, а ние решаваме преди това. На Android излизаше вярно по случайност,
+  // на iOS е нула — тоест „тръгнал от ръба" беше винаги истина и връщаше назад
+  // при всяко плъзгане, включително от средата на екрана.
+  const touchStartX = useRef(9999);
+
+  // Плъзгане от левия ръб. Хваща се със capture, за да изпревари списъците
+  // вътре — но само при жест, тръгнал от самия ръб и явно хоризонтален.
+  const edgeBack = useRef(
+    PanResponder.create({
+      // Връща false — не поемаме нищо при допир, само запомняме откъде започва.
+      onStartShouldSetPanResponderCapture: (e) => {
+        touchStartX.current = e.nativeEvent.pageX;
+        return false;
+      },
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponderCapture: (_e, g) =>
+        touchStartX.current <= EDGE_WIDTH &&
+        g.dx > 16 &&
+        Math.abs(g.dx) > Math.abs(g.dy) * 2,
+      onPanResponderRelease: (_e, g) => {
+        if (g.dx > BACK_DISTANCE || (g.dx > 40 && g.vx > 0.4)) goBackRef.current();
+      },
+      onPanResponderTerminationRequest: () => false,
+    })
+  ).current;
+
+  function finishShare(trip) {
+    resetShareIntent();
+    if (trip) {
+      setActiveTrip(trip);
+      setScreen("chat");
+    }
+  }
 
   // Auto-update при cold start и при връщане от background.
   // Целта: тестерите не трябва да рестартират ръчно приложението, за да
@@ -116,6 +217,33 @@ function AppContent() {
     return () => sub.remove();
   }, []);
 
+  // Тапнато известие → чатът на съответното пътуване.
+  useEffect(() => {
+    let alive = true;
+
+    // Известие, което е стартирало приложението от нулата.
+    consumeInitialPush().then((data) => {
+      if (alive && data?.tripId) setPendingChatTrip(data.tripId);
+    });
+
+    // Известие, тапнато докато приложението върви или е в background.
+    const off = addPushTapListener((data) => {
+      if (data?.tripId) setPendingChatTrip(data.tripId);
+    });
+
+    return () => { alive = false; off(); };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingChatTrip || !user || allTrips.length === 0) return;
+    const trip = allTrips.find((t) => t.id === pendingChatTrip);
+    if (trip) {
+      setActiveTrip(trip);
+      setScreen("chat");
+    }
+    setPendingChatTrip(null);
+  }, [pendingChatTrip, user, allTrips]);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) handleUser(session.user);
@@ -144,6 +272,11 @@ function AppContent() {
     if (trips.length > 0) setActiveTrip(trips[0]);
     setTripLoading(false);
     setScreen("dashboard");
+
+    // Регистрацията за известия е нарочно последна и без await пред нея —
+    // ако разрешението бъде отказано или FCM не отговори, екранът вече е
+    // показан и нищо не се бави заради това.
+    registerForPush(u.id);
   }
 
   function handleInviteSubmit() {
@@ -155,6 +288,9 @@ function AppContent() {
     setScreen("signin");
   }
 
+  // Избира кой екран се показва. Изнесено от тялото на компонента само за да
+  // може прозорецът за споделяне да стои над всички екрани наведнъж.
+  function renderScreen() {
   if (!fontsLoaded || loading || tripLoading) {
     return (
       <View style={styles.loading}>
@@ -166,7 +302,7 @@ function AppContent() {
 
   if (screen === "ai") return (
     <AIPlannerScreen
-      onBack={() => { setOpenPlanId(null); setScreen(user ? "dashboard" : "home"); }}
+      onBack={goBack}
       trip={activeTrip}
       userId={user?.id}
       openPlanId={openPlanId}
@@ -176,7 +312,7 @@ function AppContent() {
   if (screen === "documents") {
     return (
       <DocumentsScreen
-        onBack={() => setScreen("dashboard")}
+        onBack={goBack}
         tripId={activeTrip?.id}
         userId={user?.id}
       />
@@ -186,7 +322,7 @@ function AppContent() {
   if (screen === "expenses") {
     return (
       <ExpensesScreen
-        onBack={() => setScreen("dashboard")}
+        onBack={goBack}
         tripId={activeTrip?.id}
         userId={user?.id}
         devMode={false}
@@ -197,7 +333,7 @@ function AppContent() {
   if (screen === "chat") {
     return (
       <ChatScreen
-        onBack={() => setScreen("dashboard")}
+        onBack={goBack}
         tripId={activeTrip?.id}
         userId={user?.id}
         tripName={activeTrip?.name}
@@ -220,7 +356,7 @@ function AppContent() {
       <TripSetupScreen
         user={user}
         pendingInviteCode={null}
-        onBack={() => setScreen("dashboard")}
+        onBack={goBack}
         onTripReady={(trip) => {
           setActiveTrip(trip);
           setAllTrips((prev) => [trip, ...prev.filter((t) => t.id !== trip.id)]);
@@ -250,7 +386,14 @@ function AppContent() {
         user={user}
         trip={activeTrip}
         allTrips={allTrips}
-        onSignOut={() => { supabase.auth.signOut(); setUser(null); setActiveTrip(null); setAllTrips([]); setScreen("home"); }}
+        onSignOut={async () => {
+          // Токенът се маха преди изхода, докато сесията още е валидна —
+          // иначе изтриването на реда се проваля тихо заради RLS и телефонът
+          // продължава да получава известия за чужд акаунт.
+          await unregisterPush(user?.id);
+          supabase.auth.signOut();
+          setUser(null); setActiveTrip(null); setAllTrips([]); setScreen("home");
+        }}
         onAI={() => setScreen("ai")}
         onDocuments={() => setScreen("documents")}
         onExpenses={() => setScreen("expenses")}
@@ -307,9 +450,26 @@ function AppContent() {
       <StatusBar style="light" />
     </View>
   );
+  }
+
+  return (
+    <>
+      <View style={styles.flexOne} {...edgeBack.panHandlers}>
+        {renderScreen()}
+      </View>
+      <ShareToTrip
+        visible={!!sharedText && !!user && allTrips.length > 0}
+        text={sharedText}
+        trips={allTrips}
+        userId={user?.id}
+        onDone={finishShare}
+      />
+    </>
+  );
 }
 
 const styles = StyleSheet.create({
+  flexOne: { flex: 1 },
   loading: { flex: 1, backgroundColor: "#1D9E75", alignItems: "center", justifyContent: "center" },
   loadingEmoji: { fontSize: 64 },
   loadingText: { fontSize: 24, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: "#fff", marginTop: 12 },

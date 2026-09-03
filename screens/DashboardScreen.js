@@ -81,6 +81,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  // Непрочетени по пътувания. Броячът на картата „Чат" показва само
+  // текущото пътуване — от него не личи, че някъде другаде има ново.
+  const [unreadByTrip, setUnreadByTrip] = useState({});
   const [unblocking, setUnblocking] = useState(null);
   const [deletingAccount, setDeletingAccount] = useState(false);
 
@@ -241,6 +244,53 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
     return () => supabase.removeChannel(channel);
   }, [trip?.id, user?.id]);
+
+  // Непрочетени във всички пътувания на човека. Нарочно с две заявки, а не с
+  // по една на пътуване: първо кога е чел всяко, после съобщенията след
+  // най-ранната от тези дати. Броенето става тук, защото всяко пътуване има
+  // своя дата на прочитане.
+  const fetchUnreadByTrip = useCallback(async () => {
+    if (!user?.id) return;
+
+    const { data: memberRows } = await supabase
+      .from("trip_members")
+      .select("trip_id, chat_last_read")
+      .eq("user_id", user.id);
+
+    const lastRead = {};
+    (memberRows || []).forEach((row) => {
+      lastRead[row.trip_id] = new Date(row.chat_last_read || 0).getTime();
+    });
+
+    const tripIds = Object.keys(lastRead);
+    if (tripIds.length === 0) {
+      setUnreadByTrip({});
+      return;
+    }
+
+    const earliest = new Date(Math.min(...Object.values(lastRead))).toISOString();
+
+    const { data: msgs } = await supabase
+      .from("messages")
+      .select("trip_id, created_at")
+      .in("trip_id", tripIds)
+      .neq("user_id", user.id)
+      .gt("created_at", earliest)
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    const counts = {};
+    (msgs || []).forEach((m) => {
+      if (new Date(m.created_at).getTime() > (lastRead[m.trip_id] || 0)) {
+        counts[m.trip_id] = (counts[m.trip_id] || 0) + 1;
+      }
+    });
+    setUnreadByTrip(counts);
+  }, [user?.id]);
+
+  // Dashboard-ът се разглобява при влизане в друг екран и се сглобява наново
+  // при връщане, така че това се преизчислява при всяко връщане от чата.
+  useEffect(() => { fetchUnreadByTrip(); }, [fetchUnreadByTrip, allTrips]);
 
   // Брой документи — за краткия контекст под картата "Документи".
   const fetchDocsCount = useCallback(async () => {
@@ -657,6 +707,12 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   // Кратък "жив" контекст под всяка карта на Dashboard-а — реални данни
   // вместо статичен подпис, така че потребителят вижда какво го чака преди
   // да е отворил екрана.
+  // Колко непрочетени има в ОСТАНАЛИТЕ пътувания — точно това, което иначе
+  // не личи по никакъв начин, докато си в едно пътуване.
+  const otherUnread = Object.entries(unreadByTrip)
+    .filter(([id]) => id !== trip?.id)
+    .reduce((sum, [, n]) => sum + n, 0);
+
   const chatSub = unreadCount > 0
     ? `${unreadCount} ${unreadCount === 1 ? "ново съобщение" : "нови съобщения"}`
     : "Няма нови съобщения";
@@ -671,7 +727,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   const cards = [
     { Icon: Sparkles, title: "Планирай с AI", sub: planCount > 0 ? "Виж/коригирай плана" : "Ново пътуване", onPress: onAI, color: colors.brand50, badge: planCount },
-    { Icon: MessageSquare, title: "Чат", sub: chatSub, onPress: () => { setUnreadCount(0); onChat(); }, color: "#E8F4FD", badge: unreadCount },
+    { Icon: MessageSquare, title: "Чат", sub: chatSub, onPress: () => { setUnreadCount(0); setUnreadByTrip((prev) => ({ ...prev, [trip?.id]: 0 })); onChat(); }, color: "#E8F4FD", badge: unreadCount },
     { Icon: FileText, title: "Документи", sub: docsSub, onPress: onDocuments, color: "#E6F1FB", badge: 0 },
     { Icon: CreditCard, title: "Разходи", sub: expensesSub, onPress: onExpenses, color: "#FAEEDA", badge: 0 },
   ];
@@ -840,6 +896,13 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
             <TouchableOpacity style={styles.switchBtn} onPress={() => setTripPickerVisible(true)}>
               <Text style={styles.switchBtnText}>🔄 Смени / добави пътуване</Text>
+              {otherUnread > 0 && (
+                <View style={styles.switchBtnBadge}>
+                  <Text style={styles.switchBtnBadgeText}>
+                    {otherUnread > 99 ? "99+" : otherUnread}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         )}
@@ -1137,6 +1200,13 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                         </Text>
                       )}
                     </View>
+                    {unreadByTrip[t.id] > 0 && (
+                      <View style={styles.tripOptionBadge}>
+                        <Text style={styles.tripOptionBadgeText}>
+                          {unreadByTrip[t.id] > 99 ? "99+" : unreadByTrip[t.id]}
+                        </Text>
+                      </View>
+                    )}
                     {t.id === trip?.id && <Text style={styles.tripOptionCheck}>✓</Text>}
                   </TouchableOpacity>
                 );
@@ -1219,7 +1289,13 @@ const styles = StyleSheet.create({
   membersLabel: { fontSize: 12, lineHeight: 16, color: colors.onBrandMuted, marginLeft: space.md },
   membersLabelRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginLeft: space.md },
   membersLabelInline: { fontSize: 12, lineHeight: 16, color: colors.onBrandMuted },
-  switchBtn: { marginTop: space.lg, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: radius.control, padding: space.md, alignItems: "center" },
+  switchBtn: { marginTop: space.lg, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: radius.control, padding: space.md, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space.sm },
+  switchBtnBadge: {
+    backgroundColor: colors.owe600, borderRadius: radius.pill,
+    minWidth: 20, height: 20, alignItems: "center", justifyContent: "center",
+    paddingHorizontal: space.xs,
+  },
+  switchBtnBadgeText: { color: colors.onBrand, fontSize: 11, fontWeight: "bold" },
   switchBtnText: { ...type.label, fontWeight: "600", fontFamily: "GolosText_600SemiBold", color: colors.onBrand },
   cards: { gap: space.sm, marginBottom: space.md },
   cardRow: { flexDirection: "row", alignItems: "center", borderRadius: radius.card, padding: space.lg, gap: space.md, position: "relative" },
@@ -1319,6 +1395,12 @@ const styles = StyleSheet.create({
   tripOptionStatus: { fontSize: 12, lineHeight: 16, color: colors.text600, marginTop: space.xs, fontWeight: "600" },
   tripOptionStatusActive: { color: colors.brand600 },
   tripOptionStatusPast: { color: colors.text400, fontWeight: "500" },
+  tripOptionBadge: {
+    backgroundColor: colors.owe600, borderRadius: radius.pill,
+    minWidth: 20, height: 20, alignItems: "center", justifyContent: "center",
+    paddingHorizontal: space.xs, marginRight: space.sm,
+  },
+  tripOptionBadgeText: { color: colors.onBrand, fontSize: 11, fontWeight: "bold" },
   tripOptionCheck: { fontSize: 18, color: colors.brand600, fontWeight: "bold" },
   newTripBtn: { backgroundColor: colors.brand600, padding: space.lg, borderRadius: radius.control, alignItems: "center", marginTop: space.xs, marginBottom: space.sm },
   newTripBtnText: { ...type.body, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },

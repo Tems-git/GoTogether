@@ -3,12 +3,30 @@ import { useState, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sparkles } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
+import { currentCoords } from "../lib/location";
 import DatePicker from "../components/DatePicker";
 import { colors, space, radius, type } from "../theme/tokens";
 
 const TRANSPORT_OPTIONS = ["коли", "самолет", "автобус", "влак", "смесен"];
 const ACCOMMODATION_TYPES = ["хотел", "хостел", "къща", "къмпинг", "Airbnb", "апартамент", "семеен хотел"];
 const COMFORT_OPTIONS = ["без значение", "3+ звезди", "4+ звезди", "5 звезди"];
+
+// Какво да търсим около мястото. Думата отива направо в търсенето на картите —
+// затова е на български и звучи като нещо, което човек би написал сам.
+// „най-добри" при заведенията не е сортиране (адресът на картите не приема
+// такъв параметър), а подсказка към търсачката, която реално вдига оценените
+// нагоре в резултатите.
+// Подредени по това колко често потрябват, а не по азбучен ред — първата е и
+// избраната по подразбиране. Думите са категории, които картите разпознават,
+// затова работят и в чужбина.
+const NEARBY_KINDS = [
+  { key: "sights", label: "🏛 Забележителности", query: "забележителности" },
+  { key: "food", label: "🍽 Заведения", query: "най-добри ресторанти и заведения" },
+  { key: "kids", label: "🎠 За деца", query: "атракции за деца" },
+  { key: "shop", label: "🛒 Магазини", query: "супермаркет" },
+  { key: "fuel", label: "⛽ Бензиностанции", query: "бензиностанция" },
+  { key: "pharmacy", label: "💊 Аптеки", query: "аптека" },
+];
 
 // --- Форматиране на текста на плана -----------------------------------------
 // AI-то връща markdown-подобен текст (## заглавия, **удебелено**, "- " списъци,
@@ -194,7 +212,16 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
   // идват от отговора на edge function-а (ROUTE_META), не само от формата,
   // защото потребителят може да е оставил дестинацията празна за AI да избере.
   // Пазим ги, за да ги запишем в params при всяко persistPlan извикване.
-  const [resolvedMeta, setResolvedMeta] = useState({ start: null, dest: null });
+  const [resolvedMeta, setResolvedMeta] = useState({ start: null, dest: null, places: [] });
+  // Какво търсим около местата. Категориите само го попълват — човек може
+  // да напише каквото си иска и то отива буквално в картите.
+  const [nearbyQuery, setNearbyQuery] = useState(NEARBY_KINDS[0].query);
+  // Място извън плана — човек рядко се движи точно по написаното.
+  const [nearbyPlace, setNearbyPlace] = useState("");
+  // Свито по подразбиране — планът започва веднага под заглавието.
+  const [nearbyOpen, setNearbyOpen] = useState(false);
+  // Намирането на позиция отнема миг — бутонът трябва да го показва.
+  const [locating, setLocating] = useState(false);
   // Идентификатор на "родословието" на плана — един и същ за първоначално
   // генерирания план и всички негови последващи корекции (refine), различен
   // за всеки чисто нов план (генериран от празна форма). Ползва се само за
@@ -273,7 +300,11 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
         setPlan(data.content);
         setSaveStatus("saved");
         setCurrentPlanId(data.id);
-        setResolvedMeta({ start: data.params?.resolvedStart || null, dest: data.params?.resolvedDestination || null });
+        setResolvedMeta({
+          start: data.params?.resolvedStart || null,
+          dest: data.params?.resolvedDestination || null,
+          places: data.params?.resolvedPlaces || [],
+        });
         setPlanGroupId(data.params?.planGroupId || data.id);
         applyFormFromParams(data.params);
         return;
@@ -292,7 +323,11 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
           setPlan(latest.content);
           setSaveStatus("saved");
           setCurrentPlanId(latest.id);
-          setResolvedMeta({ start: latest.params?.resolvedStart || null, dest: latest.params?.resolvedDestination || null });
+          setResolvedMeta({
+            start: latest.params?.resolvedStart || null,
+            dest: latest.params?.resolvedDestination || null,
+            places: latest.params?.resolvedPlaces || [],
+          });
           setPlanGroupId(latest.params?.planGroupId || latest.id);
           applyFormFromParams(latest.params);
         }
@@ -344,6 +379,65 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     setForm(f => ({ ...f, waypoints: f.waypoints.filter(w => w.id !== id) }));
   }
 
+  // Отваря картите с търсене около мястото. Нарочно е само адрес, а не наша
+  // функция: не струва нищо, не влиза в никаква квота и показва снимки, оценки
+  // и работно време, каквито ние няма да имаме.
+  // Уеб адресът на картите винаги търси в частта от света, която те последно
+  // са показвали. За място това е точно каквото искаме; за „около мен" — не,
+  // защото последно сме гледали дестинацията и търсенето остава там.
+  function openMapsWeb(text) {
+    const query = encodeURIComponent(text);
+    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`).catch(() => {});
+  }
+
+  // Двете части — какво и къде — са независими; всяка може да е празна.
+  // Търсене около назовано място. Тук картите се справят сами — името им
+  // казва къде да гледат.
+  function openNearby(place) {
+    const what = nearbyQuery.trim();
+    const where = String(place || "").trim();
+    if (!what && !where) return;
+    openMapsWeb([what, where].filter(Boolean).join(" "));
+  }
+
+  // Търсене около телефона. Без координати картите избираха сами докъде да
+  // гледат и при широки думи като „забележителности" отваряха цял регион.
+  // С точка и мащаб резултатът е еднакъв за всяка дума.
+  async function openAroundMe() {
+    const what = nearbyQuery.trim();
+    if (!what || locating) return;
+
+    setLocating(true);
+    const coords = await currentCoords();
+    setLocating(false);
+
+    if (!coords) {
+      // Отказано разрешение, изключен GPS или стар билд без модула. Оставяме
+      // стария път — по-широко, но все пак работещо.
+      if (Platform.OS === "android") {
+        Linking.openURL(`geo:0,0?q=${encodeURIComponent(what)}`).catch(() => openMapsWeb(what));
+      } else {
+        openMapsWeb(what);
+      }
+      return;
+    }
+
+    // Форматът с /@широчина,дължина,мащаб е този, който самите карти правят при
+    // търсене. 13z е квартал-град — достатъчно широко за забележителност,
+    // достатъчно тясно да не отвори половин област.
+    const url =
+      `https://www.google.com/maps/search/${encodeURIComponent(what)}` +
+      `/@${coords.latitude},${coords.longitude},13z`;
+    Linking.openURL(url).catch(() => openMapsWeb(what));
+  }
+
+  // Местата идват от служебния ред на плана. Планове отпреди тази версия го
+  // нямат — тогава падаме назад към дестинацията, за да има поне един бутон.
+  const nearbyPlaces =
+    resolvedMeta.places && resolvedMeta.places.length > 0
+      ? resolvedMeta.places
+      : [resolvedMeta.dest || trip?.destination].filter(Boolean);
+
   // Обединява текущите формулярни данни с реалните начало/дестинация, които
   // AI-то е използвало (meta) — това пазим в params на всеки запис, за да
   // може историята да показва истинския маршрут дори когато потребителят е
@@ -353,6 +447,10 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       ...form,
       resolvedStart: meta?.start || null,
       resolvedDestination: meta?.dest || null,
+      // Местата от служебния ред на плана — от тях идват бутоните
+      // „Какво има наоколо". Пазят се тук, за да ги имат и старите записи
+      // при повторно отваряне.
+      resolvedPlaces: meta?.places || [],
       planGroupId: groupId !== undefined ? groupId : planGroupId,
     };
   }
@@ -420,7 +518,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       setPlanGroupId(newGroupId);
       setPlan(data.plan);
       setSaveStatus(null);
-      setResolvedMeta(data.meta || { start: null, dest: null });
+      setResolvedMeta(data.meta || { start: null, dest: null, places: [] });
       persistPlan(data.plan, buildParams(data.meta, newGroupId));
     } catch (e) {
       alert("Грешка: " + e.message);
@@ -544,7 +642,7 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
       if (data?.error) throw new Error(data.error);
       setPlan(data.plan);
       setSaveStatus(null);
-      setResolvedMeta(data.meta || { start: null, dest: null });
+      setResolvedMeta(data.meta || { start: null, dest: null, places: [] });
       persistPlan(data.plan, buildParams(data.meta));
       setFeedback("");
       setShowRefine(false);
@@ -578,8 +676,14 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
     // догоре за бутона за връщане и чак додолу за действията върху плана.
     // KeyboardAvoidingView около всичко — иначе клавиатурата при писане в
     // полето за корекция застава върху него, вместо да го избутва нагоре.
+    // Включен е само тогава: иначе всяко писане в панела „наоколо" свива целия
+    // екран и трите бутона на футъра се качват насред четивото.
     return (
-      <KeyboardAvoidingView style={styles.flexOne} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <KeyboardAvoidingView
+        style={styles.flexOne}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        enabled={showRefine}
+      >
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.planHeader}>
           <TouchableOpacity onPress={onBack} style={styles.headerBackBtn}>
@@ -594,6 +698,102 @@ export default function AIPlannerScreen({ onBack, trip, userId, openPlanId }) {
         </View>
 
         <ScrollView style={styles.planScroll} contentContainerStyle={styles.planScrollContent}>
+          {nearbyPlaces.length > 0 && (
+            <View style={styles.nearbyBox}>
+              <TouchableOpacity
+                style={[styles.nearbyToggle, nearbyOpen && styles.nearbyToggleOpen]}
+                onPress={() => setNearbyOpen((o) => !o)}
+              >
+                <Text style={styles.nearbyLabel}>📍 Какво има наоколо</Text>
+                <Text style={styles.nearbyToggleIcon}>{nearbyOpen ? "▴" : "▾"}</Text>
+              </TouchableOpacity>
+              {nearbyOpen && (
+              <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.nearbyKindRow}
+              >
+                {NEARBY_KINDS.map((kind) => {
+                  // Осветен е само докато текстът съвпада дума по дума. Напише ли
+                  // човек нещо свое, никой чип не е осветен — и това е честно.
+                  const active = kind.query === nearbyQuery;
+                  return (
+                    <TouchableOpacity
+                      key={kind.key}
+                      style={[styles.nearbyKind, active && styles.nearbyKindOn]}
+                      onPress={() => setNearbyQuery(kind.query)}
+                    >
+                      <Text style={[styles.nearbyKindText, active && styles.nearbyKindTextOn]}>
+                        {kind.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              <View style={styles.nearbyInputRow}>
+                <TextInput
+                  style={styles.nearbyInput}
+                  value={nearbyQuery}
+                  onChangeText={setNearbyQuery}
+                  placeholder="какво да търся"
+                  placeholderTextColor={colors.text400}
+                  returnKeyType="done"
+                />
+                {/* Изчистване с едно тапване. Изтриването буква по буква на
+                    „най-добри ресторанти и заведения" е двайсет натискания. */}
+                {!!nearbyQuery && (
+                  <TouchableOpacity
+                    style={styles.nearbyClear}
+                    onPress={() => setNearbyQuery("")}
+                  >
+                    <Text style={styles.nearbyClearText}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <View style={styles.nearbyRow}>
+                {nearbyPlaces.map((place) => (
+                  <TouchableOpacity
+                    key={place}
+                    style={styles.nearbyChip}
+                    onPress={() => openNearby(place)}
+                  >
+                    <Text style={styles.nearbyChipText}>{place}</Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity
+                  style={[styles.nearbyChip, styles.nearbyChipMe]}
+                  onPress={openAroundMe}
+                  disabled={locating}
+                >
+                  <Text style={[styles.nearbyChipText, styles.nearbyChipTextMe]}>
+                    {locating ? "📍 Търся те…" : "📍 Около мен"}
+                  </Text>
+                </TouchableOpacity>
+                <TextInput
+                  style={[styles.nearbyChip, styles.nearbyPlaceInput]}
+                  value={nearbyPlace}
+                  onChangeText={setNearbyPlace}
+                  placeholder="друго място…"
+                  placeholderTextColor={colors.text400}
+                  returnKeyType="search"
+                  onSubmitEditing={() => openNearby(nearbyPlace)}
+                />
+                {nearbyPlace.trim().length > 0 && (
+                  <TouchableOpacity
+                    style={[styles.nearbyChip, styles.nearbyChipMe]}
+                    onPress={() => openNearby(nearbyPlace)}
+                  >
+                    <Text style={[styles.nearbyChipText, styles.nearbyChipTextMe]}>
+                      🔍 Търси
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              </>
+              )}
+            </View>
+          )}
           <View style={styles.planBox}>
             {renderPlanBlocks(plan)}
           </View>
@@ -880,6 +1080,52 @@ const styles = StyleSheet.create({
   planFooter: { paddingHorizontal: space.xl, paddingTop: space.md, backgroundColor: colors.bg, borderTopWidth: 0.5, borderTopColor: colors.border },
   planTitle: { ...type.title, color: colors.text900, marginBottom: space.lg },
   planBox: { backgroundColor: colors.surface, borderRadius: radius.card, padding: space.xl },
+  nearbyBox: { marginBottom: space.lg },
+  // Цветовете на чиповете, не на картите — в този екран те значат „натисни ме".
+  nearbyLabel: { fontSize: 15, lineHeight: 20, fontWeight: "700", color: colors.brand600 },
+  nearbyToggle: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: colors.brand50, borderRadius: radius.control,
+    borderWidth: 1, borderColor: colors.brand600,
+    paddingVertical: space.md, paddingHorizontal: space.lg,
+  },
+  nearbyToggleOpen: { marginBottom: space.md },
+  nearbyToggleIcon: { fontSize: 15, lineHeight: 20, color: colors.brand600, fontWeight: "700" },
+  nearbyKindRow: { gap: space.sm, paddingRight: space.xl, paddingBottom: space.sm },
+  nearbyKind: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill,
+    paddingVertical: 6, paddingHorizontal: space.md,
+  },
+  nearbyKindOn: { backgroundColor: colors.brand600, borderColor: colors.brand600 },
+  nearbyKindText: { fontSize: 13, lineHeight: 17, color: colors.text600, fontWeight: "600" },
+  nearbyKindTextOn: { color: "#FFFFFF" },
+  nearbyInputRow: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: colors.surface, borderWidth: 0.5, borderColor: colors.border,
+    borderRadius: radius.control, marginBottom: space.sm, paddingRight: space.xs,
+  },
+  nearbyInput: {
+    flex: 1, paddingVertical: space.sm, paddingHorizontal: space.md,
+    fontSize: 14, color: colors.text900,
+  },
+  nearbyClear: {
+    width: 32, height: 32, alignItems: "center", justifyContent: "center",
+  },
+  nearbyClearText: { fontSize: 15, color: colors.text400 },
+  nearbyRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+  nearbyChip: {
+    backgroundColor: colors.brand50, borderWidth: 1, borderColor: colors.brand600,
+    borderRadius: radius.pill, paddingVertical: space.sm, paddingHorizontal: space.md,
+  },
+  nearbyChipText: { fontSize: 14, lineHeight: 18, color: colors.brand600, fontWeight: "600" },
+  nearbyChipMe: { backgroundColor: colors.brand600 },
+  nearbyChipTextMe: { color: "#FFFFFF" },
+  // Пунктирът казва „тук се пише", без да има нужда от надпис за това.
+  nearbyPlaceInput: {
+    backgroundColor: "transparent", borderStyle: "dashed", borderColor: colors.text400,
+    minWidth: 140, fontSize: 14, color: colors.text900,
+    paddingVertical: space.sm, paddingHorizontal: space.md,
+  },
   planLink: { ...type.body, color: colors.brand600, textDecorationLine: "underline" },
   // Форматиране на плана (виж renderPlanBlocks по-горе).
   planHeading: {

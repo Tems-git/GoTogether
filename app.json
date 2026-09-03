@@ -22,6 +22,7 @@
     },
     "android": {
       "package": "com.temsit.gotogether",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0A6B57"
@@ -46,7 +47,35 @@
           "backgroundColor": "#0A6B57"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "GoTogether ползва местоположението само когато натиснеш „Около мен“, за да покаже какво има около теб на картата."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "GoTogether записва снимка в галерията ти само когато сам поискаш.",
+          "photosPermission": "GoTogether записва снимка в галерията ти само когато сам поискаш.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["text/*"]
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#0A6B57",
+          "defaultChannel": "messages"
+        }
+      ]
     ],
     "extra": {
       "eas": {

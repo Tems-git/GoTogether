@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, ActivityIndicator, Alert, Linking, Modal, Image,
+  ScrollView, ActivityIndicator, Alert, Linking, Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import { FileText, Plus } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
+import ZoomableImage from "../components/ZoomableImage";
 import { colors, space, radius, type } from "../theme/tokens";
 
 const DOC_TYPES = {
@@ -297,11 +298,13 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
             </TouchableOpacity>
           </View>
           {preview && (
-            <Image
-              source={{ uri: preview.url }}
-              style={styles.previewImage}
-              resizeMode="contain"
-            />
+            <>
+              {/* key-ът нулира увеличението при отваряне на друга снимка */}
+              <ZoomableImage key={preview.url} uri={preview.url} />
+              <Text style={styles.previewHint} pointerEvents="none">
+                Щипни с два пръста или тапни два пъти за увеличаване
+              </Text>
+            </>
           )}
         </View>
       </Modal>
@@ -348,5 +351,9 @@ const styles = StyleSheet.create({
   previewName: { ...type.body, color: "#fff", flex: 1 },
   previewClose: { paddingVertical: space.sm, paddingHorizontal: space.md },
   previewCloseText: { ...type.body, color: "#fff", fontWeight: "bold", fontFamily: "GolosText_700Bold" },
-  previewImage: { flex: 1, width: "100%" },
+  previewHint: {
+    position: "absolute", left: 0, right: 0, bottom: space.xl,
+    textAlign: "center", fontSize: 13, lineHeight: 18,
+    color: "rgba(255,255,255,0.5)",
+  },
 });
