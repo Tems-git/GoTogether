@@ -370,24 +370,33 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
   // в смесени валути — сборуването на суровите числа би било безсмислено.
   const totalEUR = expenses.reduce((s, e) => s + toEUR(Number(e.amount), e.currency || "EUR", rates), 0);
 
-  // Дълг към някого от собственото домакинство не е дълг. Затова и двете суми
-  // горе сравняват домакинства, а не хора.
+  // Дълг към някого от собственото домакинство не е дълг. Затова всичко тук
+  // сравнява домакинства, а не хора — иначе екранът би казвал „дължат ти 10",
+  // докато изравняването отдолу казва, че семейството ти дължи 10.
   const myKey = keyOf(userId);
 
-  const iOweEUR = expenses.reduce((sum, exp) => {
-    if (keyOf(exp.paid_by) === myKey) return sum;
-    const mySplit = splits.find((s) => s.expense_id === exp.id && s.user_id === userId && !s.is_settled);
-    if (!mySplit) return sum;
-    return sum + toEUR(Number(mySplit.share), exp.currency || "EUR", rates);
-  }, 0);
+  // Едно минаване през неуредените дялове дава и двете посоки. Дял, при който
+  // платецът и дължащият са в едно домакинство, се прескача — той не е дълг.
+  const { iOweEUR, owedToMeEUR } = expenses.reduce(
+    (acc, exp) => {
+      const payerKey = keyOf(exp.paid_by);
+      splits.forEach((s) => {
+        if (s.expense_id !== exp.id || s.is_settled) return;
+        const owerKey = keyOf(s.user_id);
+        if (owerKey === payerKey) return;
+        const eur = toEUR(Number(s.share), exp.currency || "EUR", rates);
+        if (owerKey === myKey) acc.iOweEUR += eur;
+        else if (payerKey === myKey) acc.owedToMeEUR += eur;
+      });
+      return acc;
+    },
+    { iOweEUR: 0, owedToMeEUR: 0 }
+  );
 
-  const owedToMeEUR = expenses.reduce((sum, exp) => {
-    if (exp.paid_by !== userId) return sum;
-    const unsettled = splits.filter(
-      (s) => s.expense_id === exp.id && keyOf(s.user_id) !== myKey && !s.is_settled
-    );
-    return sum + unsettled.reduce((s, x) => s + toEUR(Number(x.share), exp.currency || "EUR", rates), 0);
-  }, 0);
+  // Едно число, което отговаря на въпроса „в крайна сметка какво". Същото,
+  // което показва таблото, и същото, което излиза в изравняването.
+  const myNetEUR = owedToMeEUR - iOweEUR;
+  const iAmGrouped = groupMembers(myKey).length > 1;
 
   const spentByMember = Object.entries(allNames).map(([uid, name]) => ({
     user_id: uid,
@@ -460,20 +469,36 @@ export default function ExpensesScreen({ onBack, tripId, userId, devMode }) {
       </View>
       <Text style={styles.subtitle}>Кой колко дължи</Text>
 
+      {/* Двата въпроса са различни по природа: единият е за пътуването,
+          другият за теб. Затова са два блока, а не три равни колони. */}
       <View style={styles.summary}>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryVal}>{formatMoney(totalEUR, "EUR")}</Text>
-          <Text style={styles.summaryLbl}>Общо</Text>
+          <Text style={styles.summaryLbl}>Общо за пътуването</Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.summaryItem}>
-          <Text style={[styles.summaryVal, iOweEUR > 0 && { color: "#FFD580" }]}>{formatMoney(iOweEUR, "EUR")}</Text>
-          <Text style={styles.summaryLbl}>Ти дължиш</Text>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryVal, owedToMeEUR > 0 && { color: "#A8F0D4" }]}>{formatMoney(owedToMeEUR, "EUR")}</Text>
-          <Text style={styles.summaryLbl}>Дължат ти</Text>
+          <Text style={[
+            styles.summaryVal,
+            myNetEUR > 0.01 && { color: "#A8F0D4" },
+            myNetEUR < -0.01 && { color: "#FFD580" },
+          ]}>
+            {Math.abs(myNetEUR) < 0.01 ? "—" : formatMoney(Math.abs(myNetEUR), "EUR")}
+          </Text>
+          <Text style={styles.summaryLbl}>
+            {Math.abs(myNetEUR) < 0.01
+              ? "изравнено"
+              : myNetEUR > 0
+                ? (iAmGrouped ? "дължат на вас" : "дължат ти")
+                : (iAmGrouped ? "дължите" : "дължиш")}
+          </Text>
+          {/* Брутните числа не изчезват — само слизат едно ниво надолу, там
+              където са подробност, а не отговор. */}
+          {iOweEUR > 0.01 && owedToMeEUR > 0.01 && (
+            <Text style={styles.summaryDetail}>
+              {formatMoney(iOweEUR, "EUR")} навън · {formatMoney(owedToMeEUR, "EUR")} навътре
+            </Text>
+          )}
         </View>
       </View>
 
@@ -799,6 +824,7 @@ const styles = StyleSheet.create({
   summaryItem: { flex: 1, alignItems: "center" },
   summaryVal: { ...type.body, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.onBrand, fontVariant: ["tabular-nums"] },
   summaryLbl: { fontSize: 12, lineHeight: 16, color: colors.onBrandMuted, marginTop: space.xs },
+  summaryDetail: { fontSize: 11, lineHeight: 15, color: colors.onBrandMuted, marginTop: 2, opacity: 0.8 },
   divider: { width: 0.5, backgroundColor: "rgba(255,255,255,0.3)" },
   spentRow: { flexDirection: "row", marginBottom: space.lg },
   spentChip: {

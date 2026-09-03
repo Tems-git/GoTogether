@@ -401,26 +401,37 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       )
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, [trip?.id, fetchExpensesData]);
+    // resumeTick: живата връзка не преживява заспиването на телефона, тоест
+    // разход, вкаран междувременно, не стига дотук. При връщане на преден план
+    // сумата се чете наново.
+  }, [trip?.id, fetchExpensesData, resumeTick]);
 
   // Нетен баланс на текущия потребител в EUR: положително = дължат ти,
   // отрицателно = ти дължиш. Само неуредени (is_settled: false) splits.
+  // Домакинството е един джоб, значи и балансът е на домакинството. Иначе
+  // таблото и екранът с разходите казват различни неща за едно и също.
   const netBalance = useMemo(() => {
+    const householdOf = {};
+    members.forEach((m) => { if (m.household) householdOf[m.user_id] = m.household; });
+    const keyOf = (uid) => householdOf[uid] || uid;
+    const myKey = keyOf(user.id);
+
     let net = 0;
     expenses.forEach((exp) => {
       const cur = exp.currency || "EUR";
-      if (exp.paid_by === user.id) {
-        const owedToMe = expenseSplits
-          .filter((s) => s.expense_id === exp.id && s.user_id !== user.id && !s.is_settled)
-          .reduce((s, x) => s + toEUR(Number(x.share), cur, rates), 0);
-        net += owedToMe;
-      } else {
-        const mySplit = expenseSplits.find((s) => s.expense_id === exp.id && s.user_id === user.id && !s.is_settled);
-        if (mySplit) net -= toEUR(Number(mySplit.share), cur, rates);
-      }
+      const payerKey = keyOf(exp.paid_by);
+      expenseSplits.forEach((s) => {
+        if (s.expense_id !== exp.id || s.is_settled) return;
+        const owerKey = keyOf(s.user_id);
+        // Дял вътре в едно домакинство не е дълг.
+        if (owerKey === payerKey) return;
+        const eur = toEUR(Number(s.share), cur, rates);
+        if (payerKey === myKey) net += eur;
+        else if (owerKey === myKey) net -= eur;
+      });
     });
     return net;
-  }, [expenses, expenseSplits, rates, user.id]);
+  }, [expenses, expenseSplits, rates, user.id, members]);
 
   async function handleSaveName() {
     const name = newName.trim();
