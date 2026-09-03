@@ -445,10 +445,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   function choosePick(source) {
     pendingPick.current = source;
     setPhotoMenu(false);
-    // onDismiss го вика на iOS веднага щом прозорецът наистина си отиде; на
-    // Android такова събитие няма, затова има и резервен път. Пазачът вътре
-    // гарантира, че се изпълнява само веднъж.
-    setTimeout(runPendingPick, 350);
+    // Един кадър, колкото слоят да изчезне от екрана. Няма системен прозорец,
+    // който да се затваря, затова повече чакане не трябва.
+    requestAnimationFrame(runPendingPick);
   }
 
   function handlePhoto() {
@@ -1165,55 +1164,53 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           </TouchableOpacity>
         </View>
       )}
-      <Modal
-        visible={photoMenu}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setPhotoMenu(false)}
-        onDismiss={runPendingPick}
-      >
-        <TouchableWithoutFeedback onPress={() => setPhotoMenu(false)}>
-          <View style={styles.readOverlay}>
-            <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={styles.actionSheet}>
-                <TouchableOpacity
-                  style={styles.actionRow}
-                  onPress={() => choosePick("camera")}
-                >
-                  <Text style={styles.actionText}>📷 Снимай</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionRow}
-                  onPress={() => choosePick("library")}
-                >
-                  <Text style={styles.actionText}>🖼 От галерията</Text>
-                </TouchableOpacity>
+      {/* Слой, а не Modal. На iOS Modal е истински системен екран; затварянето
+          му и незабавното отваряне на избирача на снимки не е позволено и се
+          проваля тихо. Слоят живее вътре в екрана, затова нищо не се затваря и
+          избирачът тръгва веднага. */}
+      {photoMenu && (
+        <View style={styles.sheetOverlay}>
+          <TouchableWithoutFeedback onPress={() => setPhotoMenu(false)}>
+            <View style={styles.sheetBackdrop} />
+          </TouchableWithoutFeedback>
 
-                {/* Не затваря менюто — сменяш и виждаш новото, преди да избереш. */}
-                <TouchableOpacity style={[styles.actionRow, styles.actionQuality]} onPress={switchQuality}>
-                  <View style={styles.qualityLine}>
-                    <Text style={styles.actionQualityText}>Качество:</Text>
-                    <View style={[styles.qualityTag, photoQuality === "high" && styles.qualityTagHigh]}>
-                      <Text style={[styles.qualityTagText, photoQuality === "high" && styles.qualityTagTextHigh]}>
-                        {photoQuality === "high" ? "★ Високо" : "Обикновено"}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.actionQualityHint}>
-                    {photoQuality === "high"
-                      ? "по-едри файлове, за снимки, които ще пазиш"
-                      : "по-малки файлове, достатъчно за екран — тапни за високо"}
+          <View style={styles.actionSheet}>
+            <TouchableOpacity
+              style={styles.actionRow}
+              onPress={() => choosePick("camera")}
+            >
+              <Text style={styles.actionText}>📷 Снимай</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionRow}
+              onPress={() => choosePick("library")}
+            >
+              <Text style={styles.actionText}>🖼 От галерията</Text>
+            </TouchableOpacity>
+
+            {/* Не затваря менюто — сменяш и виждаш новото, преди да избереш. */}
+            <TouchableOpacity style={[styles.actionRow, styles.actionQuality]} onPress={switchQuality}>
+              <View style={styles.qualityLine}>
+                <Text style={styles.actionQualityText}>Качество:</Text>
+                <View style={[styles.qualityTag, photoQuality === "high" && styles.qualityTagHigh]}>
+                  <Text style={[styles.qualityTagText, photoQuality === "high" && styles.qualityTagTextHigh]}>
+                    {photoQuality === "high" ? "★ Високо" : "Обикновено"}
                   </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.actionRow} onPress={() => setPhotoMenu(false)}>
-                  <Text style={[styles.actionText, styles.actionCancel]}>Отказ</Text>
-                </TouchableOpacity>
+                </View>
               </View>
-            </TouchableWithoutFeedback>
+              <Text style={styles.actionQualityHint}>
+                {photoQuality === "high"
+                  ? "по-едри файлове, за снимки, които ще пазиш"
+                  : "по-малки файлове, достатъчно за екран — тапни за високо"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionRow} onPress={() => setPhotoMenu(false)}>
+              <Text style={[styles.actionText, styles.actionCancel]}>Отказ</Text>
+            </TouchableOpacity>
           </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+        </View>
+      )}
 
       <Modal visible={!!msgActions} animationType="fade" transparent onRequestClose={() => setMsgActions(null)}>
         <TouchableWithoutFeedback onPress={() => setMsgActions(null)}>
@@ -1513,6 +1510,15 @@ const styles = StyleSheet.create({
   searchCount: { ...type.label, color: colors.text400, minWidth: 36, textAlign: "right" },
   photoIconBusy: { fontSize: 13, fontWeight: "700", color: colors.text600 },
   photoFull: { flex: 1, backgroundColor: "#000" },
+  sheetOverlay: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 100, elevation: 100,
+    alignItems: "center", justifyContent: "center", padding: space.lg,
+  },
+  sheetBackdrop: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
   actionSheet: {
     backgroundColor: colors.bg, borderRadius: radius.card,
     paddingVertical: space.sm, width: "100%", maxWidth: 420,
