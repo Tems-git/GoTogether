@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
   ScrollView, Alert, Share, Modal, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
+  AppState,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { supabase } from "../lib/supabase";import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -81,9 +82,25 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  // Брояч на събужданията. Стои в зависимостите на ефектите, които броят
+  // непрочетените — тоест връщането на преден план ги пресмята наново.
+  // Известието може да е дошло, докато живата връзка е била прекъсната; тогава
+  // банерът излиза, а таблото не знае нищо.
+  const [resumeTick, setResumeTick] = useState(0);
   // Непрочетени по пътувания. Броячът на картата „Чат" показва само
   // текущото пътуване — от него не личи, че някъде другаде има ново.
   const [unreadByTrip, setUnreadByTrip] = useState({});
+
+  useEffect(() => {
+    let last = AppState.currentState;
+    const sub = AppState.addEventListener("change", (next) => {
+      if (last.match(/inactive|background/) && next === "active") {
+        setResumeTick((n) => n + 1);
+      }
+      last = next;
+    });
+    return () => sub.remove();
+  }, []);
   const [unblocking, setUnblocking] = useState(null);
   const [deletingAccount, setDeletingAccount] = useState(false);
 
@@ -243,7 +260,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [trip?.id, user?.id]);
+  }, [trip?.id, user?.id, resumeTick]);
 
   // Непрочетени във всички пътувания на човека. Нарочно с две заявки, а не с
   // по една на пътуване: първо кога е чел всяко, после съобщенията след
@@ -290,7 +307,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   // Dashboard-ът се разглобява при влизане в друг екран и се сглобява наново
   // при връщане, така че това се преизчислява при всяко връщане от чата.
-  useEffect(() => { fetchUnreadByTrip(); }, [fetchUnreadByTrip, allTrips]);
+  useEffect(() => { fetchUnreadByTrip(); }, [fetchUnreadByTrip, allTrips, resumeTick]);
 
   // Брой документи — за краткия контекст под картата "Документи".
   const fetchDocsCount = useCallback(async () => {

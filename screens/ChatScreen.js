@@ -169,6 +169,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const [photoQuality, setPhotoQuality] = useState("normal");
   // Менюто за нова снимка: откъде и с какво качество.
   const [photoMenu, setPhotoMenu] = useState(false);
+  // Избраните снимки чакат тук, докато човек реши дали да сложи подпис.
+  const [pendingAssets, setPendingAssets] = useState(null);
+  const [captionDraft, setCaptionDraft] = useState("");
   // Мястото в лентата със снимки, отворена на цял екран. null значи затворена.
   const [photoIndex, setPhotoIndex] = useState(null);
   // Докато снимката е увеличена, прелистването настрани трябва да спре.
@@ -455,6 +458,21 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     pickPhoto(source);
   }
 
+  // Изпращане от екрана за подпис. Снимките се махат от чакащите преди
+  // качването, за да не остане екранът да виси, ако мрежата се проточи.
+  function confirmSend() {
+    const assets = pendingAssets;
+    const caption = captionDraft;
+    setPendingAssets(null);
+    setCaptionDraft("");
+    if (assets) sendPhotos(assets, caption);
+  }
+
+  function cancelSend() {
+    setPendingAssets(null);
+    setCaptionDraft("");
+  }
+
   function choosePick(source) {
     pendingPick.current = source;
     setPhotoMenu(false);
@@ -496,7 +514,13 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           });
 
       if (result.canceled) return;
-      await sendPhotos(result.assets || []);
+      const chosen = result.assets || [];
+      if (chosen.length === 0) return;
+
+      // Между избора и изпращането има една спирка: подписът. Полето долу се
+      // пренася в него, за да не се губи вече написаното.
+      setCaptionDraft(text.trim());
+      setPendingAssets(chosen);
     } catch (e) {
       Alert.alert("Грешка", e.message);
     }
@@ -577,12 +601,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     return inserted?.id || null;
   }
 
-  async function sendPhotos(assets) {
+  async function sendPhotos(assets, captionText) {
     if (assets.length === 0) return;
 
-    // Текстът от полето става подпис — но само на първата снимка. Иначе един и
-    // същи ред се повтаря под всяка и чатът заприличва на заяждаща плоча.
-    const caption = text.trim();
+    // Подписът стои само под първата снимка. Иначе един и същи ред се повтаря
+    // под всяка и чатът заприличва на заяждаща плоча.
+    const caption = (captionText || "").trim();
     setSendingPhoto(true);
     setText("");
 
@@ -1260,6 +1284,59 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         </View>
       )}
 
+      {/* Пак слой, не Modal — по същата причина като менюто по-горе, и защото
+          излиза точно след като системният избирач се затваря. */}
+      {pendingAssets && (
+        <View style={styles.captionOverlay}>
+          <TouchableWithoutFeedback onPress={cancelSend}>
+            <View style={styles.sheetBackdrop} />
+          </TouchableWithoutFeedback>
+
+          <View style={styles.captionSheet}>
+            <View style={styles.captionPreviewWrap}>
+              <Image
+                source={{ uri: pendingAssets[0].uri }}
+                style={styles.captionPreview}
+                resizeMode="cover"
+              />
+              {pendingAssets.length > 1 && (
+                <View style={styles.captionCount}>
+                  <Text style={styles.captionCountText}>+{pendingAssets.length - 1}</Text>
+                </View>
+              )}
+            </View>
+
+            <TextInput
+              style={styles.captionInput}
+              placeholder="Подпис (по желание)"
+              placeholderTextColor={colors.text400}
+              value={captionDraft}
+              onChangeText={setCaptionDraft}
+              multiline
+              maxLength={500}
+              autoFocus
+            />
+
+            {pendingAssets.length > 1 && (
+              <Text style={styles.captionHint}>
+                Подписът стои под първата снимка.
+              </Text>
+            )}
+
+            <View style={styles.captionButtons}>
+              <TouchableOpacity style={styles.captionCancel} onPress={cancelSend}>
+                <Text style={styles.captionCancelText}>Отказ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.captionSend} onPress={confirmSend}>
+                <Text style={styles.captionSendText}>
+                  Изпрати{pendingAssets.length > 1 ? ` (${pendingAssets.length})` : ""}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
       <Modal visible={!!msgActions} animationType="fade" transparent onRequestClose={() => setMsgActions(null)}>
         <TouchableWithoutFeedback onPress={() => setMsgActions(null)}>
           <View style={styles.readOverlay}>
@@ -1566,6 +1643,48 @@ const styles = StyleSheet.create({
     zIndex: 100, elevation: 100,
     alignItems: "center", justifyContent: "center", padding: space.lg,
   },
+  // Не по средата, а по-нагоре: клавиатурата излиза веднага и би покрила
+  // центъра на екрана.
+  captionOverlay: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 100, elevation: 100,
+    alignItems: "center", justifyContent: "flex-start",
+    paddingTop: 72, paddingHorizontal: space.lg,
+  },
+  captionSheet: {
+    width: "100%", maxWidth: 420, backgroundColor: colors.surface,
+    borderRadius: radius.card, padding: space.lg, gap: space.md,
+    alignItems: "center",
+  },
+  captionPreviewWrap: { width: 180, height: 180 },
+  captionPreview: {
+    width: 180, height: 180, borderRadius: radius.control,
+    backgroundColor: colors.border,
+  },
+  captionCount: {
+    position: "absolute", right: -6, bottom: -6,
+    backgroundColor: colors.brand600, borderRadius: radius.pill,
+    paddingHorizontal: space.sm, paddingVertical: 2,
+  },
+  captionCountText: { ...type.label, color: "#FFFFFF", fontWeight: "700" },
+  captionInput: {
+    width: "100%", minHeight: 44, maxHeight: 120,
+    backgroundColor: colors.bg, borderRadius: radius.control,
+    paddingHorizontal: space.md, paddingVertical: space.sm,
+    ...type.body, color: colors.text900,
+  },
+  captionHint: { ...type.label, color: colors.text400, alignSelf: "flex-start" },
+  captionButtons: { flexDirection: "row", gap: space.sm, width: "100%" },
+  captionCancel: {
+    flex: 1, paddingVertical: space.md, borderRadius: radius.control,
+    backgroundColor: colors.bg, alignItems: "center",
+  },
+  captionCancelText: { ...type.body, color: colors.text600, fontWeight: "600" },
+  captionSend: {
+    flex: 2, paddingVertical: space.md, borderRadius: radius.control,
+    backgroundColor: colors.brand600, alignItems: "center",
+  },
+  captionSendText: { ...type.body, color: "#FFFFFF", fontWeight: "700" },
   sheetBackdrop: {
     position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: "rgba(0,0,0,0.45)",
