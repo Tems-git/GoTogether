@@ -200,6 +200,11 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
         <Animated.Image
           source={{ uri }}
           resizeMode="contain"
+          // Android иначе разкодира снимката в пълния й размер и чак после я
+          // смалява за екрана. При голям файл това е десетки мегабайта памет и
+          // зареждането спира. С това разкодирането става наведнъж до размера,
+          // който се вижда.
+          resizeMethod="resize"
           onLoad={() => setReady(true)}
           style={[
             styles.image,

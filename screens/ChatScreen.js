@@ -11,7 +11,7 @@ import { supabase } from "../lib/supabase";
 import ZoomableImage from "../components/ZoomableImage";
 import { saveToGallery, canSaveToGallery } from "../lib/gallery";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { shrinkPhoto, makeThumb, presetFor, PHOTO_PRESETS } from "../lib/image";
+import { shrinkPhoto, makeThumb, makeView, presetFor, PHOTO_PRESETS } from "../lib/image";
 import { bundleStamp } from "../lib/version";
 import { colors, space, radius, type } from "../theme/tokens";
 
@@ -307,8 +307,10 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // Временните връзки се издават на групи, за всички нови снимки наведнъж.
   useEffect(() => {
     // И двата пътя: умаленото за списъка, голямото за цял екран и за записване.
+    // И трите пътя: умаленото за списъка, средното за цял екран, голямото за
+    // записване.
     const missing = messages
-      .flatMap((m) => [m.thumb_path, m.image_path])
+      .flatMap((m) => [m.thumb_path, m.view_path, m.image_path])
       .filter((p) => p && !photoUrls[p]);
     if (missing.length === 0) return;
 
@@ -500,14 +502,20 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     // Умаленото копие се прави от оригинала, не от вече смалената — едно
     // компресиране вместо две.
     let thumbBytes = null;
+    let viewBytes = null;
     try {
       const thumbUri = await makeThumb(asset.uri);
       if (thumbUri) {
         const tRes = await fetch(thumbUri);
         thumbBytes = new Uint8Array(await tRes.arrayBuffer());
       }
+      const viewUri = await makeView(asset.uri);
+      if (viewUri) {
+        const vRes = await fetch(viewUri);
+        viewBytes = new Uint8Array(await vRes.arrayBuffer());
+      }
     } catch {
-      // Без умалено копие чатът показва голямата снимка, както преди.
+      // Без по-малките копия чатът показва голямата снимка, както преди.
     }
 
     // Папката е пътуването — така важат същите правила за достъп, както при
@@ -523,14 +531,17 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
 
     // Провалът тук не бива да проваля съобщението — по-добре без умалено копие,
     // отколкото без снимка.
-    let thumbPath = null;
-    if (thumbBytes) {
-      const candidate = path.replace(/\.jpg$/, "_t.jpg");
-      const { error: thumbError } = await supabase.storage
+    async function uploadCopy(suffixName, data) {
+      if (!data) return null;
+      const candidate = path.replace(/\.jpg$/, suffixName);
+      const { error: copyError } = await supabase.storage
         .from("documents")
-        .upload(candidate, thumbBytes, { contentType: "image/jpeg" });
-      if (!thumbError) thumbPath = candidate;
+        .upload(candidate, data, { contentType: "image/jpeg" });
+      return copyError ? null : candidate;
     }
+
+    const thumbPath = await uploadCopy("_t.jpg", thumbBytes);
+    const viewPath = await uploadCopy("_v.jpg", viewBytes);
 
     const { data: inserted, error } = await supabase
       .from("messages")
@@ -541,6 +552,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         text: caption,
         image_path: path,
         thumb_path: thumbPath,
+        view_path: viewPath,
       })
       .select("id")
       .single();
@@ -662,13 +674,16 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             // Освен ако някой не го е сложил в Документи: тогава файлът вече не
             // принадлежи само на това съобщение и изтриването му би обезсилило
             // чужд документ.
+            const small = [msg.thumb_path, msg.view_path].filter(Boolean);
             if (msg.image_path && !inDocuments.includes(msg.image_path)) {
-              const files = [msg.image_path, msg.thumb_path].filter(Boolean);
-              await supabase.storage.from("documents").remove(files).catch(() => {});
-            } else if (msg.thumb_path) {
-              // Голямата остава заради Документите, но умаленото копие няма кой
-              // да го ползва.
-              await supabase.storage.from("documents").remove([msg.thumb_path]).catch(() => {});
+              await supabase.storage
+                .from("documents")
+                .remove([msg.image_path, ...small])
+                .catch(() => {});
+            } else if (small.length > 0) {
+              // Голямата остава заради Документите, но по-малките копия няма
+              // кой да ги ползва.
+              await supabase.storage.from("documents").remove(small).catch(() => {});
             }
             setMessages((prev) => prev.filter((m) => m.id !== msg.id));
           } catch (e) {
@@ -1339,7 +1354,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             renderItem={({ item }) => (
               <View style={{ width: windowWidth }}>
                 <ZoomableImage
-                  uri={photoUrls[item.image_path]}
+                  uri={photoUrls[item.view_path] || photoUrls[item.image_path]}
                   placeholderUri={photoUrls[item.thumb_path]}
                   onZoomChange={setPhotoZoomed}
                   onSingleTap={closePhoto}
