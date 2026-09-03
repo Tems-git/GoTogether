@@ -1,5 +1,7 @@
-import { useRef } from "react";
-import { View, Animated, PanResponder, TouchableWithoutFeedback, StyleSheet } from "react-native";
+import { useRef, useState } from "react";
+import {
+  View, Animated, PanResponder, TouchableWithoutFeedback, StyleSheet, ActivityIndicator,
+} from "react-native";
 
 // Увеличаване с два пръста, местене с един и двойно тапване за бързо
 // приближаване. Написано на PanResponder и Animated, тоест само с това, което
@@ -30,7 +32,10 @@ function touchDistance(touches) {
   return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
 }
 
-export default function ZoomableImage({ uri, onZoomChange, onSingleTap }) {
+export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSingleTap }) {
+  // Докато голямата снимка се тегли, показваме умаленото копие — то вече е в
+  // паметта от списъка. Без подложка няма какво да чакаме и рисуваме веднага.
+  const [ready, setReady] = useState(!placeholderUri);
   const scale = useRef(new Animated.Value(1)).current;
   const tx = useRef(new Animated.Value(0)).current;
   const ty = useRef(new Animated.Value(0)).current;
@@ -176,11 +181,29 @@ export default function ZoomableImage({ uri, onZoomChange, onSingleTap }) {
         onLayout={(e) => { box.current = e.nativeEvent.layout; }}
         {...responder.panHandlers}
       >
+        {placeholderUri && !ready && (
+          <>
+            <Animated.Image
+              source={{ uri: placeholderUri }}
+              resizeMode="contain"
+              blurRadius={2}
+              style={[
+                styles.image,
+                { transform: [{ translateX: tx }, { translateY: ty }, { scale }] },
+              ]}
+            />
+            <View style={styles.spinner} pointerEvents="none">
+              <ActivityIndicator color="#FFFFFF" />
+            </View>
+          </>
+        )}
         <Animated.Image
           source={{ uri }}
           resizeMode="contain"
+          onLoad={() => setReady(true)}
           style={[
             styles.image,
+            !ready && styles.hidden,
             { transform: [{ translateX: tx }, { translateY: ty }, { scale }] },
           ]}
         />
@@ -191,5 +214,8 @@ export default function ZoomableImage({ uri, onZoomChange, onSingleTap }) {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, width: "100%", overflow: "hidden" },
-  image: { flex: 1, width: "100%" },
+  // Двете снимки стоят една върху друга, затова са наслагани, а не в поток.
+  image: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
+  hidden: { opacity: 0 },
+  spinner: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
 });

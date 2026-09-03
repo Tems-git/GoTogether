@@ -1340,6 +1340,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
               <View style={{ width: windowWidth }}>
                 <ZoomableImage
                   uri={photoUrls[item.image_path]}
+                  placeholderUri={photoUrls[item.thumb_path]}
                   onZoomChange={setPhotoZoomed}
                   onSingleTap={closePhoto}
                 />
