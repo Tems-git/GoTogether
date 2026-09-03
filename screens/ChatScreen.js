@@ -12,6 +12,7 @@ import ZoomableImage from "../components/ZoomableImage";
 import { saveToGallery, canSaveToGallery } from "../lib/gallery";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { shrinkPhoto, makeThumb, presetFor, PHOTO_PRESETS } from "../lib/image";
+import { bundleStamp } from "../lib/version";
 import { colors, space, radius, type } from "../theme/tokens";
 
 // Цветът на аватара се избира по user_id, а не по мястото в списъка. Така
@@ -926,6 +927,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
             <Text style={styles.headerTitle}>Чат</Text>
           </View>
           <Text style={styles.headerSub}>{tripName}</Text>
+          {/* Кой код върви. Стои, докато трае проверката на ъпдейтите — после
+              се маха с два реда. */}
+          <Text style={styles.headerStamp}>{bundleStamp()}</Text>
         </View>
         <TouchableOpacity
           style={styles.searchBtn}
@@ -1450,6 +1454,7 @@ const styles = StyleSheet.create({
   headerTitleRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   headerTitle: { ...type.subhead, fontWeight: "bold", color: colors.text900, fontFamily: "GolosText_700Bold" },
   headerSub: { fontSize: 12, lineHeight: 16, color: colors.text600, marginTop: space.xs },
+  headerStamp: { fontSize: 10, lineHeight: 13, color: colors.text400 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   // Обърнат списък: горното отстояние излиза долу и обратно.
   list: { padding: space.lg, paddingTop: space.sm },
