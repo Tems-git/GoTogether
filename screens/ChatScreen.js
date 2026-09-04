@@ -372,6 +372,44 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
 
   // Снимката от чата вече лежи в папката на пътуването, тоест в Документи отива
   // само ред, сочещ същия файл. Без копиране, без второ качване.
+  // Първият адрес в съобщението. Най-честият случай е точно един.
+  function firstLinkOf(text) {
+    const part = splitByLinks(text).find((p) => p.url);
+    return part ? part.url : null;
+  }
+
+  // Линк от разговора отива в Документи като ред, сочещ самия адрес. Оттам
+  // нататък се държи като всеки друг документ — вижда се от всички, отваря се
+  // навън, трие се от този, който го е запазил.
+  async function saveLinkToDocuments(msg) {
+    const url = firstLinkOf(msg?.text);
+    if (!url || savingDoc) return;
+    if (inDocuments.includes(url)) {
+      Alert.alert("Вече е там", "Този линк е в Документи на пътуването.");
+      return;
+    }
+
+    setSavingDoc(true);
+    try {
+      const host = (url.match(/^https?:\/\/([^/?#]+)/i) || [])[1] || "";
+      const { error } = await supabase.from("documents").insert({
+        trip_id: tripId,
+        uploaded_by: userId,
+        name: host.replace(/^www\./i, "") || "Линк от чата",
+        file_url: url,
+        doc_type: "link",
+      });
+      if (error) throw error;
+
+      setInDocuments((prev) => [...prev, url]);
+      Alert.alert("Записано", "Линкът е в Документи на пътуването.");
+    } catch (e) {
+      Alert.alert("Не се записа", e.message);
+    } finally {
+      setSavingDoc(false);
+    }
+  }
+
   async function saveToDocuments(msg) {
     if (!msg?.image_path || savingDoc) return;
     if (inDocuments.includes(msg.image_path)) {
@@ -1342,6 +1380,23 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           <View style={styles.readOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
               <View style={styles.actionSheet}>
+                {!msgActions?.image_path && firstLinkOf(msgActions?.text) && (
+                  inDocuments.includes(firstLinkOf(msgActions.text)) ? (
+                    <View style={styles.actionRow}>
+                      <Text style={[styles.actionText, styles.actionDone]}>
+                        ✓ Линкът вече е в Документи
+                      </Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.actionRow}
+                      onPress={() => { const m = msgActions; setMsgActions(null); saveLinkToDocuments(m); }}
+                      disabled={savingDoc}
+                    >
+                      <Text style={styles.actionText}>🔗 Запази линка в Документи</Text>
+                    </TouchableOpacity>
+                  )
+                )}
                 {msgActions?.image_path && (
                   inDocuments.includes(msgActions.image_path) ? (
                     <View style={styles.actionRow}>

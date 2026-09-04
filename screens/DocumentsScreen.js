@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  StyleSheet, Text, View, TouchableOpacity,
+  StyleSheet, Text, View, TouchableOpacity, TextInput,
   ScrollView, ActivityIndicator, Alert, Linking, Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
+import * as Clipboard from "expo-clipboard";
 import { FileText, Plus } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import ZoomableImage from "../components/ZoomableImage";
@@ -15,6 +16,7 @@ const DOC_TYPES = {
   ticket: { emoji: "✈️", label: "Билет" },
   insurance: { emoji: "🛡️", label: "Застраховка" },
   photo: { emoji: "🖼️", label: "Снимка" },
+  link: { emoji: "🔗", label: "Линк" },
   other: { emoji: "📄", label: "Друго" },
 };
 
@@ -42,6 +44,30 @@ function storagePath(fileUrl = "") {
   return value.replace(/^\/?documents\//, "");
 }
 
+// Линкът се разпознава по типа, не по съдържанието на file_url — по-старите
+// записи за файлове също пазят пълен адрес и биха се объркали с линк.
+function isLink(doc) {
+  return doc?.doc_type === "link";
+}
+
+// Домейнът върши работа за име, когато човек не е написал свое. „booking.com"
+// казва повече от „линк 3".
+function hostOf(url) {
+  const m = String(url || "").match(/^https?:\/\/([^/?#]+)/i);
+  return m ? m[1].replace(/^www\./i, "") : "";
+}
+
+// Приемаме и адрес без схема, стига да прилича на такъв. Всичко останало е
+// текст, а не адрес — по-добре да откажем, отколкото да запишем нещо, което
+// после не се отваря.
+function normalizeUrl(value) {
+  const v = String(value || "").trim();
+  if (!v) return "";
+  if (/^https?:\/\//i.test(v)) return v;
+  if (/^www\./i.test(v) || /^[a-z0-9-]+(\.[a-z0-9-]+)+([/?#]|$)/i.test(v)) return `https://${v}`;
+  return "";
+}
+
 function guessDocType(name = "") {
   const n = name.toLowerCase();
   if (n.includes("резерв") || n.includes("hotel") || n.includes("booking")) return "reservation";
@@ -60,6 +86,14 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(null);
   const [openingId, setOpeningId] = useState(null);
+  // Изборът „файл или линк" и формата за линк са слоеве вътре в екрана, а не
+  // Modal: системният избирач на файлове не тръгва, докато друг системен екран
+  // се затваря (същият капан като при снимките в чата на 2 септември).
+  const [addMenu, setAddMenu] = useState(false);
+  const [linkForm, setLinkForm] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkName, setLinkName] = useState("");
+  const [savingLink, setSavingLink] = useState(false);
 
   // Файловете вече не са публични. Всяко отваряне иска нова подписана връзка,
   // която важи няколко минути и се издава само ако базата признае, че този
@@ -108,6 +142,12 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
   // Ако телефонът няма подходящо приложение, казваме го направо, вместо да
   // отваряме каквото се случи.
   async function handleOpen(doc) {
+    // Линкът си е адрес — няма какво да се подписва от хранилището.
+    if (isLink(doc)) {
+      await openOutside(doc.file_url);
+      return;
+    }
+
     setOpeningId(doc.id);
     try {
       const url = await signedUrlFor(doc);
@@ -195,9 +235,12 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
         text: "Изтрий", style: "destructive",
         onPress: async () => {
           try {
-            const { error } = await supabase.storage
-              .from("documents").remove([storagePath(doc.file_url)]);
-            if (error) throw error;
+            // За линк няма файл в хранилището — има само ред.
+            if (!isLink(doc)) {
+              const { error } = await supabase.storage
+                .from("documents").remove([storagePath(doc.file_url)]);
+              if (error) throw error;
+            }
             const { error: rowError } = await supabase
               .from("documents").delete().eq("id", doc.id);
             if (rowError) throw rowError;
@@ -208,6 +251,55 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
         },
       },
     ]);
+  }
+
+  // Клипбордът се чете чак тук, при отваряне на формата — не при влизане в
+  // екрана. Приложение, което тършува в копираното без повод, е неприятно.
+  async function openLinkForm() {
+    setAddMenu(false);
+    setLinkName("");
+    let prefill = "";
+    try {
+      prefill = normalizeUrl(await Clipboard.getStringAsync());
+    } catch {
+      // Без клипборд просто се пише на ръка.
+    }
+    setLinkUrl(prefill);
+    setLinkForm(true);
+  }
+
+  function chooseFile() {
+    setAddMenu(false);
+    // Един кадър, колкото слоят да изчезне, преди да тръгне системният избирач.
+    requestAnimationFrame(() => handleUpload());
+  }
+
+  async function saveLink() {
+    const url = normalizeUrl(linkUrl);
+    if (!url) {
+      Alert.alert("Това не прилича на адрес", "Провери дали е поставен целият линк.");
+      return;
+    }
+
+    setSavingLink(true);
+    try {
+      const { error } = await supabase.from("documents").insert({
+        trip_id: tripId,
+        uploaded_by: userId,
+        name: linkName.trim() || hostOf(url) || "Линк",
+        file_url: url,
+        doc_type: "link",
+      });
+      if (error) throw error;
+      setLinkForm(false);
+      setLinkUrl("");
+      setLinkName("");
+      await fetchDocs();
+    } catch (e) {
+      Alert.alert("Не се запази", e.message);
+    } finally {
+      setSavingLink(false);
+    }
   }
 
   function formatDate(iso) {
@@ -235,7 +327,7 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
         <View style={styles.empty}>
           <Text style={styles.emptyEmoji}>📄</Text>
           <Text style={styles.emptyTitle}>Няма документи все още</Text>
-          <Text style={styles.emptyText}>Качи резервация, билет или застраховка — всички в групата ще я видят веднага.</Text>
+          <Text style={styles.emptyText}>Качи резервация, билет или застраховка, или запази линк — всички в групата ще ги видят веднага.</Text>
         </View>
       ) : (
         <View style={styles.list}>
@@ -273,16 +365,83 @@ export default function DocumentsScreen({ onBack, tripId, userId }) {
         </View>
       )}
 
-      <TouchableOpacity style={styles.btn} onPress={handleUpload} disabled={uploading}>
+      <TouchableOpacity style={styles.btn} onPress={() => setAddMenu(true)} disabled={uploading}>
         {uploading
           ? <ActivityIndicator color={colors.onBrand} />
           : (
             <View style={styles.btnRow}>
               <Plus size={20} color={colors.onBrand} strokeWidth={1.75} />
-              <Text style={styles.btnText}>Качи документ</Text>
+              <Text style={styles.btnText}>Добави</Text>
             </View>
           )}
       </TouchableOpacity>
+
+      {addMenu && (
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity
+            style={styles.sheetBackdrop}
+            activeOpacity={1}
+            onPress={() => setAddMenu(false)}
+          />
+          <View style={styles.sheet}>
+            <TouchableOpacity style={styles.sheetRow} onPress={chooseFile}>
+              <Text style={styles.sheetText}>📄 Файл от телефона</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetRow} onPress={openLinkForm}>
+              <Text style={styles.sheetText}>🔗 Линк</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetRow} onPress={() => setAddMenu(false)}>
+              <Text style={[styles.sheetText, styles.sheetCancel]}>Отказ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {linkForm && (
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity
+            style={styles.sheetBackdrop}
+            activeOpacity={1}
+            onPress={() => setLinkForm(false)}
+          />
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Линк</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="https://…"
+              placeholderTextColor={colors.text400}
+              value={linkUrl}
+              onChangeText={setLinkUrl}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              autoFocus
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Име (по желание)"
+              placeholderTextColor={colors.text400}
+              value={linkName}
+              onChangeText={setLinkName}
+              maxLength={80}
+            />
+            <Text style={styles.sheetHint}>
+              Ако полето горе е празно, копирай адреса и отвори това пак — той се
+              попълва сам.
+            </Text>
+            <View style={styles.sheetBtns}>
+              <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => setLinkForm(false)}>
+                <Text style={styles.sheetCancelBtnText}>Отказ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.sheetSaveBtn} onPress={saveLink} disabled={savingLink}>
+                {savingLink
+                  ? <ActivityIndicator color={colors.onBrand} />
+                  : <Text style={styles.sheetSaveBtnText}>Запази</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
 
       <Modal
         visible={!!preview}
@@ -338,6 +497,40 @@ const styles = StyleSheet.create({
   iconBtn: { padding: space.sm },
   iconBtnText: { fontSize: 18 },
   btn: { backgroundColor: colors.brand600, padding: space.lg, borderRadius: radius.card, alignItems: "center" },
+  sheetOverlay: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 100, elevation: 100,
+    alignItems: "center", justifyContent: "center", padding: space.lg,
+  },
+  sheetBackdrop: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  sheet: {
+    width: "100%", maxWidth: 420, backgroundColor: colors.surface,
+    borderRadius: radius.card, padding: space.lg, gap: space.sm,
+  },
+  sheetTitle: { ...type.subhead, fontWeight: "bold", color: colors.text900, marginBottom: space.xs },
+  sheetRow: { paddingVertical: space.md },
+  sheetText: { ...type.body, color: colors.text900 },
+  sheetCancel: { color: colors.text600 },
+  sheetHint: { ...type.label, color: colors.text400 },
+  input: {
+    backgroundColor: colors.bg, borderRadius: radius.control,
+    paddingHorizontal: space.md, paddingVertical: space.sm,
+    ...type.body, color: colors.text900,
+  },
+  sheetBtns: { flexDirection: "row", gap: space.sm, marginTop: space.xs },
+  sheetCancelBtn: {
+    flex: 1, paddingVertical: space.md, borderRadius: radius.control,
+    backgroundColor: colors.bg, alignItems: "center",
+  },
+  sheetCancelBtnText: { ...type.body, color: colors.text600, fontWeight: "600" },
+  sheetSaveBtn: {
+    flex: 2, paddingVertical: space.md, borderRadius: radius.control,
+    backgroundColor: colors.brand600, alignItems: "center",
+  },
+  sheetSaveBtnText: { ...type.body, color: colors.onBrand, fontWeight: "700" },
   btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   btnText: { ...type.body, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
 
