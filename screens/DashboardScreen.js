@@ -730,7 +730,17 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   // Отваря trip edit модала с текущите стойности prefilled
   function openEditTrip() {
-    if (!isOwner || !trip) return;
+    if (!trip) return;
+    // Правилото „само организаторът редактира" беше вярно, но невидимо: за
+    // участник картата просто не реагираше и изглеждаше като счупен бутон.
+    // По-добре да каже защо, както прави и екранът с участниците.
+    if (!isOwner) {
+      Alert.alert(
+        "Само организаторът",
+        "Пътуването се променя от този, който го е създал. Ако нещо трябва да се коригира, кажи му."
+      );
+      return;
+    }
     setTripName(trip.name || "");
     setTripDestination(trip.destination || "");
     setTripStartDate(trip.start_date || null);
@@ -911,7 +921,6 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                 style={styles.tripInfo}
                 onPress={openEditTrip}
                 activeOpacity={isOwner ? 0.7 : 1}
-                disabled={!isOwner}
               >
                 <View style={styles.tripNameRow}>
                   <Text style={styles.tripName} numberOfLines={2}>{trip.name}</Text>
