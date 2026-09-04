@@ -175,12 +175,15 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
   ).current;
 
   return (
+    // Два отделни възела нарочно. Обвивката налага собствените си handler-и
+    // върху детето си и би презаписала тези на PanResponder, ако бяха на един
+    // и същи View — тогава щипката и местенето мълчат, а тапването работи.
     <TouchableWithoutFeedback onPress={handleTap}>
       <View
         style={styles.wrap}
         onLayout={(e) => { box.current = e.nativeEvent.layout; }}
-        {...responder.panHandlers}
       >
+        <View style={styles.gesture} {...responder.panHandlers}>
         {placeholderUri && !ready && (
           <>
             <Animated.Image
@@ -207,6 +210,7 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
             { transform: [{ translateX: tx }, { translateY: ty }, { scale }] },
           ]}
         />
+        </View>
       </View>
     </TouchableWithoutFeedback>
   );
@@ -214,6 +218,8 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, width: "100%", overflow: "hidden" },
+  // Вътрешният възел носи жестовете и запълва външния изцяло.
+  gesture: { flex: 1, width: "100%" },
   // Голямата снимка стои в потока — от нейното измерване зависят границите на
   // местенето и попадането на допира. Не я вадѝ оттам заради разкрасяване.
   image: { flex: 1, width: "100%" },
