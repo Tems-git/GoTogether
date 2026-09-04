@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import {
-  View, Animated, PanResponder, TouchableWithoutFeedback, StyleSheet, ActivityIndicator,
+  View, Animated, PanResponder, StyleSheet, ActivityIndicator,
 } from "react-native";
 
 // Увеличаване с два пръста, местене с един и двойно тапване за бързо
@@ -11,11 +11,15 @@ import {
 // Живее тук, а не в екрана на документите, защото същото гледане на снимка
 // трябва и в чата. Един компонент, две места.
 //
-// Важното при жестовете: докато снимката е в естествен размер, компонентът НЕ
-// поема допира. Иначе прелистването между снимките в чата никога не би тръгнало
-// — родителският списък не може да скролира, ако дете е взело жеста. Затова
-// двойното тапване е на отделен touchable, а PanResponder се събужда само при
-// два пръста или когато вече сме увеличили.
+// Важното при жестовете: ВСИЧКО минава през един PanResponder — щипката,
+// местенето и тапването. Двете системи за допир (Touchable за тапването и
+// PanResponder за останалото) не се договарят надеждно върху един и същи
+// елемент; обвивката налага своите handler-и и щипката мълчи.
+//
+// Прелистването между снимките в чата продължава да работи, защото
+// onPanResponderTerminationRequest отстъпва жеста, докато снимката е в
+// естествен размер. При увеличена снимка не отстъпваме — иначе местенето би
+// избягало в прелистване.
 
 // Максимално увеличение при разглеждане на снимка. Над четири пъти няма какво
 // повече да се види — снимките от телефон свършват като разделителна способност.
@@ -107,19 +111,20 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
     }, DOUBLE_TAP_MS + 20);
   }
 
+  // Докосване, което не е мръднало и не е траяло дълго, е тапване.
+  const touchStart = useRef({ at: 0, moved: false });
+  const TAP_SLOP = 8;
+  const TAP_MS = 300;
+
   const responder = useRef(
     PanResponder.create({
-      // При допир не поемаме нищо — иначе списъкът отгоре не може да прелиства.
-      onStartShouldSetPanResponder: () => false,
-
-      // Събуждаме се само при щипка с два пръста или когато вече е увеличено.
-      onMoveShouldSetPanResponder: (_e, g) => {
-        if (g.numberActiveTouches === 2) return true;
-        if (cur.current.scale <= 1.01) return false;
-        return Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2;
-      },
+      // Поемаме жеста още при докосване — това е единственият начин да получим
+      // и вдигането на пръста, а без него тапването не се разпознава.
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
 
       onPanResponderGrant: () => {
+        touchStart.current = { at: Date.now(), moved: false };
         pinch.current = { active: false, dist: 0, scale: cur.current.scale };
         pan.current = { x: cur.current.x, y: cur.current.y };
       },
@@ -127,6 +132,10 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
       onPanResponderMove: (e, g) => {
         const touches = e.nativeEvent.touches;
         const size = box.current;
+
+        if (Math.abs(g.dx) > TAP_SLOP || Math.abs(g.dy) > TAP_SLOP) {
+          touchStart.current.moved = true;
+        }
 
         if (touches.length === 2) {
           const d = touchDistance(touches);
@@ -163,6 +172,14 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
       onPanResponderRelease: () => {
         pinch.current.active = false;
         pan.current = { x: cur.current.x, y: cur.current.y };
+
+        // Нищо не се е преместило и е било кратко — значи е тапване, а не жест.
+        const { at, moved } = touchStart.current;
+        if (!moved && Date.now() - at < TAP_MS) {
+          handleTap();
+          return;
+        }
+
         if (cur.current.scale <= 1.02) animateTo(1);
         else reportZoom();
       },
@@ -170,20 +187,19 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
         pinch.current.active = false;
         pan.current = { x: cur.current.x, y: cur.current.y };
       },
-      onPanResponderTerminationRequest: () => false,
+      // Докато снимката е в естествен размер, отстъпваме жеста на лентата със
+      // снимки — тогава хоризонталното плъзгане значи прелистване. При
+      // увеличена снимка не отстъпваме, иначе местенето би избягало.
+      onPanResponderTerminationRequest: () => cur.current.scale <= 1.01,
     })
   ).current;
 
   return (
-    // Два отделни възела нарочно. Обвивката налага собствените си handler-и
-    // върху детето си и би презаписала тези на PanResponder, ако бяха на един
-    // и същи View — тогава щипката и местенето мълчат, а тапването работи.
-    <TouchableWithoutFeedback onPress={handleTap}>
-      <View
-        style={styles.wrap}
-        onLayout={(e) => { box.current = e.nativeEvent.layout; }}
-      >
-        <View style={styles.gesture} {...responder.panHandlers}>
+    <View
+      style={styles.wrap}
+      onLayout={(e) => { box.current = e.nativeEvent.layout; }}
+      {...responder.panHandlers}
+    >
         {placeholderUri && !ready && (
           <>
             <Animated.Image
@@ -210,16 +226,12 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
             { transform: [{ translateX: tx }, { translateY: ty }, { scale }] },
           ]}
         />
-        </View>
-      </View>
-    </TouchableWithoutFeedback>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, width: "100%", overflow: "hidden" },
-  // Вътрешният възел носи жестовете и запълва външния изцяло.
-  gesture: { flex: 1, width: "100%" },
   // Голямата снимка стои в потока — от нейното измерване зависят границите на
   // местенето и попадането на допира. Не я вадѝ оттам заради разкрасяване.
   image: { flex: 1, width: "100%" },
