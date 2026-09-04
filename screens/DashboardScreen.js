@@ -1380,12 +1380,14 @@ const styles = StyleSheet.create({
   tripTop: { flexDirection: "row", alignItems: "flex-start" },
   tripInfo: { flex: 1 },
   tripNameRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginBottom: space.sm },
-  // flex: 1 дава на името остатъка от реда и го кара да се съкрати, вместо да
-  // изтласка моливчето извън картата. Оттам и постоянното място на моливчето:
-  // десният край на реда, независимо от дължината на името.
+  // flexShrink, а НЕ flex. С flex: 1 името се разтяга през целия ред и при
+  // късо име изтласква моливчето чак до кутията с кода, където се губи.
+  // flexShrink го оставя дълго колкото е, но му позволява да се съкрати, когато
+  // мястото свърши — тоест моливчето винаги стои непосредствено след името и
+  // никога не излиза от картата.
   tripName: {
     ...type.heading, fontWeight: "bold", fontFamily: "GolosText_700Bold",
-    color: colors.onBrand, flex: 1,
+    color: colors.onBrand, flexShrink: 1,
   },
   tripEditIcon: { fontSize: 15, opacity: 0.9, flexShrink: 0 },
   tripDestRow: { flexDirection: "row", alignItems: "center", gap: space.xs, marginBottom: space.xs },
