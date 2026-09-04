@@ -881,7 +881,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
           <Text style={styles.headerEmoji}>🧳</Text>
           <Text style={styles.appName}>GoTogether</Text>
           <TouchableOpacity style={styles.nameRow} onPress={() => { setNewName(displayName); setEditNameVisible(true); }}>
-            <Text style={styles.displayName}>👤 {displayName}</Text>
+            <Text style={styles.displayName} numberOfLines={1}>👤 {displayName}</Text>
             <Text style={styles.editIcon}>✏️</Text>
           </TouchableOpacity>
         </View>
@@ -914,7 +914,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                 disabled={!isOwner}
               >
                 <View style={styles.tripNameRow}>
-                  <Text style={styles.tripName}>{trip.name}</Text>
+                  <Text style={styles.tripName} numberOfLines={2}>{trip.name}</Text>
                   {isOwner && <Text style={styles.tripEditIcon}>✏️</Text>}
                 </View>
                 {trip.destination && (
@@ -1360,8 +1360,8 @@ const styles = StyleSheet.create({
   headerEmoji: { fontSize: 44, marginBottom: space.sm },
   appName: { ...type.title, color: colors.brand600 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginTop: space.xs },
-  displayName: { ...type.label, color: colors.text600 },
-  editIcon: { fontSize: 12 },
+  displayName: { ...type.label, color: colors.text600, flexShrink: 1 },
+  editIcon: { fontSize: 12, flexShrink: 0 },
   balanceBar: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     borderRadius: radius.card, paddingHorizontal: space.lg, paddingVertical: space.md, marginBottom: space.md,
@@ -1380,8 +1380,14 @@ const styles = StyleSheet.create({
   tripTop: { flexDirection: "row", alignItems: "flex-start" },
   tripInfo: { flex: 1 },
   tripNameRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginBottom: space.sm },
-  tripName: { ...type.heading, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.onBrand },
-  tripEditIcon: { fontSize: 12, opacity: 0.7 },
+  // flex: 1 дава на името остатъка от реда и го кара да се съкрати, вместо да
+  // изтласка моливчето извън картата. Оттам и постоянното място на моливчето:
+  // десният край на реда, независимо от дължината на името.
+  tripName: {
+    ...type.heading, fontWeight: "bold", fontFamily: "GolosText_700Bold",
+    color: colors.onBrand, flex: 1,
+  },
+  tripEditIcon: { fontSize: 15, opacity: 0.9, flexShrink: 0 },
   tripDestRow: { flexDirection: "row", alignItems: "center", gap: space.xs, marginBottom: space.xs },
   tripDest: { ...type.label, color: colors.onBrandMuted },
   tripDates: { ...type.label, color: colors.onBrandMuted },
