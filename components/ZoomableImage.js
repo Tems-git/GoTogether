@@ -188,7 +188,7 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
               resizeMode="contain"
               blurRadius={2}
               style={[
-                styles.image,
+                styles.imageUnder,
                 { transform: [{ translateX: tx }, { translateY: ty }, { scale }] },
               ]}
             />
@@ -200,11 +200,6 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
         <Animated.Image
           source={{ uri }}
           resizeMode="contain"
-          // Android иначе разкодира снимката в пълния й размер и чак после я
-          // смалява за екрана. При голям файл това е десетки мегабайта памет и
-          // зареждането спира. С това разкодирането става наведнъж до размера,
-          // който се вижда.
-          resizeMethod="resize"
           onLoad={() => setReady(true)}
           style={[
             styles.image,
@@ -219,8 +214,11 @@ export default function ZoomableImage({ uri, placeholderUri, onZoomChange, onSin
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, width: "100%", overflow: "hidden" },
-  // Двете снимки стоят една върху друга, затова са наслагани, а не в поток.
-  image: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
+  // Голямата снимка стои в потока — от нейното измерване зависят границите на
+  // местенето и попадането на допира. Не я вадѝ оттам заради разкрасяване.
+  image: { flex: 1, width: "100%" },
+  // Подложката е временна и нищо не зависи от размера ѝ, затова тя се наслагва.
+  imageUnder: { ...StyleSheet.absoluteFillObject },
   hidden: { opacity: 0 },
   spinner: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
 });
