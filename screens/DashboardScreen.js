@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   StyleSheet, Text, View, TouchableOpacity,
   ScrollView, Alert, Share, Modal, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -88,6 +88,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [avatarUrls, setAvatarUrls] = useState({});
   const [myAvatarPath, setMyAvatarPath] = useState(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
+  // Малкото меню „откъде да е снимката". Слой, не прозорец — виж бележката
+  // при рисуването му.
+  const [avatarMenu, setAvatarMenu] = useState(false);
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -472,17 +475,45 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     return net;
   }, [expenses, expenseSplits, payments, rates, user.id, members]);
 
-  async function handlePickAvatar() {
+  // Изборът се запомня, менюто се затваря и чак после тръгва системният
+  // избирач. Обратният ред е причината за първия провал.
+  const pendingAvatarPick = useRef(null);
+
+  function chooseAvatarPick(source) {
+    pendingAvatarPick.current = source;
+    setAvatarMenu(false);
+    requestAnimationFrame(() => {
+      const next = pendingAvatarPick.current;
+      if (!next) return;
+      pendingAvatarPick.current = null;
+      handlePickAvatar(next);
+    });
+  }
+
+  async function handlePickAvatar(source) {
     try {
+      // Разрешение иска само камерата. Галерията минава през системния
+      // избирач — той показва снимките сам и връща само посоченото.
+      if (source === "camera") {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert("Няма достъп", "Без разрешение за камерата не мога да снимам.");
+          return;
+        }
+      }
+
       // Кръгът реже квадрат от снимката, затова изрязването е тук, а не после:
       // по-добре човек сам да реши какво остава вътре, отколкото да го отреже
       // средата на кадъра.
-      const result = await ImagePicker.launchImageLibraryAsync({
+      const options = {
         mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.9,
-      });
+      };
+      const result = source === "camera"
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
       if (result.canceled) return;
       const asset = (result.assets || [])[0];
       if (!asset?.uri) return;
@@ -955,13 +986,33 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         <View style={styles.header}>
           <Text style={styles.headerEmoji}>🧳</Text>
           <Text style={styles.appName}>GoTogether</Text>
-          <TouchableOpacity style={styles.nameRow} onPress={() => { setNewName(displayName); setEditNameVisible(true); }}>
-            <Avatar uri={avatarUrls[user.id]} style={styles.myAvatar}>
-              <Text style={styles.myAvatarText}>👤</Text>
-            </Avatar>
-            <Text style={styles.displayName} numberOfLines={1}>{displayName}</Text>
-            <Text style={styles.editIcon}>✏️</Text>
-          </TouchableOpacity>
+          <View style={styles.nameRow}>
+            {/* Кръгчето е свой бутон — то отваря снимката. Името до него си
+                остава за никнейма. Две различни неща на един ред, но всяко със
+                своето докосване. */}
+            <TouchableOpacity
+              onPress={() => setAvatarMenu(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              disabled={savingAvatar}
+            >
+              {savingAvatar ? (
+                <View style={styles.myAvatar}>
+                  <ActivityIndicator size="small" color={colors.brand600} />
+                </View>
+              ) : (
+                <Avatar uri={avatarUrls[user.id]} style={styles.myAvatar}>
+                  <Text style={styles.myAvatarText}>👤</Text>
+                </Avatar>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.nameTap}
+              onPress={() => { setNewName(displayName); setEditNameVisible(true); }}
+            >
+              <Text style={styles.displayName} numberOfLines={1}>{displayName}</Text>
+              <Text style={styles.editIcon}>✏️</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {trip && (
@@ -1267,35 +1318,45 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         </View>
       </Modal>
 
+      {/* Слой, а не Modal. На iOS Modal е истински системен екран; отварянето
+          на избирача на снимки, докато такъв екран стои отгоре, не е позволено
+          и се проваля тихо — галерията се вижда, но избраното не се връща.
+          Същият капан имаше и в чата. */}
+      {avatarMenu && (
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity
+            style={styles.sheetBackdrop}
+            activeOpacity={1}
+            onPress={() => setAvatarMenu(false)}
+          />
+          <View style={styles.avatarSheet}>
+            <TouchableOpacity style={styles.avatarSheetRow} onPress={() => chooseAvatarPick("camera")}>
+              <Text style={styles.avatarSheetText}>📷 Снимай</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.avatarSheetRow} onPress={() => chooseAvatarPick("library")}>
+              <Text style={styles.avatarSheetText}>🖼 От галерията</Text>
+            </TouchableOpacity>
+            {myAvatarPath && (
+              <TouchableOpacity
+                style={styles.avatarSheetRow}
+                onPress={() => { setAvatarMenu(false); handleClearAvatar(); }}
+              >
+                <Text style={styles.avatarSheetDanger}>Махни снимката</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.avatarSheetRow} onPress={() => setAvatarMenu(false)}>
+              <Text style={styles.avatarSheetMuted}>Отказ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <Modal visible={editNameVisible} animationType="slide" transparent>
         <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={styles.modalInner}>
             <Text style={styles.modalTitle}>Смени никнейм</Text>
-
-            {/* Снимката е тук, а не на отделно място: никнеймът и снимката са
-                едно и също решение — „как ме виждат другите". */}
-            <View style={styles.avatarEdit}>
-              <Avatar uri={avatarUrls[user.id]} style={styles.avatarHuge}>
-                <Text style={styles.avatarHugeText}>{getInitials(displayName) || "?"}</Text>
-              </Avatar>
-              {savingAvatar ? (
-                <ActivityIndicator color={colors.brand600} style={styles.avatarBusy} />
-              ) : (
-                <View style={styles.avatarBtns}>
-                  <TouchableOpacity onPress={handlePickAvatar}>
-                    <Text style={styles.avatarBtn}>
-                      {myAvatarPath ? "Смени снимката" : "Сложи снимка"}
-                    </Text>
-                  </TouchableOpacity>
-                  {myAvatarPath && (
-                    <TouchableOpacity onPress={handleClearAvatar}>
-                      <Text style={styles.avatarBtnMuted}>Махни снимката</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-            </View>
-
+            {/* Тук стоеше и снимката. Изнесена е при кръгчето горе, защото от
+                прозорец iOS не пуска избирача на снимки. */}
             <TextInput
               style={styles.nameInput}
               value={newName}
@@ -1470,21 +1531,28 @@ const styles = StyleSheet.create({
   appName: { ...type.title, color: colors.brand600 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginTop: space.xs },
   displayName: { ...type.label, color: colors.text600, flexShrink: 1 },
+  nameTap: { flexDirection: "row", alignItems: "center", gap: space.sm, flexShrink: 1 },
+  // Рамка и по-светъл фон, за да личи, че кръгчето е бутон и когато е празно.
   myAvatar: {
-    width: 22, height: 22, borderRadius: 11,
+    width: 32, height: 32, borderRadius: 16,
     alignItems: "center", justifyContent: "center", flexShrink: 0,
+    backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border,
   },
-  myAvatarText: { fontSize: 13, lineHeight: 17 },
-  avatarEdit: { alignItems: "center", gap: space.sm, marginBottom: space.lg },
-  avatarHuge: {
-    width: 96, height: 96, borderRadius: 48, backgroundColor: colors.brand600,
-    alignItems: "center", justifyContent: "center",
+  myAvatarText: { fontSize: 16, lineHeight: 20 },
+  sheetOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", zIndex: 50 },
+  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)" },
+  avatarSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingBottom: space.xxl,
   },
-  avatarHugeText: { fontSize: 34, lineHeight: 42, fontWeight: "bold", color: colors.onBrand },
-  avatarBtns: { alignItems: "center", gap: space.xs },
-  avatarBusy: { height: 40 },
-  avatarBtn: { ...type.label, fontWeight: "700", color: colors.brand600 },
-  avatarBtnMuted: { ...type.label, color: colors.text400 },
+  avatarSheetRow: {
+    paddingVertical: space.lg, paddingHorizontal: space.xl,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  avatarSheetText: { ...type.body, color: colors.text900 },
+  avatarSheetDanger: { ...type.body, color: colors.owe600 },
+  avatarSheetMuted: { ...type.body, color: colors.text600 },
   editIcon: { fontSize: 12, flexShrink: 0 },
   balanceBar: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
