@@ -453,9 +453,21 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // какво е.
   function quoteOf(msg) {
     if (!msg) return null;
-    if (msg.image_path) return msg.text ? `📷 ${msg.text}` : "📷 снимка";
-    if (msg.plan_id) return "🗺 план";
+    if (msg.image_path) return msg.text ? applyEmoticons(msg.text) : "Снимка";
+    // Планът носи маршрута в текста си — той е това, което различава един
+    // споделен план от друг. „🗺 план" не различаваше нищо.
+    if (msg.plan_id) {
+      const firstLine = String(msg.text || "").split("\n").find((l) => l.trim());
+      return `🗺 ${firstLine ? firstLine.trim() : "план"}`;
+    }
     return applyEmoticons(msg.text || "");
+  }
+
+  // Умалената снимка на цитираното съобщение. Тя вече е изтеглена за списъка,
+  // значи показването ѝ в цитата не струва нито заявка, нито трафик.
+  function quoteThumbOf(msg) {
+    if (!msg?.image_path) return null;
+    return photoUrls[msg.thumb_path] || photoUrls[msg.image_path] || null;
   }
 
   // Всички снимки в чата, по реда на чата. Отварянето на една значи заставане
@@ -754,9 +766,11 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // три бутона в Alert, а действията вече са повече. И се отваря за всяко
   // съобщение, не само за свое — запазването на снимка е точно за чуждите.
   function handleLongPress(msg) {
-    const isMine = msg.user_id === userId;
-    const hasPhoto = !!msg.image_path;
-    if (!isMine && !hasPhoto) return;
+    // Отваря се за всяко съобщение. Тук някога стоеше проверка „само свое или
+    // със снимка", защото единственото действие върху чуждо беше запазването
+    // на снимка. Оттогава дойдоха „запази линка" и „отговори" — и двете са
+    // точно за чуждите. Редакцията и изтриването са си заключени поотделно
+    // по-долу.
     setMsgActions(msg);
   }
 
@@ -1158,12 +1172,21 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                           onPress={() => jumpToMessage(msgById[item.reply_to])}
                           activeOpacity={0.7}
                         >
-                          <Text style={[styles.quoteName, isMe && styles.quoteNameMe]} numberOfLines={1}>
-                            {msgById[item.reply_to].display_name}
-                          </Text>
-                          <Text style={[styles.quoteText, isMe && styles.quoteTextMe]} numberOfLines={1}>
-                            {quoteOf(msgById[item.reply_to])}
-                          </Text>
+                          {quoteThumbOf(msgById[item.reply_to]) && (
+                            <Image
+                              source={{ uri: quoteThumbOf(msgById[item.reply_to]) }}
+                              style={styles.quoteThumb}
+                              resizeMode="cover"
+                            />
+                          )}
+                          <View style={styles.quoteBody}>
+                            <Text style={[styles.quoteName, isMe && styles.quoteNameMe]} numberOfLines={1}>
+                              {msgById[item.reply_to].display_name}
+                            </Text>
+                            <Text style={[styles.quoteText, isMe && styles.quoteTextMe]} numberOfLines={1}>
+                              {quoteOf(msgById[item.reply_to])}
+                            </Text>
+                          </View>
                         </TouchableOpacity>
                       )}
                       {item.plan_id ? (
@@ -1288,6 +1311,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         <View>
         {replyTo && (
           <View style={styles.replyBar}>
+            {quoteThumbOf(replyTo) && (
+              <Image source={{ uri: quoteThumbOf(replyTo) }} style={styles.quoteThumb} resizeMode="cover" />
+            )}
             <View style={styles.replyBarText}>
               <Text style={styles.replyBarName} numberOfLines={1}>
                 Отговор на {replyTo.display_name}
@@ -1730,10 +1756,13 @@ const styles = StyleSheet.create({
   msgImageLoading: { alignItems: "center", justifyContent: "center" },
   // Цитатът е тесен и приглушен нарочно — той е указател, не съдържание.
   quote: {
+    flexDirection: "row", alignItems: "center", gap: space.sm,
     borderLeftWidth: 3, borderLeftColor: colors.brand400,
-    paddingLeft: space.sm, marginBottom: space.xs,
+    paddingLeft: space.sm, paddingRight: space.xs, marginBottom: space.xs,
     backgroundColor: "rgba(0,0,0,0.04)", borderRadius: 6, paddingVertical: 4,
   },
+  quoteBody: { flex: 1 },
+  quoteThumb: { width: 34, height: 34, borderRadius: 6, backgroundColor: colors.border },
   quoteMe: { borderLeftColor: "rgba(255,255,255,0.7)", backgroundColor: "rgba(255,255,255,0.12)" },
   quoteName: { ...type.label, fontWeight: "700", color: colors.brand600 },
   quoteNameMe: { color: colors.onBrand },
