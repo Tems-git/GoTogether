@@ -27,6 +27,10 @@ const PHOTO_URL_SECONDS = 3600;
 // Кои снимки вече са записани в галерията на ТОЗИ телефон. На телефона, защото
 // въпросът е „аз имам ли я", а не „изпратена ли е". Пази се ограничен брой —
 // списъкът няма причина да расте вечно.
+// Шест стигат. Повече значи скролване в едно меню, което трябва да е по-бързо
+// от писането на „ок".
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
 const SAVED_PHOTOS_KEY = "gotogether.savedPhotos";
 const SAVED_PHOTOS_MAX = 500;
 
@@ -186,6 +190,8 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // Пътища, които вече са и в Документите на пътуването.
   const [inDocuments, setInDocuments] = useState([]);
   const [savingDoc, setSavingDoc] = useState(false);
+  // Всички реакции в разговора. Малко са, затова се държат наведнъж.
+  const [reactions, setReactions] = useState([]);
   // Търсенето е отворено само когато има какво да се търси.
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
@@ -216,6 +222,43 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     return () => sub.remove();
   }, []);
 
+  // Отделно четене — вика се от живата връзка, без да пипа съобщенията.
+  const fetchReactions = useCallback(async () => {
+    const { data } = await supabase
+      .from("message_reactions")
+      .select("message_id, user_id, emoji, messages!inner(trip_id)")
+      .eq("messages.trip_id", tripId);
+    setReactions((data || []).map((r) => ({
+      message_id: r.message_id, user_id: r.user_id, emoji: r.emoji,
+    })));
+  }, [tripId]);
+
+  // Натискането е превключвател: същото емоджи втори път го маха.
+  async function toggleReaction(msg, emoji) {
+    if (!msg?.id) return;
+    const mine = reactions.find(
+      (r) => r.message_id === msg.id && r.user_id === userId && r.emoji === emoji
+    );
+
+    // Показваме промяната веднага — мрежата догонва. При провал прочитът
+    // отдолу връща истината.
+    setReactions((prev) => mine
+      ? prev.filter((r) => !(r.message_id === msg.id && r.user_id === userId && r.emoji === emoji))
+      : [...prev, { message_id: msg.id, user_id: userId, emoji }]);
+
+    try {
+      if (mine) {
+        await supabase.from("message_reactions").delete()
+          .eq("message_id", msg.id).eq("user_id", userId).eq("emoji", emoji);
+      } else {
+        await supabase.from("message_reactions")
+          .insert({ message_id: msg.id, user_id: userId, emoji });
+      }
+    } catch {
+      fetchReactions();
+    }
+  }
+
   const markAsRead = useCallback(async () => {
     await supabase.from("trip_members")
       .update({ chat_last_read: new Date().toISOString() })
@@ -240,6 +283,18 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       .order("created_at", { ascending: true });
     setMessages(data || []);
     setLoading(false);
+
+    const ids = (data || []).map((m) => m.id);
+    if (ids.length > 0) {
+      const { data: rData } = await supabase
+        .from("message_reactions")
+        .select("message_id, user_id, emoji")
+        .in("message_id", ids);
+      setReactions(rData || []);
+    } else {
+      setReactions([]);
+    }
+
     await markAsRead();
   }, [tripId, markAsRead]);
 
@@ -286,13 +341,19 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         { event: "UPDATE", schema: "public", table: "trip_members", filter: `trip_id=eq.${tripId}` },
         () => fetchMemberReads()
       )
+      // Без филтър: реакцията носи message_id, не trip_id. Правилата за четене
+      // и без това не пускат чужди разговори.
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "message_reactions" },
+        () => fetchReactions()
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(msgChannel);
       supabase.removeChannel(membersChannel);
     };
-  }, [tripId, userId, resumeTick, fetchMessages, fetchMemberReads, markAsRead]);
+  }, [tripId, userId, resumeTick, fetchMessages, fetchMemberReads, fetchReactions, markAsRead]);
 
   // Тук стоеше ефект, който смъкваше списъка при всяко ново съобщение. В
   // обърнат списък новото влиза откъм дъното, тоест точно там, където гледаш,
@@ -443,6 +504,15 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       setSavingDoc(false);
     }
   }
+
+  // Реакциите по съобщение и по емоджи, с брой и с това дали моята е сред тях.
+  const reactionsByMsg = {};
+  reactions.forEach((r) => {
+    const perMsg = reactionsByMsg[r.message_id] || (reactionsByMsg[r.message_id] = {});
+    const cell = perMsg[r.emoji] || (perMsg[r.emoji] = { count: 0, mine: false });
+    cell.count += 1;
+    if (r.user_id === userId) cell.mine = true;
+  });
 
   // Оригиналите за цитатите. Речник, а не търсене в масива при всеки ред —
   // при дълъг разговор второто е бавно.
@@ -1242,6 +1312,25 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                           {!!item.text && renderMessageText(item, isMe)}
                         </>
                       )}
+                      {reactionsByMsg[item.id] && (
+                        <View style={styles.reactionRow}>
+                          {Object.entries(reactionsByMsg[item.id]).map(([emoji, cell]) => (
+                            <TouchableOpacity
+                              key={emoji}
+                              style={[styles.reactionChip, cell.mine && styles.reactionChipMine]}
+                              onPress={() => toggleReaction(item, emoji)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.reactionEmoji}>{emoji}</Text>
+                              {cell.count > 1 && (
+                                <Text style={[styles.reactionCount, cell.mine && styles.reactionCountMine]}>
+                                  {cell.count}
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
                       <View style={styles.timeLine}>
                         <Text style={[styles.msgTime, isMe && styles.msgTimeMe]}>
                           {formatTime(item.created_at)}
@@ -1470,6 +1559,22 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           <View style={styles.readOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
               <View style={styles.actionSheet}>
+                {/* Реакциите са най-отгоре, защото са най-честото действие и
+                    трябва да са на един жест разстояние. */}
+                <View style={styles.quickRow}>
+                  {QUICK_REACTIONS.map((emoji) => {
+                    const mine = reactionsByMsg[msgActions?.id]?.[emoji]?.mine;
+                    return (
+                      <TouchableOpacity
+                        key={emoji}
+                        style={[styles.quickBtn, mine && styles.quickBtnMine]}
+                        onPress={() => { const m = msgActions; setMsgActions(null); toggleReaction(m, emoji); }}
+                      >
+                        <Text style={styles.quickEmoji}>{emoji}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
                 <TouchableOpacity
                   style={styles.actionRow}
                   onPress={() => { const m = msgActions; setMsgActions(null); setReplyTo(m); }}
@@ -1925,6 +2030,27 @@ const styles = StyleSheet.create({
   link: { color: colors.brand600, textDecorationLine: "underline" },
   linkMe: { color: colors.onBrand, textDecorationLine: "underline", fontWeight: "600" },
   timeLine: { flexDirection: "row", justifyContent: "flex-end", marginTop: space.xs },
+  reactionRow: { flexDirection: "row", flexWrap: "wrap", gap: space.xs, marginTop: space.xs },
+  reactionChip: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: colors.bg, borderRadius: radius.pill,
+    paddingHorizontal: space.sm, paddingVertical: 2,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  // Своята реакция се разпознава по рамката, не по цвят на фона — чиповете
+  // стоят и върху зелен балон.
+  reactionChipMine: { borderColor: colors.brand600, backgroundColor: colors.brand50 },
+  reactionEmoji: { fontSize: 14 },
+  reactionCount: { fontSize: 12, lineHeight: 16, color: colors.text600, fontWeight: "600" },
+  reactionCountMine: { color: colors.brand600 },
+  quickRow: {
+    flexDirection: "row", justifyContent: "space-around",
+    paddingVertical: space.md, paddingHorizontal: space.sm,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  quickBtn: { padding: space.sm, borderRadius: radius.pill },
+  quickBtnMine: { backgroundColor: colors.brand50 },
+  quickEmoji: { fontSize: 26 },
   msgTime: { fontSize: 12, lineHeight: 16, color: colors.text400 },
   msgTimeMe: { color: colors.onBrandMuted },
   tickRow: { marginTop: space.xs, marginRight: space.xs },
