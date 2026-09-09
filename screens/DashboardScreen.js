@@ -5,10 +5,13 @@ import {
   AppState,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../lib/supabase";import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DatePicker from "../components/DatePicker";
 import { Sparkles, MessageSquare, FileText, CreditCard, MapPin, Users, Plus } from "lucide-react-native";
 import { colors, space, radius, type } from "../theme/tokens";
+import { fetchAvatarUrls, uploadAvatar, clearAvatar } from "../lib/avatars";
+import Avatar from "../components/Avatar";
 
 const MAX_VISIBLE = 4;
 const LOCAL_CURRENCY_OPTIONS = ["EUR", "USD", "GBP", "CHF"];
@@ -80,6 +83,11 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   const [members, setMembers] = useState([]);
   const [removedMembers, setRemovedMembers] = useState([]);
   const [displayName, setDisplayName] = useState("");
+  // Идентификатор → временен адрес на снимката. Своят път се пази отделно:
+  // нужен е, за да се изтрие старият файл при смяна.
+  const [avatarUrls, setAvatarUrls] = useState({});
+  const [myAvatarPath, setMyAvatarPath] = useState(null);
+  const [savingAvatar, setSavingAvatar] = useState(false);
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -217,12 +225,13 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
     if (!user?.id) return;
     supabase
       .from("profiles")
-      .select("display_name")
+      .select("display_name, avatar_url")
       .eq("id", user.id)
       .maybeSingle()
       .then(({ data }) => {
         if (data?.display_name) setDisplayName(data.display_name);
         else setDisplayName(user.email.split("@")[0]);
+        setMyAvatarPath(data?.avatar_url || null);
       });
   }, [user?.id]);
 
@@ -311,6 +320,20 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   // Dashboard-ът се разглобява при влизане в друг екран и се сглобява наново
   // при връщане, така че това се преизчислява при всяко връщане от чата.
   useEffect(() => { fetchUnreadByTrip(); }, [fetchUnreadByTrip, allTrips, resumeTick]);
+
+  // Снимките на участниците. Временните адреси изтичат след час, затова и тук
+  // resumeTick: телефонът може да е спал по-дълго от това.
+  useEffect(() => {
+    // Своят идентификатор винаги е вътре: снимката се вижда в профила и когато
+    // още няма пътуване, тоест когато списъкът с участници е празен.
+    const ids = members.map((m) => m.user_id).concat(user?.id || []);
+    if (ids.length === 0) return;
+    let alive = true;
+    fetchAvatarUrls(ids)
+      .then((map) => { if (alive) setAvatarUrls(map); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [members, resumeTick, myAvatarPath]);
 
   // Брой документи — за краткия контекст под картата "Документи".
   const fetchDocsCount = useCallback(async () => {
@@ -448,6 +471,48 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
     return net;
   }, [expenses, expenseSplits, payments, rates, user.id, members]);
+
+  async function handlePickAvatar() {
+    try {
+      // Кръгът реже квадрат от снимката, затова изрязването е тук, а не после:
+      // по-добре човек сам да реши какво остава вътре, отколкото да го отреже
+      // средата на кадъра.
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
+      if (result.canceled) return;
+      const asset = (result.assets || [])[0];
+      if (!asset?.uri) return;
+
+      setSavingAvatar(true);
+      const path = await uploadAvatar(user.id, asset.uri, myAvatarPath);
+      setMyAvatarPath(path);
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    } finally {
+      setSavingAvatar(false);
+    }
+  }
+
+  async function handleClearAvatar() {
+    try {
+      setSavingAvatar(true);
+      await clearAvatar(user.id, myAvatarPath);
+      setMyAvatarPath(null);
+      setAvatarUrls((prev) => {
+        const next = { ...prev };
+        delete next[user.id];
+        return next;
+      });
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    } finally {
+      setSavingAvatar(false);
+    }
+  }
 
   async function handleSaveName() {
     const name = newName.trim();
@@ -891,7 +956,10 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
           <Text style={styles.headerEmoji}>🧳</Text>
           <Text style={styles.appName}>GoTogether</Text>
           <TouchableOpacity style={styles.nameRow} onPress={() => { setNewName(displayName); setEditNameVisible(true); }}>
-            <Text style={styles.displayName} numberOfLines={1}>👤 {displayName}</Text>
+            <Avatar uri={avatarUrls[user.id]} style={styles.myAvatar}>
+              <Text style={styles.myAvatarText}>👤</Text>
+            </Avatar>
+            <Text style={styles.displayName} numberOfLines={1}>{displayName}</Text>
             <Text style={styles.editIcon}>✏️</Text>
           </TouchableOpacity>
         </View>
@@ -951,9 +1019,13 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
             {showMembersRow && (
               <TouchableOpacity style={styles.membersRow} onPress={() => setMembersModalVisible(true)}>
                 {visibleMembers.map((m, i) => (
-                  <View key={m.user_id} style={[styles.avatar, { backgroundColor: COLORS[(i + 1) % COLORS.length], marginLeft: i > 0 ? -8 : 0 }]}>
+                  <Avatar
+                    key={m.user_id}
+                    uri={avatarUrls[m.user_id]}
+                    style={[styles.avatar, { backgroundColor: COLORS[(i + 1) % COLORS.length], marginLeft: i > 0 ? -8 : 0 }]}
+                  >
                     <Text style={styles.avatarText}>{getInitials(m.display_name)}</Text>
-                  </View>
+                  </Avatar>
                 ))}
                 {extraCount > 0 && (
                   <View style={[styles.avatar, styles.avatarExtra, { marginLeft: -8 }]}>
@@ -1050,9 +1122,12 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
               return (
                 <View key={m.user_id} style={styles.memberRow}>
                   <View style={styles.memberTopRow}>
-                    <View style={[styles.avatarLg, { backgroundColor: isMe ? colors.brand600 : COLORS[i % COLORS.length] }]}>
+                    <Avatar
+                      uri={avatarUrls[m.user_id]}
+                      style={[styles.avatarLg, { backgroundColor: isMe ? colors.brand600 : COLORS[i % COLORS.length] }]}
+                    >
                       <Text style={styles.avatarLgText}>{getInitials(m.display_name)}</Text>
-                    </View>
+                    </Avatar>
                     <View style={styles.memberInfo}>
                       <Text style={styles.memberRowName}>{m.display_name}</Text>
                       <View style={styles.memberBadges}>
@@ -1196,6 +1271,31 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={styles.modalInner}>
             <Text style={styles.modalTitle}>Смени никнейм</Text>
+
+            {/* Снимката е тук, а не на отделно място: никнеймът и снимката са
+                едно и също решение — „как ме виждат другите". */}
+            <View style={styles.avatarEdit}>
+              <Avatar uri={avatarUrls[user.id]} style={styles.avatarHuge}>
+                <Text style={styles.avatarHugeText}>{getInitials(displayName) || "?"}</Text>
+              </Avatar>
+              {savingAvatar ? (
+                <ActivityIndicator color={colors.brand600} style={styles.avatarBusy} />
+              ) : (
+                <View style={styles.avatarBtns}>
+                  <TouchableOpacity onPress={handlePickAvatar}>
+                    <Text style={styles.avatarBtn}>
+                      {myAvatarPath ? "Смени снимката" : "Сложи снимка"}
+                    </Text>
+                  </TouchableOpacity>
+                  {myAvatarPath && (
+                    <TouchableOpacity onPress={handleClearAvatar}>
+                      <Text style={styles.avatarBtnMuted}>Махни снимката</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </View>
+
             <TextInput
               style={styles.nameInput}
               value={newName}
@@ -1282,7 +1382,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                 <Text style={styles.btnCancelText}>Отказ</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.btnSave} onPress={handleSaveTrip} disabled={savingTrip}>
-                {savingTrip ? <ActivityIndicator color={colors.brand600} /> : <Text style={styles.btnSaveText}>Запази</Text>}
+                {savingTrip ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.btnSaveText}>Запази</Text>}
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -1370,6 +1470,21 @@ const styles = StyleSheet.create({
   appName: { ...type.title, color: colors.brand600 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginTop: space.xs },
   displayName: { ...type.label, color: colors.text600, flexShrink: 1 },
+  myAvatar: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: "center", justifyContent: "center", flexShrink: 0,
+  },
+  myAvatarText: { fontSize: 13, lineHeight: 17 },
+  avatarEdit: { alignItems: "center", gap: space.sm, marginBottom: space.lg },
+  avatarHuge: {
+    width: 96, height: 96, borderRadius: 48, backgroundColor: colors.brand600,
+    alignItems: "center", justifyContent: "center",
+  },
+  avatarHugeText: { fontSize: 34, lineHeight: 42, fontWeight: "bold", color: colors.onBrand },
+  avatarBtns: { alignItems: "center", gap: space.xs },
+  avatarBusy: { height: 40 },
+  avatarBtn: { ...type.label, fontWeight: "700", color: colors.brand600 },
+  avatarBtnMuted: { ...type.label, color: colors.text400 },
   editIcon: { fontSize: 12, flexShrink: 0 },
   balanceBar: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -1533,10 +1648,14 @@ const styles = StyleSheet.create({
   weightHint: { fontSize: 12, lineHeight: 16, color: colors.text600, marginTop: space.lg, marginBottom: space.sm, textAlign: "center" },
   nameInput: { ...type.body, backgroundColor: colors.bg, borderRadius: radius.control, padding: space.lg, color: colors.text900, marginBottom: space.lg },
   modalBtns: { flexDirection: "row", gap: space.md, marginTop: space.xl },
-  btnCancel: { flex: 1, padding: space.lg, borderRadius: radius.control, borderWidth: 1, borderColor: colors.border, alignItems: "center", backgroundColor: "rgba(255,255,255,0.15)" },
-  btnCancelText: { ...type.body, color: colors.onBrand },
-  btnSave: { flex: 1, padding: space.lg, borderRadius: radius.control, backgroundColor: colors.surface, alignItems: "center" },
-  btnSaveText: { ...type.body, color: colors.brand600, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
+  // Двата бутона стоят върху бял лист (`modal` и `modalInner` са
+  // colors.surface), затова тихият е с рамка и тъмен текст, а главният е
+  // плътно зелен с бял. Дотук отказът беше бял текст върху почти бяло —
+  // виждаше се само рамката.
+  btnCancel: { flex: 1, padding: space.lg, borderRadius: radius.control, borderWidth: 1, borderColor: colors.border, alignItems: "center", backgroundColor: colors.surface },
+  btnCancelText: { ...type.body, color: colors.text600 },
+  btnSave: { flex: 1, padding: space.lg, borderRadius: radius.control, backgroundColor: colors.brand600, alignItems: "center" },
+  btnSaveText: { ...type.body, color: colors.onBrand, fontWeight: "bold", fontFamily: "GolosText_700Bold" },
   btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   tripList: { maxHeight: 400, marginBottom: space.sm },
   tripOption: { flexDirection: "row", alignItems: "center", padding: space.lg, borderRadius: radius.control, marginBottom: space.sm, backgroundColor: colors.bg },

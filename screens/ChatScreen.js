@@ -14,6 +14,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { shrinkPhoto, makeThumb, makeView, presetFor, PHOTO_PRESETS } from "../lib/image";
 import { bundleStamp } from "../lib/version";
 import { applyEmoticons } from "../lib/emoticons";
+import { fetchAvatarUrls } from "../lib/avatars";
+import Avatar from "../components/Avatar";
 import { colors, space, radius, type } from "../theme/tokens";
 
 // Цветът на аватара се избира по user_id, а не по мястото в списъка. Така
@@ -192,6 +194,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const [savingDoc, setSavingDoc] = useState(false);
   // Всички реакции в разговора. Малко са, затова се държат наведнъж.
   const [reactions, setReactions] = useState([]);
+  // Идентификатор → временен адрес на снимката на човека. Хората в един
+  // разговор са единици, затова се вземат наведнъж и се държат.
+  const [avatarUrls, setAvatarUrls] = useState({});
   // Търсенето е отворено само когато има какво да се търси.
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
@@ -387,6 +392,21 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   function switchQuality() {
     setPhotoQuality((prev) => (prev === "high" ? "normal" : "high"));
   }
+
+  // Снимките на хората в разговора. Отделно от съобщенията, защото се сменят
+  // веднъж на месеци; resumeTick е заради временните адреси, които изтичат
+  // след час, а телефонът може да е спал по-дълго.
+  useEffect(() => {
+    let alive = true;
+    supabase
+      .from("trip_members")
+      .select("user_id")
+      .eq("trip_id", tripId)
+      .then(({ data }) => fetchAvatarUrls((data || []).map((m) => m.user_id)))
+      .then((map) => { if (alive) setAvatarUrls(map); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [tripId, resumeTick]);
 
   // Временните връзки се издават на групи, за всички нови снимки наведнъж.
   useEffect(() => {
@@ -1220,11 +1240,14 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
               <View style={[styles.msgWrapper, isMe && styles.msgWrapperMe]}>
                 <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
                   {!isMe && (
-                    <View style={[styles.avatar, { backgroundColor: avatarColor(item.user_id) }]}>
+                    <Avatar
+                      uri={avatarUrls[item.user_id]}
+                      style={[styles.avatar, { backgroundColor: avatarColor(item.user_id) }]}
+                    >
                       <Text style={styles.avatarText}>
                         {(item.display_name || "?")[0].toUpperCase()}
                       </Text>
-                    </View>
+                    </Avatar>
                   )}
                   <TouchableWithoutFeedback
                     onLongPress={() => handleLongPress(item)}
