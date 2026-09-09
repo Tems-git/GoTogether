@@ -13,6 +13,7 @@ import { saveToGallery, canSaveToGallery } from "../lib/gallery";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { shrinkPhoto, makeThumb, makeView, presetFor, PHOTO_PRESETS } from "../lib/image";
 import { bundleStamp } from "../lib/version";
+import { applyEmoticons } from "../lib/emoticons";
 import { colors, space, radius, type } from "../theme/tokens";
 
 // Цветът на аватара се избира по user_id, а не по мястото в списъка. Така
@@ -172,6 +173,8 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   // Избраните снимки чакат тук, докато човек реши дали да сложи подпис.
   const [pendingAssets, setPendingAssets] = useState(null);
   const [captionDraft, setCaptionDraft] = useState("");
+  // Съобщението, на което пишем отговор. null значи обикновено съобщение.
+  const [replyTo, setReplyTo] = useState(null);
   // Мястото в лентата със снимки, отворена на цял екран. null значи затворена.
   const [photoIndex, setPhotoIndex] = useState(null);
   // Докато снимката е увеличена, прелистването настрани трябва да спре.
@@ -441,6 +444,20 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     }
   }
 
+  // Оригиналите за цитатите. Речник, а не търсене в масива при всеки ред —
+  // при дълъг разговор второто е бавно.
+  const msgById = {};
+  messages.forEach((m) => { msgById[m.id] = m; });
+
+  // Един ред от цитираното съобщение. Снимката си няма текст, затова се казва
+  // какво е.
+  function quoteOf(msg) {
+    if (!msg) return null;
+    if (msg.image_path) return msg.text ? `📷 ${msg.text}` : "📷 снимка";
+    if (msg.plan_id) return "🗺 план";
+    return applyEmoticons(msg.text || "");
+  }
+
   // Всички снимки в чата, по реда на чата. Отварянето на една значи заставане
   // на нейното място в тази лента, а не показване на самотен файл.
   const photoList = messages.filter((m) => m.image_path && photoUrls[m.image_path]);
@@ -566,7 +583,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
 
   // Качва една снимка и връща id-то на съобщението. Хвърля при провал —
   // извикващият решава дали да спре, или да продължи с останалите.
-  async function uploadOnePhoto(asset, caption) {
+  async function uploadOnePhoto(asset, caption, replyToId) {
     // Смаляването е преди четенето на байтовете — иначе четем мегабайти, за да
     // ги изхвърлим веднага след това.
     const uri = await shrinkPhoto(asset.uri, asset.width, presetFor(photoQuality));
@@ -632,6 +649,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
         image_path: path,
         thumb_path: thumbPath,
         view_path: viewPath,
+        reply_to: replyToId || null,
       })
       .select("id")
       .single();
@@ -645,8 +663,11 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     // Подписът стои само под първата снимка. Иначе един и същи ред се повтаря
     // под всяка и чатът заприличва на заяждаща плоча.
     const caption = (captionText || "").trim();
+    // Отговорът стои само под първата снимка, както и подписът.
+    const replyId = replyTo?.id || null;
     setSendingPhoto(true);
     setText("");
+    setReplyTo(null);
 
     let lastId = null;
     let failed = 0;
@@ -655,7 +676,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       for (let i = 0; i < assets.length; i += 1) {
         setPhotoProgress(assets.length > 1 ? `${i + 1}/${assets.length}` : "");
         try {
-          const id = await uploadOnePhoto(assets[i], i === 0 ? caption : "");
+          const id = await uploadOnePhoto(assets[i], i === 0 ? caption : "", i === 0 ? replyId : null);
           if (id) lastId = id;
         } catch {
           // Една провалена снимка не бива да спира останалите — на слаба мрежа
@@ -695,6 +716,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     if (!trimmed) return;
     setSending(true);
     setText("");
+    setReplyTo(null);
     try {
       const { data: inserted } = await supabase
         .from("messages")
@@ -703,6 +725,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           user_id: userId,
           display_name: displayName,
           text: trimmed,
+          reply_to: replyTo?.id || null,
         })
         .select("id")
         .single();
@@ -721,6 +744,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       if (!atBottom.current) jumpToLatest();
     } catch (e) {
       setText(trimmed);
+      setReplyTo(replyTo);
     } finally {
       setSending(false);
     }
@@ -912,7 +936,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
     const textStyle = [styles.msgText, isMe && styles.msgTextMe];
 
     if (parts.length === 1 && !parts[0].url && !parts[0].phone) {
-      return <Text style={textStyle}>{item.text}</Text>;
+      return <Text style={textStyle}>{applyEmoticons(item.text)}</Text>;
     }
 
     return (
@@ -942,7 +966,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
               </Text>
             );
           }
-          return part.text;
+          // Само обикновеният текст минава през замяната — в адрес или
+          // телефон „:)" не е усмивка.
+          return applyEmoticons(part.text);
         })}
       </Text>
     );
@@ -1126,6 +1152,20 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                       highlightId === item.id && styles.bubbleFound,
                     ]}>
                       {!isMe && <Text style={styles.senderName}>{item.display_name}</Text>}
+                      {item.reply_to && msgById[item.reply_to] && (
+                        <TouchableOpacity
+                          style={[styles.quote, isMe && styles.quoteMe]}
+                          onPress={() => jumpToMessage(msgById[item.reply_to])}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.quoteName, isMe && styles.quoteNameMe]} numberOfLines={1}>
+                            {msgById[item.reply_to].display_name}
+                          </Text>
+                          <Text style={[styles.quoteText, isMe && styles.quoteTextMe]} numberOfLines={1}>
+                            {quoteOf(msgById[item.reply_to])}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                       {item.plan_id ? (
                         // Споделен AI план — карта с бутон към Планера, не целия
                         // текст на плана (иначе чатът се задръства при дълъг план).
@@ -1245,6 +1285,20 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           </View>
         </View>
       ) : (
+        <View>
+        {replyTo && (
+          <View style={styles.replyBar}>
+            <View style={styles.replyBarText}>
+              <Text style={styles.replyBarName} numberOfLines={1}>
+                Отговор на {replyTo.display_name}
+              </Text>
+              <Text style={styles.replyBarQuote} numberOfLines={1}>{quoteOf(replyTo)}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyBarClose}>
+              <Text style={styles.replyBarCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={[styles.inputRow, { paddingBottom: insets.bottom + 10 }]}>
           <TouchableOpacity
             style={styles.photoBtn}
@@ -1272,6 +1326,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           >
             <Text style={styles.sendIcon}>{sending ? "..." : "➤"}</Text>
           </TouchableOpacity>
+        </View>
         </View>
       )}
       {/* Слой, а не Modal. На iOS Modal е истински системен екран; затварянето
@@ -1380,6 +1435,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
           <View style={styles.readOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
               <View style={styles.actionSheet}>
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={() => { const m = msgActions; setMsgActions(null); setReplyTo(m); }}
+                >
+                  <Text style={styles.actionText}>↩︎ Отговори</Text>
+                </TouchableOpacity>
                 {!msgActions?.image_path && firstLinkOf(msgActions?.text) && (
                   inDocuments.includes(firstLinkOf(msgActions.text)) ? (
                     <View style={styles.actionRow}>
@@ -1667,6 +1728,27 @@ const styles = StyleSheet.create({
     marginBottom: space.xs, backgroundColor: colors.border,
   },
   msgImageLoading: { alignItems: "center", justifyContent: "center" },
+  // Цитатът е тесен и приглушен нарочно — той е указател, не съдържание.
+  quote: {
+    borderLeftWidth: 3, borderLeftColor: colors.brand400,
+    paddingLeft: space.sm, marginBottom: space.xs,
+    backgroundColor: "rgba(0,0,0,0.04)", borderRadius: 6, paddingVertical: 4,
+  },
+  quoteMe: { borderLeftColor: "rgba(255,255,255,0.7)", backgroundColor: "rgba(255,255,255,0.12)" },
+  quoteName: { ...type.label, fontWeight: "700", color: colors.brand600 },
+  quoteNameMe: { color: colors.onBrand },
+  quoteText: { ...type.label, color: colors.text600 },
+  quoteTextMe: { color: colors.onBrandMuted },
+  replyBar: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: space.lg, paddingVertical: space.sm,
+    backgroundColor: colors.brand50, gap: space.sm,
+  },
+  replyBarText: { flex: 1 },
+  replyBarName: { ...type.label, fontWeight: "700", color: colors.brand600 },
+  replyBarQuote: { ...type.label, color: colors.text600 },
+  replyBarClose: { padding: space.xs },
+  replyBarCloseText: { ...type.body, color: colors.text600 },
   msgImageGone: { ...type.label, color: colors.text400, textAlign: "center" },
   photoBtn: {
     width: 40, height: 40, borderRadius: 20,
