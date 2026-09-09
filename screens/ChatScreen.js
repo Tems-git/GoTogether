@@ -401,6 +401,18 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
   const [avatarTick, setAvatarTick] = useState(0);
   useEffect(() => onAvatarsChanged(() => setAvatarTick((n) => n + 1)), []);
 
+  // И промяната от чужд телефон. Отделен канал, за да не се пипа този със
+  // съобщенията — той има достатъчно работа.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`profiles-chat-${tripId}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" },
+        () => setAvatarTick((n) => n + 1)
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [tripId]);
+
   useEffect(() => {
     let alive = true;
     supabase

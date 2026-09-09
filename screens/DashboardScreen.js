@@ -344,6 +344,24 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
 
   useEffect(() => onAvatarsChanged(() => setAvatarTick((n) => n + 1)), []);
 
+  // Чужда снимка се сменя на друг телефон — знакът отвътре не стига. Живата
+  // връзка носи промяната. Без филтър: правилото за четене и без това пуска
+  // само профилите на хора, с които делим пътуване.
+  //
+  // За да работи това, правилото за четене на `profiles` беше пренаписано без
+  // SECURITY DEFINER функция — иначе живата връзка мълчи. Същият капан както
+  // при съобщенията и разходите.
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`profiles-dash-${user.id}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" },
+        () => setAvatarTick((n) => n + 1)
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
+
   // Брой документи — за краткия контекст под картата "Документи".
   const fetchDocsCount = useCallback(async () => {
     if (!trip?.id) return;

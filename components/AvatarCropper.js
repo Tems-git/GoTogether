@@ -2,16 +2,22 @@
 //
 // Системното изрязване го махнахме: на Android потвърждението е иконка, която
 // не се разпознава като бутон, и човек стои пред екрана без какво да натисне.
-// Оставаше средата на кадъра — а лицето рядко е точно в средата.
 //
-// Затова тук има само едно движение: влачене. Снимката е нагласена така, че
-// по-късата ѝ страна точно запълва квадрата; по-дългата стърчи и се движи.
-// Няма мащабиране, няма щипка, няма два пръста — нищо, което да се обърка.
-// Излиза от кадъра само това, което и без това нямаше да се побере в кръга.
+// Първият опит имаше само влачене, при мащаб „по-късата страна запълва
+// квадрата". При изправена снимка ширината точно се побира — тоест наляво и
+// надясно няма накъде да се мърда, колкото и да дърпаш. Затова има и
+// приближаване: щом снимката стане по-голяма от квадрата и по двете страни,
+// местенето работи и в двете посоки.
 //
-// Смятането е просто, защото мащабът е един и не се променя:
-//     мащаб   = страна на квадрата / по-късата страна на снимката
-//     изрязано = квадрат ÷ мащаб  (тоест по-късата страна, в пиксели на оригинала)
+// Жестовете минават през ЕДИН PanResponder — два пръста значат приближаване,
+// един значи местене. Две системи за допир върху един елемент не се
+// договарят; това го платихме веднъж при разглеждането на снимки и бележката
+// стои и там.
+//
+// Сметките, понеже мащабът вече не е един:
+//     основа   = страна на квадрата / по-късата страна на снимката
+//     мащаб    = основа × приближение
+//     изрязано = квадрат ÷ мащаб      (в пиксели на оригинала)
 //     начало   = -отместване ÷ мащаб
 
 import { useRef, useState } from "react";
@@ -21,6 +27,19 @@ import {
 } from "react-native";
 import { colors, space, radius, type } from "../theme/tokens";
 
+// Над четири пъти няма какво да се види — снимката свършва като разделителна
+// способност, а и лице, увеличено повече, вече не е портрет.
+const MAX_ZOOM = 4;
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function touchDistance(touches) {
+  const [a, b] = touches;
+  return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+}
+
 export default function AvatarCropper({ asset, busy, onCancel, onDone }) {
   const { width: screenW } = useWindowDimensions();
   // Квадратът е колкото екрана без полетата, но не безкраен на таблет.
@@ -28,71 +47,137 @@ export default function AvatarCropper({ asset, busy, onCancel, onDone }) {
 
   const srcW = asset?.width || 1;
   const srcH = asset?.height || 1;
-  const scale = side / Math.min(srcW, srcH);
-  const dispW = srcW * scale;
-  const dispH = srcH * scale;
+  const base = side / Math.min(srcW, srcH);
 
-  // Отместването е отрицателно или нула: снимката се дърпа наляво/нагоре.
-  const minX = side - dispW;
-  const minY = side - dispH;
-  const start = { x: minX / 2, y: minY / 2 };
+  // Начално положение: снимката е центрирана в квадрата. По късата страна
+  // отместването излиза нула, по дългата — половината от това, което стърчи.
+  const startView = {
+    zoom: 1,
+    x: Math.min(0, (side - srcW * base) / 2),
+    y: Math.min(0, (side - srcH * base) / 2),
+  };
 
-  const [offset, setOffset] = useState(start);
-  const offsetRef = useRef(start);
+  // Числено копие на състоянието: по време на жест трябва да четем синхронно.
+  const cur = useRef(startView);
+  const [view, setView] = useState(startView);
+  const pinch = useRef({ active: false, dist: 0, zoom: 1 });
+  const startPan = useRef({ x: startView.x, y: startView.y });
 
-  function clamp(value, low) {
-    if (value > 0) return 0;
-    if (value < low) return low;
-    return value;
+  function sizesAt(zoom) {
+    return { w: srcW * base * zoom, h: srcH * base * zoom };
   }
 
-  const pan = useRef(
+  // Отместването е между „долният/десният край опира в квадрата" и нула.
+  function limit(value, span) {
+    return clamp(value, Math.min(0, side - span), 0);
+  }
+
+  function apply(next) {
+    cur.current = next;
+    setView(next);
+  }
+
+  // Центърът остава на място при приближаване — иначе снимката бяга изпод
+  // пръстите и наместването започва отначало.
+  function rescale(nextZoom) {
+    const k = nextZoom / cur.current.zoom;
+    const mid = side / 2;
+    const { w, h } = sizesAt(nextZoom);
+    apply({
+      zoom: nextZoom,
+      x: limit(mid - (mid - cur.current.x) * k, w),
+      y: limit(mid - (mid - cur.current.y) * k, h),
+    });
+  }
+
+  const responder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderMove: (_e, g) => {
-        const next = {
-          x: clamp(offsetRef.current.x + g.dx, minX),
-          y: clamp(offsetRef.current.y + g.dy, minY),
-        };
-        setOffset(next);
+
+      onPanResponderGrant: () => {
+        pinch.current = { active: false, dist: 0, zoom: cur.current.zoom };
+        startPan.current = { x: cur.current.x, y: cur.current.y };
       },
-      onPanResponderRelease: (_e, g) => {
-        offsetRef.current = {
-          x: clamp(offsetRef.current.x + g.dx, minX),
-          y: clamp(offsetRef.current.y + g.dy, minY),
-        };
+
+      onPanResponderMove: (e, g) => {
+        const touches = e.nativeEvent.touches;
+
+        if (touches.length === 2) {
+          const d = touchDistance(touches);
+          if (!pinch.current.active) {
+            pinch.current = { active: true, dist: d, zoom: cur.current.zoom };
+            return;
+          }
+          rescale(clamp((pinch.current.zoom * d) / pinch.current.dist, 1, MAX_ZOOM));
+          return;
+        }
+
+        if (touches.length === 1) {
+          // Вдигането на втория пръст не бива да дръпне снимката рязко.
+          if (pinch.current.active) {
+            pinch.current.active = false;
+            startPan.current = { x: cur.current.x - g.dx, y: cur.current.y - g.dy };
+          }
+          const { w, h } = sizesAt(cur.current.zoom);
+          apply({
+            zoom: cur.current.zoom,
+            x: limit(startPan.current.x + g.dx, w),
+            y: limit(startPan.current.y + g.dy, h),
+          });
+        }
+      },
+
+      onPanResponderRelease: () => {
+        pinch.current.active = false;
+        startPan.current = { x: cur.current.x, y: cur.current.y };
+      },
+      onPanResponderTerminate: () => {
+        pinch.current.active = false;
+        startPan.current = { x: cur.current.x, y: cur.current.y };
       },
     })
   ).current;
 
   function handleDone() {
-    const size = Math.round(Math.min(srcW, srcH));
+    const scale = base * cur.current.zoom;
+    const size = Math.min(Math.round(side / scale), Math.round(srcW), Math.round(srcH));
     // Стягане в границите. Числата идват от делене на дробен мащаб и един
     // пиксел навън е достатъчен, за да откаже изрязването.
-    const fit = (value, limit) => Math.min(Math.max(0, Math.round(value)), Math.max(0, limit - size));
+    const fit = (value, limitTo) =>
+      Math.min(Math.max(0, Math.round(value)), Math.max(0, Math.round(limitTo) - size));
     onDone({
-      originX: fit(-offset.x / scale, srcW),
-      originY: fit(-offset.y / scale, srcH),
+      originX: fit(-cur.current.x / scale, srcW),
+      originY: fit(-cur.current.y / scale, srcH),
       width: size,
       height: size,
     });
   }
 
+  const { w: dispW, h: dispH } = sizesAt(view.zoom);
+
   return (
     <View style={styles.overlay}>
       <View style={styles.card}>
         <Text style={styles.title}>Нагласи снимката</Text>
-        <Text style={styles.hint}>Влачи, за да наместиш лицето в кръга.</Text>
+        <Text style={styles.hint}>
+          Влачи, за да наместиш. С два пръста приближаваш.
+        </Text>
 
-        <View style={[styles.window, { width: side, height: side }]} {...pan.panHandlers}>
+        <View
+          style={[styles.window, { width: side, height: side }]}
+          {...responder.panHandlers}
+        >
           <Image
             source={{ uri: asset?.uri }}
-            style={{ width: dispW, height: dispH, left: offset.x, top: offset.y, position: "absolute" }}
+            style={{ width: dispW, height: dispH, left: view.x, top: view.y, position: "absolute" }}
           />
-          {/* Пръстенът показва какво остава вътре. Рисува се отгоре и не
+          {/* Само очертанието на кръга — показва какво ще остане вътре. Не
               прихваща допира, за да не спира влаченето. */}
-          <View pointerEvents="none" style={[styles.ring, { width: side, height: side, borderRadius: side / 2 }]} />
+          <View
+            pointerEvents="none"
+            style={[styles.ring, { width: side, height: side, borderRadius: side / 2 }]}
+          />
         </View>
 
         <View style={styles.btns}>
@@ -126,8 +211,6 @@ const styles = StyleSheet.create({
   title: { ...type.heading, fontWeight: "bold", fontFamily: "GolosText_700Bold", color: colors.text900 },
   hint: { ...type.label, color: colors.text600, textAlign: "center" },
   window: { overflow: "hidden", backgroundColor: colors.bg, borderRadius: radius.card },
-  // Само очертанието на кръга. Показва какво ще остане вътре — маска не се
-  // рисува, защото един кръг с рамка казва същото с два реда.
   ring: {
     position: "absolute",
     borderWidth: 2,
