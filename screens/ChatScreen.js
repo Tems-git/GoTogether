@@ -14,7 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { shrinkPhoto, makeThumb, makeView, presetFor, PHOTO_PRESETS } from "../lib/image";
 import { bundleStamp } from "../lib/version";
 import { applyEmoticons } from "../lib/emoticons";
-import { fetchAvatarUrls } from "../lib/avatars";
+import { fetchAvatarUrls, onAvatarsChanged } from "../lib/avatars";
 import Avatar from "../components/Avatar";
 import { colors, space, radius, type } from "../theme/tokens";
 
@@ -395,7 +395,12 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
 
   // Снимките на хората в разговора. Отделно от съобщенията, защото се сменят
   // веднъж на месеци; resumeTick е заради временните адреси, които изтичат
-  // след час, а телефонът може да е спал по-дълго.
+  // след час, а телефонът може да е спал по-дълго. И знакът от `avatars` —
+  // иначе смяна, направена на главния екран, не се вижда тук до следващото
+  // отваряне на чата.
+  const [avatarTick, setAvatarTick] = useState(0);
+  useEffect(() => onAvatarsChanged(() => setAvatarTick((n) => n + 1)), []);
+
   useEffect(() => {
     let alive = true;
     supabase
@@ -406,7 +411,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
       .then((map) => { if (alive) setAvatarUrls(map); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [tripId, resumeTick]);
+  }, [tripId, resumeTick, avatarTick]);
 
   // Временните връзки се издават на групи, за всички нови снимки наведнъж.
   useEffect(() => {

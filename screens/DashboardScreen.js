@@ -10,8 +10,9 @@ import { supabase } from "../lib/supabase";import { useSafeAreaInsets } from "re
 import DatePicker from "../components/DatePicker";
 import { Sparkles, MessageSquare, FileText, CreditCard, MapPin, Users, Plus } from "lucide-react-native";
 import { colors, space, radius, type } from "../theme/tokens";
-import { fetchAvatarUrls, uploadAvatar, clearAvatar } from "../lib/avatars";
+import { fetchAvatarUrls, uploadAvatar, clearAvatar, onAvatarsChanged } from "../lib/avatars";
 import Avatar from "../components/Avatar";
+import AvatarCropper from "../components/AvatarCropper";
 
 const MAX_VISIBLE = 4;
 const LOCAL_CURRENCY_OPTIONS = ["EUR", "USD", "GBP", "CHF"];
@@ -91,6 +92,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
   // Малкото меню „откъде да е снимката". Слой, не прозорец — виж бележката
   // при рисуването му.
   const [avatarMenu, setAvatarMenu] = useState(false);
+  // Избраната снимка чака тук, докато човек я намести в квадрата.
+  const [cropAsset, setCropAsset] = useState(null);
+  const [avatarTick, setAvatarTick] = useState(0);
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -336,7 +340,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       .then((map) => { if (alive) setAvatarUrls(map); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [members, resumeTick, myAvatarPath]);
+  }, [members, resumeTick, myAvatarPath, avatarTick]);
+
+  useEffect(() => onAvatarsChanged(() => setAvatarTick((n) => n + 1)), []);
 
   // Брой документи — за краткия контекст под картата "Документи".
   const fetchDocsCount = useCallback(async () => {
@@ -502,15 +508,12 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
         }
       }
 
-      // Изрязването е само на iOS. Там екранът за изрязване има ясен бутон
-      // „Choose" и работи. На Android потвърждението е иконка в ъгъла, която не
-      // се разпознава като бутон — човек стои пред екрана и няма какво да
-      // натисне. По-добре без избор, отколкото с избор, който не се вижда:
-      // там снимката влиза цяла, а кръгчето показва средата ѝ.
+      // Системното изрязване е махнато: на iOS работи, но на Android
+      // потвърждението е иконка, която не се разпознава като бутон. Вместо два
+      // различни пътя — един свой екран за наместване, еднакъв навсякъде.
       const options = {
         mediaTypes: ["images"],
-        allowsEditing: Platform.OS === "ios",
-        aspect: [1, 1],
+        allowsEditing: false,
         quality: 0.9,
       };
       const result = source === "camera"
@@ -520,9 +523,20 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
       const asset = (result.assets || [])[0];
       if (!asset?.uri) return;
 
+      setCropAsset(asset);
+    } catch (e) {
+      Alert.alert("Грешка", e.message);
+    }
+  }
+
+  async function handleCropDone(rect) {
+    const asset = cropAsset;
+    if (!asset) return;
+    try {
       setSavingAvatar(true);
-      const path = await uploadAvatar(user.id, asset.uri, myAvatarPath);
+      const path = await uploadAvatar(user.id, asset.uri, myAvatarPath, rect);
       setMyAvatarPath(path);
+      setCropAsset(null);
     } catch (e) {
       Alert.alert("Грешка", e.message);
     } finally {
@@ -1319,6 +1333,16 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
           </ScrollView>
         </View>
       </Modal>
+
+      {cropAsset && (
+        <AvatarCropper
+          key={cropAsset.uri}
+          asset={cropAsset}
+          busy={savingAvatar}
+          onCancel={() => setCropAsset(null)}
+          onDone={handleCropDone}
+        />
+      )}
 
       {/* Слой, а не Modal. На iOS Modal е истински системен екран; отварянето
           на избирача на снимки, докато такъв екран стои отгоре, не е позволено

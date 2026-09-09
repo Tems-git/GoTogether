@@ -17,7 +17,12 @@ export default function Avatar({ uri, style, children }) {
   // Връзката към снимката е временна и след час изтича; понякога файлът вече
   // го няма. И в двата случая се връщаме към буквата, вместо да оставим празен
   // кръг на екрана.
-  const [failed, setFailed] = useState(false);
+  //
+  // Помни се ЗА КОЙ адрес се е провалило. Иначе един провал заключваше кръгчето
+  // върху буквата завинаги — включително след смяна на снимката, когато адресът
+  // вече е друг и няма причина да не се покаже.
+  const [failedUri, setFailedUri] = useState(null);
+  const failed = !!uri && failedUri === uri;
 
   if (uri && !failed) {
     return (
@@ -25,7 +30,7 @@ export default function Avatar({ uri, style, children }) {
         source={{ uri }}
         style={style}
         resizeMode="cover"
-        onError={() => setFailed(true)}
+        onError={() => setFailedUri(uri)}
       />
     );
   }
