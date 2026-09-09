@@ -14,6 +14,11 @@
 // договарят; това го платихме веднъж при разглеждането на снимки и бележката
 // стои и там.
 //
+// Под квадрата стоят и два бутона за приближаване. Щипката е по-приятна, но
+// невидима: човек дърпа наляво, нищо не мърда и заключава, че приближаване
+// няма. Бутонът се вижда. Същият урок както при екрана за изрязване на
+// Android, където потвърждението беше иконка и никой не я намираше.
+//
 // Сметките, понеже мащабът вече не е един:
 //     основа   = страна на квадрата / по-късата страна на снимката
 //     мащаб    = основа × приближение
@@ -30,6 +35,9 @@ import { colors, space, radius, type } from "../theme/tokens";
 // Над четири пъти няма какво да се види — снимката свършва като разделителна
 // способност, а и лице, увеличено повече, вече не е портрет.
 const MAX_ZOOM = 4;
+// Стъпката на бутоните. Осем натискания от край до край — достатъчно ситно, за
+// да намериш лицето, и достатъчно едро, за да не тракаш.
+const ZOOM_STEP = 0.375;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -161,7 +169,7 @@ export default function AvatarCropper({ asset, busy, onCancel, onDone }) {
       <View style={styles.card}>
         <Text style={styles.title}>Нагласи снимката</Text>
         <Text style={styles.hint}>
-          Влачи, за да наместиш. С два пръста приближаваш.
+          Влачи, за да наместиш. С два пръста или с бутоните приближаваш.
         </Text>
 
         <View
@@ -178,6 +186,24 @@ export default function AvatarCropper({ asset, busy, onCancel, onDone }) {
             pointerEvents="none"
             style={[styles.ring, { width: side, height: side, borderRadius: side / 2 }]}
           />
+        </View>
+
+        <View style={styles.zoomRow}>
+          <TouchableOpacity
+            style={[styles.zoomBtn, view.zoom <= 1.001 && styles.zoomBtnOff]}
+            onPress={() => rescale(clamp(cur.current.zoom - ZOOM_STEP, 1, MAX_ZOOM))}
+            disabled={busy || view.zoom <= 1.001}
+          >
+            <Text style={styles.zoomBtnText}>−</Text>
+          </TouchableOpacity>
+          <Text style={styles.zoomLabel}>{view.zoom.toFixed(1)}×</Text>
+          <TouchableOpacity
+            style={[styles.zoomBtn, view.zoom >= MAX_ZOOM - 0.001 && styles.zoomBtnOff]}
+            onPress={() => rescale(clamp(cur.current.zoom + ZOOM_STEP, 1, MAX_ZOOM))}
+            disabled={busy || view.zoom >= MAX_ZOOM - 0.001}
+          >
+            <Text style={styles.zoomBtnText}>+</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.btns}>
@@ -216,6 +242,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.brand400,
   },
+  zoomRow: { flexDirection: "row", alignItems: "center", gap: space.lg, marginTop: space.xs },
+  zoomBtn: {
+    width: 48, height: 48, borderRadius: 24,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.brand50, borderWidth: 1, borderColor: colors.brand400,
+  },
+  zoomBtnOff: { opacity: 0.35 },
+  zoomBtnText: { fontSize: 26, lineHeight: 30, color: colors.brand600, fontWeight: "bold" },
+  zoomLabel: { ...type.label, color: colors.text600, minWidth: 44, textAlign: "center" },
   btns: { flexDirection: "row", gap: space.md, marginTop: space.xs },
   btnGhost: {
     flex: 1, paddingVertical: space.md, paddingHorizontal: space.xl,
