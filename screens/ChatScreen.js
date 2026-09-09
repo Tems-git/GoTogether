@@ -1162,6 +1162,9 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                   >
                     <View style={[
                       styles.bubble,
+                      // Цитатът заема ред от собствения си текст. При 75%
+                      // ширина от стария текст оставаше по няколко думи.
+                      item.reply_to && styles.bubbleReply,
                       isMe && styles.bubbleMe,
                       highlightId === item.id && styles.bubbleFound,
                     ]}>
@@ -1180,10 +1183,16 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
                             />
                           )}
                           <View style={styles.quoteBody}>
+                            {/* Стрелката казва, че това е отговор, а не име на
+                                автора. „на теб" се появява само когато някой
+                                друг отговаря на твое съобщение — тогава е най-
+                                полезно да се хване с око. */}
                             <Text style={[styles.quoteName, isMe && styles.quoteNameMe]} numberOfLines={1}>
-                              {msgById[item.reply_to].display_name}
+                              ↩︎ {msgById[item.reply_to].user_id === userId && !isMe
+                                ? "на теб"
+                                : msgById[item.reply_to].display_name}
                             </Text>
-                            <Text style={[styles.quoteText, isMe && styles.quoteTextMe]} numberOfLines={1}>
+                            <Text style={[styles.quoteText, isMe && styles.quoteTextMe]} numberOfLines={2}>
                               {quoteOf(msgById[item.reply_to])}
                             </Text>
                           </View>
@@ -1318,7 +1327,7 @@ export default function ChatScreen({ onBack, tripId, userId, tripName, onOpenPla
               <Text style={styles.replyBarName} numberOfLines={1}>
                 Отговор на {replyTo.display_name}
               </Text>
-              <Text style={styles.replyBarQuote} numberOfLines={1}>{quoteOf(replyTo)}</Text>
+              <Text style={styles.replyBarQuote} numberOfLines={2}>{quoteOf(replyTo)}</Text>
             </View>
             <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyBarClose}>
               <Text style={styles.replyBarCloseText}>✕</Text>
@@ -1725,6 +1734,8 @@ const styles = StyleSheet.create({
     marginRight: space.sm,
   },
   avatarText: { ...type.label, fontWeight: "bold", color: colors.onBrand, fontFamily: "GolosText_700Bold" },
+  // Балон с цитат получава повече ширина: в него живеят два текста, а не един.
+  bubbleReply: { maxWidth: "90%" },
   bubble: {
     maxWidth: "75%", backgroundColor: colors.surface,
     borderRadius: radius.card, borderBottomLeftRadius: 4,
