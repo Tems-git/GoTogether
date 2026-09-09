@@ -1734,8 +1734,11 @@ const styles = StyleSheet.create({
     marginRight: space.sm,
   },
   avatarText: { ...type.label, fontWeight: "bold", color: colors.onBrand, fontFamily: "GolosText_700Bold" },
-  // Балон с цитат получава повече ширина: в него живеят два текста, а не един.
-  bubbleReply: { maxWidth: "90%" },
+  // Балон с цитат получава и долна граница, не само горна. Балонът се
+  // оразмерява по най-широкото си съдържание, а maxWidth е таван — при кратък
+  // отговор („да", „ок") балонът оставаше тесен и цитатът се смачкваше в
+  // квадратче. flex вътре значи „вземи наличното", не „поискай повече".
+  bubbleReply: { maxWidth: "90%", minWidth: "62%" },
   bubble: {
     maxWidth: "75%", backgroundColor: colors.surface,
     borderRadius: radius.card, borderBottomLeftRadius: 4,
@@ -1772,7 +1775,7 @@ const styles = StyleSheet.create({
     paddingLeft: space.sm, paddingRight: space.xs, marginBottom: space.xs,
     backgroundColor: "rgba(0,0,0,0.04)", borderRadius: 6, paddingVertical: 4,
   },
-  quoteBody: { flex: 1 },
+  quoteBody: { flex: 1, minWidth: 0 },
   quoteThumb: { width: 34, height: 34, borderRadius: 6, backgroundColor: colors.border },
   quoteMe: { borderLeftColor: "rgba(255,255,255,0.7)", backgroundColor: "rgba(255,255,255,0.12)" },
   quoteName: { ...type.label, fontWeight: "700", color: colors.brand600 },
