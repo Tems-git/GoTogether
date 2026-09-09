@@ -1001,7 +1001,7 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
                 </View>
               ) : (
                 <Avatar uri={avatarUrls[user.id]} style={styles.myAvatar}>
-                  <Text style={styles.myAvatarText}>👤</Text>
+                  <Text style={styles.myAvatarText}>📷</Text>
                 </Avatar>
               )}
             </TouchableOpacity>
@@ -1356,7 +1356,9 @@ export default function DashboardScreen({ user, trip, allTrips, onSignOut, onAI,
           <View style={styles.modalInner}>
             <Text style={styles.modalTitle}>Смени никнейм</Text>
             {/* Тук стоеше и снимката. Изнесена е при кръгчето горе, защото от
-                прозорец iOS не пуска избирача на снимки. */}
+                прозорец iOS не пуска избирача на снимки. Затова поне казваме
+                къде е отишла — тук ще я търси човек. */}
+            <Text style={styles.modalHint}>Снимката се сменя от кръгчето горе, до името ти.</Text>
             <TextInput
               style={styles.nameInput}
               value={newName}
@@ -1532,11 +1534,14 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: "row", alignItems: "center", gap: space.sm, marginTop: space.xs },
   displayName: { ...type.label, color: colors.text600, flexShrink: 1 },
   nameTap: { flexDirection: "row", alignItems: "center", gap: space.sm, flexShrink: 1 },
-  // Рамка и по-светъл фон, за да личи, че кръгчето е бутон и когато е празно.
+  modalHint: { ...type.label, color: colors.text600, marginBottom: space.lg },
+  // Бяло върху сивкавия фон на екрана, с рамка в цвета на приложението.
+  // Дотук фонът му беше colors.bg — тоест точно фонът на екрана, и кръгчето се
+  // сливаше с него.
   myAvatar: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 34, height: 34, borderRadius: 17,
     alignItems: "center", justifyContent: "center", flexShrink: 0,
-    backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.brand400,
   },
   myAvatarText: { fontSize: 16, lineHeight: 20 },
   sheetOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", zIndex: 50 },
